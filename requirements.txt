@@ -38,7 +38,7 @@ pydantic-settings>=2.7
 python-dotenv>=1.0
 
 # PDF text extraction (local-first — pure Python, no cloud parsing). See DEVLOG.
-pypdf>=5.1
+pypdf>=6.13.3
 
 # Trusted Chat exports: Markdown parsing plus local PDF, Word, and Excel writers.
 markdown-it-py>=4.2
