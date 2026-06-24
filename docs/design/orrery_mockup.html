@@ -1,0 +1,1106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Orrery — Interface Mockup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg0:#0B1020; --bg1:#111831; --bg2:#18213F; --bg3:#1F2A4D;
+  --line:#26314F; --line-soft:#1C2542;
+  --text:#E8ECF8; --muted:#8A94B8; --faint:#5A6584;
+  --amber:#F2B14E; --amber-dim:#F2B14E33;
+  --ice:#9DB9F0; --ice-dim:#9DB9F033;
+  --green:#5BC489; --red:#E36C6C;
+  --font-display:"Bricolage Grotesque",sans-serif;
+  --font-ui:"IBM Plex Sans",sans-serif;
+  --font-mono:"IBM Plex Mono",monospace;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{background:#070B16}
+body{
+  font-family:var(--font-ui); color:var(--text); background:#070B16;
+  min-height:100vh; padding:28px 20px; overflow-x:auto;
+  background-image:
+    radial-gradient(1px 1px at 12% 22%, #ffffff55 50%, transparent 51%),
+    radial-gradient(1px 1px at 78% 12%, #ffffff44 50%, transparent 51%),
+    radial-gradient(1.5px 1.5px at 32% 78%, #9DB9F055 50%, transparent 51%),
+    radial-gradient(1px 1px at 88% 64%, #ffffff33 50%, transparent 51%),
+    radial-gradient(1px 1px at 54% 40%, #F2B14E44 50%, transparent 51%),
+    radial-gradient(1.5px 1.5px at 8% 88%, #ffffff33 50%, transparent 51%);
+}
+.mobile-hint{display:none; font-size:12px; color:var(--muted); text-align:center; margin-bottom:10px}
+@media (max-width:1240px){ .mobile-hint{display:block} }
+
+/* ── window chrome ─────────────────────────────── */
+.window{
+  width:1200px; margin:0 auto; background:var(--bg0);
+  border:1px solid var(--line); border-radius:14px;
+  box-shadow:0 24px 80px #00000088; overflow:hidden;
+}
+.titlebar{
+  height:38px; display:flex; align-items:center; gap:8px; padding:0 14px;
+  background:var(--bg1); border-bottom:1px solid var(--line-soft);
+}
+.dot{width:11px;height:11px;border-radius:50%}
+.dot.r{background:#E0635E}.dot.y{background:#E0B250}.dot.g{background:#67BE6C}
+.titlebar .app-title{
+  flex:1; text-align:center; font-family:var(--font-mono); font-size:11.5px;
+  color:var(--faint); letter-spacing:.04em;
+}
+.app{display:flex; height:760px}
+
+/* ── icon rail ─────────────────────────────────── */
+.rail{
+  width:64px; background:var(--bg1); border-right:1px solid var(--line-soft);
+  display:flex; flex-direction:column; align-items:center; padding:14px 0; gap:6px;
+}
+.logo{margin-bottom:14px}
+.tab{
+  width:44px;height:44px; border:none; background:transparent; border-radius:10px;
+  color:var(--muted); cursor:pointer; display:flex; align-items:center; justify-content:center;
+  position:relative;
+}
+.tab:hover{background:var(--bg2); color:var(--text)}
+.tab.active{background:var(--bg2); color:var(--amber)}
+.tab.active::before{
+  content:""; position:absolute; left:-10px; width:3px; height:20px;
+  background:var(--amber); border-radius:0 3px 3px 0;
+}
+.tab svg{width:20px;height:20px}
+.rail .spacer{flex:1}
+.db-status{display:flex; flex-direction:column; align-items:center; gap:5px; padding-bottom:4px}
+.db-status .pulse{width:8px;height:8px;border-radius:50%;background:var(--green); box-shadow:0 0 8px var(--green)}
+.db-status span{font-family:var(--font-mono); font-size:8.5px; color:var(--faint); writing-mode:vertical-rl; letter-spacing:.08em}
+
+/* ── shared view bits ──────────────────────────── */
+.view{display:none; flex:1; min-width:0; overflow:hidden}
+.view.active{display:flex}
+.view-title{font-family:var(--font-display); font-weight:600; font-size:19px; letter-spacing:-.01em}
+.pill{
+  display:inline-flex; align-items:center; gap:6px; padding:4px 10px; border-radius:99px;
+  font-size:11.5px; border:1px solid var(--line); background:var(--bg2); color:var(--muted);
+}
+.pill .sdot{width:6px;height:6px;border-radius:50%}
+.badge-on{color:var(--green)} .badge-off{color:var(--faint)}
+.btn{
+  font-family:var(--font-ui); font-size:12.5px; font-weight:600; cursor:pointer;
+  border-radius:8px; padding:7px 13px; border:1px solid var(--line);
+  background:var(--bg2); color:var(--text);
+}
+.btn:hover{background:var(--bg3)}
+.btn.primary{background:var(--amber); border-color:var(--amber); color:#221805}
+.btn.primary:hover{filter:brightness(1.07)}
+.btn.ghost{background:transparent}
+.toggle{
+  width:34px;height:19px;border-radius:99px;background:var(--bg3);border:1px solid var(--line);
+  position:relative; cursor:pointer; flex:none;
+}
+.toggle::after{
+  content:"";position:absolute;top:2px;left:2px;width:13px;height:13px;border-radius:50%;
+  background:var(--faint); transition:all .18s;
+}
+.toggle.on{background:var(--amber-dim); border-color:var(--amber)}
+.toggle.on::after{left:17px;background:var(--amber)}
+.mono{font-family:var(--font-mono)}
+::-webkit-scrollbar{width:8px;height:8px}
+::-webkit-scrollbar-thumb{background:var(--line);border-radius:99px}
+::-webkit-scrollbar-track{background:transparent}
+
+/* ── CHAT ──────────────────────────────────────── */
+.chat-side{
+  width:240px; border-right:1px solid var(--line-soft); background:var(--bg1);
+  display:flex; flex-direction:column; padding:14px 10px; gap:10px;
+}
+.chat-side .btn.primary{width:100%}
+.search{
+  background:var(--bg0); border:1px solid var(--line); border-radius:8px;
+  padding:7px 10px; font-size:12px; color:var(--muted); font-family:var(--font-ui);
+}
+.convo-list{display:flex; flex-direction:column; gap:2px; overflow-y:auto}
+.convo{
+  padding:9px 10px; border-radius:8px; cursor:pointer; border:1px solid transparent;
+}
+.convo:hover{background:var(--bg2)}
+.convo.active{background:var(--bg2); border-color:var(--line)}
+.convo .c-title{font-size:12.5px; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.convo .c-meta{font-size:10.5px; color:var(--faint); margin-top:2px}
+.chat-main{flex:1; display:flex; flex-direction:column; min-width:0}
+.chat-header{
+  display:flex; align-items:center; gap:10px; padding:13px 18px;
+  border-bottom:1px solid var(--line-soft);
+}
+.chat-header .view-title{font-size:15px; flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.model-pill{cursor:pointer}
+.model-pill:hover{border-color:var(--ice)}
+.model-pill b{color:var(--ice); font-weight:500; font-family:var(--font-mono); font-size:11px}
+.rag-toggle{display:flex; align-items:center; gap:7px; font-size:12px; color:var(--muted)}
+.thread{flex:1; overflow-y:auto; padding:22px 26px; display:flex; flex-direction:column; gap:20px}
+.msg{max-width:78%; line-height:1.55; font-size:13.5px}
+.msg.user{align-self:flex-end; background:var(--bg2); border:1px solid var(--line); padding:11px 14px; border-radius:12px 12px 3px 12px}
+.msg.ai{align-self:flex-start}
+.msg .who{
+  font-family:var(--font-mono); font-size:10px; letter-spacing:.08em; color:var(--faint);
+  text-transform:uppercase; margin-bottom:7px; display:flex; align-items:center; gap:8px;
+}
+.rag-chip{
+  font-family:var(--font-mono); font-size:9.5px; color:var(--ice); background:var(--ice-dim);
+  border:1px solid #9DB9F04D; border-radius:99px; padding:2px 8px; letter-spacing:0; text-transform:none;
+}
+.msg.ai p{margin-bottom:10px; color:#D6DCEF}
+.msg.ai pre{
+  background:var(--bg1); border:1px solid var(--line); border-radius:9px; padding:11px 13px;
+  font-family:var(--font-mono); font-size:11.5px; color:var(--ice); overflow-x:auto; margin-bottom:10px;
+}
+.mini-table{border-collapse:collapse; font-size:12px; margin-bottom:10px; width:100%}
+.mini-table th{
+  text-align:left; font-family:var(--font-mono); font-size:10px; color:var(--faint);
+  font-weight:500; padding:5px 12px 5px 0; border-bottom:1px solid var(--line); letter-spacing:.05em;
+}
+.mini-table td{padding:6px 12px 6px 0; border-bottom:1px solid var(--line-soft); color:#D6DCEF}
+.mini-table td.up{color:var(--green)}
+.caret{display:inline-block; width:7px; height:14px; background:var(--amber); vertical-align:-2px; animation:blink 1s steps(1) infinite}
+@keyframes blink{50%{opacity:0}}
+.composer{padding:14px 18px 18px; border-top:1px solid var(--line-soft)}
+.composer-box{
+  display:flex; align-items:center; gap:10px; background:var(--bg1);
+  border:1px solid var(--line); border-radius:12px; padding:10px 12px;
+}
+.composer-box:focus-within{border-color:var(--amber)}
+.composer-box input{
+  flex:1; background:none; border:none; outline:none; color:var(--text);
+  font-family:var(--font-ui); font-size:13px;
+}
+.icon-btn{background:none;border:none;color:var(--faint);cursor:pointer;display:flex;padding:4px}
+.icon-btn:hover{color:var(--text)}
+.send{width:30px;height:30px;border-radius:8px;background:var(--amber);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#221805}
+.composer .hint{font-family:var(--font-mono); font-size:9.5px; color:var(--faint); margin-top:7px; padding-left:4px}
+
+/* ── DATA ──────────────────────────────────────── */
+.data-wrap{flex:1; overflow-y:auto; padding:22px 26px}
+.section-label{
+  font-family:var(--font-mono); font-size:10px; letter-spacing:.12em; color:var(--faint);
+  text-transform:uppercase; margin:22px 0 10px;
+}
+.section-label:first-of-type{margin-top:16px}
+.card-row{display:grid; grid-template-columns:repeat(3,1fr); gap:12px}
+.card{
+  background:var(--bg1); border:1px solid var(--line); border-radius:11px; padding:14px 15px;
+}
+.card.add{
+  border-style:dashed; color:var(--faint); display:flex; align-items:center; justify-content:center;
+  font-size:12.5px; cursor:pointer; min-height:96px;
+}
+.card.add:hover{color:var(--amber); border-color:var(--amber)}
+.card h4{font-size:13.5px; font-weight:600; display:flex; align-items:center; gap:8px}
+.card .meta{font-family:var(--font-mono); font-size:10.5px; color:var(--muted); margin-top:6px; line-height:1.7}
+.card .foot{display:flex; gap:8px; margin-top:11px; align-items:center}
+.tag{
+  font-family:var(--font-mono); font-size:9px; padding:2px 7px; border-radius:5px;
+  background:var(--ice-dim); color:var(--ice); border:1px solid #9DB9F033;
+}
+.tag.warm{background:var(--amber-dim); color:var(--amber); border-color:#F2B14E33}
+.table-shell{background:var(--bg1); border:1px solid var(--line); border-radius:11px; overflow:hidden}
+.table-bar{display:flex; align-items:center; gap:10px; padding:11px 14px; border-bottom:1px solid var(--line-soft)}
+.table-bar .pill{cursor:pointer}
+.dtable{width:100%; border-collapse:collapse; font-size:12px}
+.dtable th{
+  text-align:left; font-family:var(--font-mono); font-size:10px; font-weight:500; color:var(--faint);
+  padding:9px 16px; background:var(--bg2); letter-spacing:.06em;
+}
+.dtable td{padding:9px 16px; border-top:1px solid var(--line-soft); font-family:var(--font-mono); font-size:11px; color:#C9D1E8}
+.table-foot{padding:9px 16px; font-family:var(--font-mono); font-size:10px; color:var(--faint)}
+
+/* ── AUTOMATIONS ───────────────────────────────── */
+.auto-side{
+  width:230px; border-right:1px solid var(--line-soft); background:var(--bg1);
+  padding:14px 10px; display:flex; flex-direction:column; gap:10px;
+}
+.wf{
+  padding:10px 11px; border-radius:9px; cursor:pointer; border:1px solid transparent;
+}
+.wf:hover{background:var(--bg2)}
+.wf.active{background:var(--bg2); border-color:var(--line)}
+.wf .w-name{font-size:12.5px; font-weight:600; display:flex; justify-content:space-between; align-items:center; gap:6px}
+.status-pip{font-family:var(--font-mono); font-size:8.5px; padding:2px 6px; border-radius:4px; letter-spacing:.05em}
+.status-pip.live{background:#5BC48922; color:var(--green)}
+.status-pip.paused{background:#5A658422; color:var(--faint)}
+.wf .w-meta{font-family:var(--font-mono); font-size:9.5px; color:var(--faint); margin-top:5px; line-height:1.6}
+.auto-main{flex:1; display:flex; flex-direction:column; min-width:0}
+.auto-toolbar{
+  display:flex; align-items:center; gap:10px; padding:12px 16px; border-bottom:1px solid var(--line-soft);
+}
+.auto-toolbar .view-title{font-size:15px}
+.auto-toolbar .grow{flex:1}
+.canvas-zone{flex:1; display:flex; min-height:0}
+.canvas{
+  flex:1; position:relative; overflow:hidden;
+  background-image:
+    linear-gradient(var(--line-soft) 1px, transparent 1px),
+    linear-gradient(90deg, var(--line-soft) 1px, transparent 1px),
+    radial-gradient(1px 1px at 18% 30%, #ffffff2e 50%, transparent 51%),
+    radial-gradient(1px 1px at 70% 18%, #ffffff24 50%, transparent 51%),
+    radial-gradient(1px 1px at 85% 75%, #9DB9F03d 50%, transparent 51%),
+    radial-gradient(1px 1px at 40% 85%, #ffffff20 50%, transparent 51%);
+  background-size:42px 42px, 42px 42px, auto, auto, auto, auto;
+}
+.edges{position:absolute; inset:0; width:100%; height:100%; pointer-events:none}
+.edges path{
+  fill:none; stroke:#5F6FA0; stroke-width:1.4; opacity:.75;
+  stroke-dasharray:5 6; animation:flow 30s linear infinite;
+}
+@keyframes flow{to{stroke-dashoffset:-660}}
+.node{
+  position:absolute; width:170px; background:var(--bg1); border:1px solid var(--line);
+  border-radius:10px; padding:9px 12px 10px; cursor:pointer; user-select:none;
+}
+.node:hover{border-color:var(--ice)}
+.node.selected{border-color:var(--amber); box-shadow:0 0 0 1px var(--amber), 0 0 22px #F2B14E2b}
+.node .n-kind{
+  font-family:var(--font-mono); font-size:8.5px; letter-spacing:.1em; text-transform:uppercase;
+  display:flex; align-items:center; gap:6px; margin-bottom:5px;
+}
+.node .n-kind .k-star{width:7px;height:7px;border-radius:50%}
+.k-trigger{color:var(--ice)} .k-trigger .k-star{background:var(--ice); box-shadow:0 0 7px var(--ice)}
+.k-ai{color:var(--amber)} .k-ai .k-star{background:var(--amber); box-shadow:0 0 8px var(--amber)}
+.k-data{color:#7FD4C0} .k-data .k-star{background:#7FD4C0; box-shadow:0 0 7px #7FD4C0}
+.k-logic{color:#C49DF0} .k-logic .k-star{background:#C49DF0; box-shadow:0 0 7px #C49DF0}
+.node .n-title{font-size:12px; font-weight:600; line-height:1.3}
+.node .n-sub{font-family:var(--font-mono); font-size:9.5px; color:var(--faint); margin-top:4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.node .port{position:absolute; width:8px; height:8px; border-radius:50%; background:var(--bg0); border:1.5px solid #5F6FA0; top:50%; transform:translateY(-50%)}
+.node .port.in{left:-5px} .node .port.out{right:-5px}
+.node.selected .port{border-color:var(--amber)}
+.palette{
+  position:absolute; left:14px; top:14px; display:flex; flex-direction:column; gap:5px;
+  background:#111831E6; border:1px solid var(--line); border-radius:10px; padding:9px; width:122px;
+  backdrop-filter:blur(4px);
+}
+.palette .p-label{font-family:var(--font-mono); font-size:8.5px; letter-spacing:.12em; color:var(--faint); text-transform:uppercase; margin-bottom:3px}
+.p-item{font-size:11px; color:var(--muted); padding:4px 7px; border-radius:6px; cursor:grab; display:flex; align-items:center; gap:7px}
+.p-item:hover{background:var(--bg2); color:var(--text)}
+.p-item i{width:5px;height:5px;border-radius:50%;flex:none}
+.config{
+  width:248px; border-left:1px solid var(--line-soft); background:var(--bg1);
+  padding:16px 14px; overflow-y:auto; display:flex; flex-direction:column; gap:13px;
+}
+.config .cfg-head .n-kind{margin-bottom:4px}
+.config .cfg-title{font-size:14px; font-weight:600}
+.field label{display:block; font-family:var(--font-mono); font-size:9.5px; letter-spacing:.08em; color:var(--faint); text-transform:uppercase; margin-bottom:6px}
+.field .input, .field select, .field textarea{
+  width:100%; background:var(--bg0); border:1px solid var(--line); border-radius:7px;
+  padding:8px 10px; font-size:12px; color:var(--text); font-family:var(--font-ui);
+}
+.field textarea{font-family:var(--font-mono); font-size:11px; line-height:1.6; resize:none; color:#C9D1E8}
+.var-chips{display:flex; flex-wrap:wrap; gap:5px; margin-top:7px}
+.var-chip{
+  font-family:var(--font-mono); font-size:9.5px; background:var(--bg2); color:var(--ice);
+  border:1px solid var(--line); border-radius:5px; padding:2px 7px; cursor:pointer;
+}
+.var-chip:hover{border-color:var(--ice)}
+.runs{
+  border-top:1px solid var(--line-soft); background:var(--bg1); max-height:172px; overflow-y:auto;
+}
+.runs-head{
+  display:flex; align-items:center; gap:8px; padding:9px 16px;
+  font-family:var(--font-mono); font-size:10px; letter-spacing:.1em; color:var(--faint); text-transform:uppercase;
+}
+.run-row{
+  display:flex; align-items:center; gap:12px; padding:8px 16px; font-size:12px;
+  border-top:1px solid var(--line-soft); cursor:pointer;
+}
+.run-row:hover{background:var(--bg2)}
+.run-ok{color:var(--green); font-family:var(--font-mono)} .run-fail{color:var(--red); font-family:var(--font-mono)}
+.run-row .r-when{color:var(--muted); flex:1}
+.run-row .r-time{font-family:var(--font-mono); font-size:10.5px; color:var(--faint)}
+.run-steps{display:none; padding:4px 16px 12px 34px; border-top:1px dashed var(--line-soft)}
+.run-steps.open{display:block}
+.step{display:flex; gap:10px; font-family:var(--font-mono); font-size:10.5px; color:var(--muted); padding:3.5px 0}
+.step b{color:var(--text); font-weight:500; min-width:150px}
+.step .fail-note{color:var(--red)}
+
+/* ── DASHBOARDS ────────────────────────────────── */
+.dash-wrap{flex:1; overflow-y:auto; padding:16px 22px}
+.dash-grid{display:grid; grid-template-columns:repeat(4,1fr); gap:12px}
+.span2{grid-column:span 2}
+.widget{background:var(--bg1); border:1px solid var(--line); border-radius:11px; padding:13px 15px 12px; display:flex; flex-direction:column}
+.widget .w-label{
+  font-family:var(--font-mono); font-size:9.5px; letter-spacing:.1em; color:var(--faint);
+  text-transform:uppercase; margin-bottom:9px; display:flex; justify-content:space-between; gap:8px; align-items:baseline;
+}
+.widget .w-by{font-size:8.5px; color:var(--ice); letter-spacing:.02em; text-transform:none; white-space:nowrap}
+.stat-num{font-family:var(--font-display); font-size:27px; font-weight:600; letter-spacing:-.02em}
+.stat-delta{font-family:var(--font-mono); font-size:10.5px; margin-top:5px}
+.up2{color:var(--green)} .down2{color:var(--red)}
+.bars{display:flex; flex-direction:column; gap:9px; flex:1; justify-content:center}
+.bar-row{display:flex; align-items:center; gap:9px; font-size:11px; color:var(--muted)}
+.bar-row .b-name{width:76px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.bar-track{flex:1; height:8px; background:var(--bg2); border-radius:99px; overflow:hidden}
+.bar-fill{height:100%; border-radius:99px; background:linear-gradient(90deg, var(--ice), var(--amber))}
+.bar-row .b-val{font-family:var(--font-mono); font-size:10px; color:var(--faint); width:48px; text-align:right}
+.spark{width:100%; height:100px}
+.widget .w-sql{
+  font-family:var(--font-mono); font-size:9px; color:var(--faint); margin-top:10px;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+.revise{padding:12px 22px 16px; border-top:1px solid var(--line-soft)}
+.revise .hint2{font-family:var(--font-mono); font-size:9.5px; color:var(--faint); margin-top:7px; padding-left:4px}
+
+/* ── AGENTS ────────────────────────────────────── */
+.pulse-dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--green);box-shadow:0 0 6px var(--green);animation:pulse2 1.6s ease-in-out infinite}
+@keyframes pulse2{50%{opacity:.3}}
+.status-pip.iter{background:#F2B14E22;color:var(--amber)}
+.agent-wrap{flex:1;overflow-y:auto;padding:16px 22px;display:flex;flex-direction:column;gap:12px}
+.agent-cards{display:grid;grid-template-columns:1.15fr 1fr 1fr;gap:12px}
+.acard h5{font-family:var(--font-mono);font-size:9.5px;letter-spacing:.1em;color:var(--faint);text-transform:uppercase;margin-bottom:8px}
+.acard p{font-size:12.5px;line-height:1.55;color:#D6DCEF}
+.scope-line{font-family:var(--font-mono);font-size:10px;color:var(--muted);line-height:1.9}
+.scope-line b{color:#7FD4C0;font-weight:500}
+.scope-line .no{color:var(--red)}
+.works-with{display:flex;flex-wrap:wrap;gap:7px;align-items:center}
+.feed{background:var(--bg1);border:1px solid var(--line);border-radius:11px;overflow:hidden}
+.feed-head{padding:10px 15px;font-family:var(--font-mono);font-size:10px;letter-spacing:.1em;color:var(--faint);text-transform:uppercase;border-bottom:1px solid var(--line-soft);display:flex;gap:9px;align-items:center}
+.fitem{display:flex;gap:12px;padding:10px 15px;border-top:1px solid var(--line-soft);font-size:12px}
+.fitem .f-it{font-family:var(--font-mono);font-size:9.5px;color:var(--faint);min-width:62px;padding-top:2px}
+.fitem .f-body{flex:1;line-height:1.55;color:#D6DCEF}
+.fitem.learn{background:#F2B14E0d}
+.fitem.learn .f-body b{color:var(--amber)}
+.fitem .f-time{font-family:var(--font-mono);font-size:9.5px;color:var(--faint);white-space:nowrap}
+.approve-btns{display:flex;gap:7px;margin-top:8px}
+.approve-btns .btn{padding:4px 11px;font-size:11px}
+@media (prefers-reduced-motion: reduce){ .pulse-dot{animation:none} }
+
+/* ── MEDIA HUB ─────────────────────────────────── */
+.media-wrap{flex:1;display:flex;flex-direction:column;min-width:0}
+.media-toolbar{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line-soft)}
+.media-toolbar .view-title{font-size:15px}
+.media-toolbar .grow{flex:1}
+.seg{display:inline-flex;background:var(--bg2);border:1px solid var(--line);border-radius:8px;padding:2px}
+.seg button{font-family:var(--font-ui);font-size:11.5px;font-weight:600;color:var(--muted);background:transparent;border:none;border-radius:6px;padding:5px 12px;cursor:pointer}
+.seg button.on{background:var(--bg0);color:var(--amber)}
+.media-body{flex:1;display:grid;grid-template-columns:268px 1fr;min-height:0;overflow:hidden}
+.create-panel{border-right:1px solid var(--line-soft);background:var(--bg1);padding:15px 14px;overflow-y:auto;display:flex;flex-direction:column;gap:13px}
+.aspect-row{display:flex;gap:6px}
+.aspect{flex:1;font-family:var(--font-mono);font-size:10px;color:var(--muted);background:var(--bg0);border:1px solid var(--line);border-radius:6px;padding:6px 0;text-align:center;cursor:pointer}
+.aspect.on{border-color:var(--amber);color:var(--amber);background:var(--amber-dim)}
+.refdrop{border:1px dashed var(--line);border-radius:8px;padding:13px;text-align:center;font-size:11px;color:var(--faint);cursor:pointer}
+.refdrop:hover{border-color:var(--ice);color:var(--ice)}
+.gen-btn{width:100%;background:var(--amber);border:none;color:#221805;font-weight:700;font-size:13px;border-radius:8px;padding:10px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:7px}
+.gen-cost{font-family:var(--font-mono);font-size:9.5px;color:var(--faint);text-align:center}
+.gallery-wrap{overflow-y:auto;padding:16px 18px}
+.gallery{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.tile{position:relative;border-radius:10px;overflow:hidden;border:1px solid var(--line);aspect-ratio:1;cursor:pointer}
+.tile.wide{grid-column:span 2;aspect-ratio:16/9}
+.tile .art{position:absolute;inset:0}
+.tile .cap{position:absolute;left:0;right:0;bottom:0;padding:8px 9px;font-size:9.5px;line-height:1.4;color:#EAF;background:linear-gradient(transparent,#06060Ccc 60%);font-family:var(--font-mono)}
+.tile .play{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:34px;height:34px;border-radius:50%;background:#0B1020cc;border:1px solid #ffffff55;display:flex;align-items:center;justify-content:center;color:#fff}
+.tile .vbadge{position:absolute;top:7px;left:7px;font-family:var(--font-mono);font-size:8.5px;color:#fff;background:#0B1020cc;border:1px solid #ffffff33;border-radius:5px;padding:2px 6px}
+.tile .acts{position:absolute;top:7px;right:7px;display:flex;gap:5px;opacity:0;transition:opacity .15s}
+.tile:hover .acts{opacity:1}
+.tile .acts span{font-family:var(--font-mono);font-size:8.5px;color:#fff;background:#0B1020cc;border:1px solid #ffffff33;border-radius:5px;padding:2px 6px;cursor:pointer}
+.tile .pinmark{position:absolute;top:7px;right:7px;font-size:11px;color:var(--amber)}
+.media-foot{padding:10px 18px;border-top:1px solid var(--line-soft);font-family:var(--font-mono);font-size:9.5px;color:var(--faint)}
+/* chat command surface */
+.cmd-row{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:9px;align-items:center}
+.cmd-row .cmd-lead{font-family:var(--font-mono);font-size:9.5px;color:var(--faint);margin-right:2px}
+.cmd-chip{font-family:var(--font-mono);font-size:10px;color:var(--ice);background:var(--ice-dim);border:1px solid #9DB9F033;border-radius:99px;padding:3px 9px;cursor:pointer}
+.cmd-chip:hover{border-color:var(--ice)}
+.cmd-chip.warm{color:var(--amber);background:var(--amber-dim);border-color:#F2B14E33}
+.tool-chip{font-family:var(--font-mono);font-size:9.5px;color:var(--amber);background:var(--amber-dim);border:1px solid #F2B14E4d;border-radius:99px;padding:2px 8px;letter-spacing:0;text-transform:none}
+
+/* ── SETTINGS ──────────────────────────────────── */
+.settings-wrap{flex:1; overflow-y:auto; padding:22px 26px; max-width:760px}
+.srow{
+  display:flex; align-items:center; gap:13px; background:var(--bg1);
+  border:1px solid var(--line); border-radius:10px; padding:13px 15px; margin-bottom:9px;
+}
+.srow .s-icon{
+  width:34px;height:34px;border-radius:8px;background:var(--bg2);display:flex;align-items:center;justify-content:center;
+  font-family:var(--font-display); font-weight:700; font-size:13px; color:var(--ice); flex:none;
+}
+.srow .s-body{flex:1; min-width:0}
+.srow .s-name{font-size:13px; font-weight:600}
+.srow .s-sub{font-family:var(--font-mono); font-size:10.5px; color:var(--faint); margin-top:3px}
+.keychain{display:inline-flex; align-items:center; gap:5px; color:var(--green)}
+.defaults-grid{display:grid; grid-template-columns:1fr 1fr; gap:12px}
+.slider-row{display:flex; align-items:center; gap:11px}
+.slider{flex:1; height:3px; background:var(--bg3); border-radius:99px; position:relative}
+.slider .fill{position:absolute; left:0; top:0; bottom:0; width:35%; background:var(--amber); border-radius:99px}
+.slider .knob{position:absolute; left:35%; top:50%; transform:translate(-50%,-50%); width:13px; height:13px; border-radius:50%; background:var(--amber); box-shadow:0 0 8px #F2B14E66}
+
+button:focus-visible, .toggle:focus-visible, .node:focus-visible, .convo:focus-visible{
+  outline:2px solid var(--amber); outline-offset:2px;
+}
+@media (prefers-reduced-motion: reduce){
+  .edges path{animation:none} .caret{animation:none}
+}
+</style>
+</head>
+<body>
+<p class="mobile-hint">Desktop app mockup · scroll sideways to explore →</p>
+
+<div class="window">
+  <div class="titlebar">
+    <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
+    <span class="app-title">Orrery</span>
+  </div>
+
+  <div class="app">
+    <!-- icon rail -->
+    <nav class="rail" aria-label="Main navigation">
+      <div class="logo" title="Orrery">
+        <svg width="42" height="42" viewBox="0 0 64 64" fill="none" aria-hidden="true">
+          <rect x="4" y="4" width="56" height="56" rx="17" fill="#111831"/>
+          <rect x="5" y="5" width="54" height="54" rx="16" stroke="#2B3658" stroke-width="2"/>
+          <ellipse cx="32" cy="32" rx="24" ry="10" transform="rotate(-22 32 32)" stroke="#9DB9F0" stroke-width="3"/>
+          <circle cx="32" cy="32" r="12" fill="#F2B14E"/>
+          <circle cx="32" cy="32" r="5.5" fill="#111831"/>
+          <path d="M14.4 39.2C20.4 44.7 32.5 46.2 43.6 42.7" stroke="#E8ECF8" stroke-width="3" stroke-linecap="round"/>
+          <circle cx="50.2" cy="19.2" r="4.2" fill="#9DB9F0" stroke="#111831" stroke-width="2"/>
+          <circle cx="13.3" cy="18.2" r="2" fill="#F2B14E"/>
+        </svg>
+      </div>
+      <button class="tab active" data-view="chat" aria-label="Chat">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M21 12a8 8 0 0 1-8 8H5l-2 2V12a8 8 0 0 1 8-8h2a8 8 0 0 1 8 8z"/></svg>
+      </button>
+      <button class="tab" data-view="data" aria-label="Data">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><ellipse cx="12" cy="5.5" rx="8" ry="3"/><path d="M4 5.5v13c0 1.7 3.6 3 8 3s8-1.3 8-3v-13"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg>
+      </button>
+      <button class="tab" data-view="dash" aria-label="Dashboards">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3.5" y="3.5" width="7" height="9" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="5" rx="1.5"/><rect x="13.5" y="11.5" width="7" height="9" rx="1.5"/><rect x="3.5" y="15.5" width="7" height="5" rx="1.5"/></svg>
+      </button>
+      <button class="tab" data-view="auto" aria-label="Automations">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8z"/></svg>
+      </button>
+      <button class="tab" data-view="agents" aria-label="Agents">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="3.2"/><ellipse cx="12" cy="12" rx="9.5" ry="4.2" transform="rotate(-25 12 12)"/><circle cx="19.6" cy="7.4" r="1.4" fill="currentColor" stroke="none"/></svg>
+      </button>
+      <button class="tab" data-view="media" aria-label="Media Hub">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="4" width="18" height="16" rx="2.5"/><circle cx="9" cy="10" r="1.8"/><path d="M3 16l5-4 4 3 3-2 6 5"/></svg>
+      </button>
+      <button class="tab" data-view="settings" aria-label="Settings">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7 7 0 0 0-2-1.2L14 3h-4l-.5 2.6a7 7 0 0 0-2 1.2l-2.4-1-2 3.4 2 1.6A7 7 0 0 0 5 12c0 .4 0 .8.1 1.2l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 2 1.2L10 21h4l.5-2.6a7 7 0 0 0 2-1.2l2.4 1 2-3.4-2-1.6c.1-.4.1-.8.1-1.2z"/></svg>
+      </button>
+      <div class="spacer"></div>
+      <div class="db-status" title="Database connected">
+        <div class="pulse"></div><span>DATABASE</span>
+      </div>
+    </nav>
+
+    <!-- ═══ CHAT ═══ -->
+    <section class="view active" id="view-chat">
+      <aside class="chat-side">
+        <button class="btn primary">+ New chat</button>
+        <input class="search" placeholder="Search chats…">
+        <div class="convo-list">
+          <div class="convo active" tabindex="0"><div class="c-title">Q2 product growth</div><div class="c-meta">claude-sonnet-4-6 · 2m ago</div></div>
+          <div class="convo" tabindex="0"><div class="c-title">Refactor embed pipeline</div><div class="c-meta">gpt-4o · yesterday</div></div>
+          <div class="convo" tabindex="0"><div class="c-title">Slack digest prompt ideas</div><div class="c-meta">claude-haiku-4-5 · Tue</div></div>
+          <div class="convo" tabindex="0"><div class="c-title">Local model sanity test</div><div class="c-meta">llama3 · ollama · Mon</div></div>
+        </div>
+      </aside>
+      <div class="chat-main">
+        <div class="chat-header">
+          <span class="view-title">Q2 product growth</span>
+          <span class="pill model-pill" title="Switch model"><b>claude-sonnet-4-6</b> ▾</span>
+          <span class="pill" title="Edit system prompt">System prompt</span>
+          <span class="rag-toggle">Use my data <span class="toggle on" role="switch" aria-checked="true" tabindex="0"></span></span>
+        </div>
+        <div class="thread">
+          <div class="msg user">Which products grew fastest last quarter? Use the orders table.</div>
+          <div class="msg ai">
+            <div class="who">Orrery <span class="rag-chip">searched: orders · 4 matches</span></div>
+            <p>I queried your <span class="mono" style="color:var(--ice)">orders</span> table for Q2 vs Q1. Three products stand out:</p>
+            <table class="mini-table">
+              <tr><th>PRODUCT</th><th>Q2 REVENUE</th><th>GROWTH</th></tr>
+              <tr><td>Atlas Pro</td><td>$84,210</td><td class="up">+41%</td></tr>
+              <tr><td>Nimbus API</td><td>$52,400</td><td class="up">+27%</td></tr>
+              <tr><td>Field Kit</td><td>$31,975</td><td class="up">+18%</td></tr>
+            </table>
+            <p>The query I ran, if you want to reuse it:</p>
+            <pre>SELECT product, SUM(total) AS q2
+FROM orders
+WHERE created_at >= '2026-04-01'
+GROUP BY product ORDER BY q2 DESC;</pre>
+            <p>Atlas Pro's jump lines up with the May pricing change<span class="caret"></span></p>
+          </div>
+        </div>
+        <div class="composer">
+          <div class="cmd-row">
+            <span class="cmd-lead">type / to run anything:</span>
+            <span class="cmd-chip warm">/image</span>
+            <span class="cmd-chip warm">/video</span>
+            <span class="cmd-chip">/run automation</span>
+            <span class="cmd-chip">/agent</span>
+            <span class="cmd-chip">/dashboard</span>
+            <span class="cmd-chip">/search docs</span>
+          </div>
+          <div class="composer-box">
+            <button class="icon-btn" aria-label="Attach file"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M21 12.5l-8.5 8.5a6 6 0 0 1-8.5-8.5l9-9a4 4 0 0 1 5.7 5.7l-9 9a2 2 0 0 1-2.8-2.8l8.3-8.4"/></svg></button>
+            <input placeholder="Ask, or type / to generate media, run automations, start agents, build dashboards…">
+            <button class="send" aria-label="Send"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
+          </div>
+          <div class="hint">saved as you go — in your database, nowhere else</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══ DATA ═══ -->
+    <section class="view" id="view-data">
+      <div class="data-wrap">
+        <span class="view-title">Data</span>
+        <div class="section-label">Database connections</div>
+        <div class="card-row">
+          <div class="card">
+            <h4><span class="sdot" style="width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 6px var(--green)"></span>main</h4>
+            <div class="meta">localhost:5432/orrery<br>connected · 12 ms</div>
+            <div class="foot"><span class="tag">vector search</span><span class="tag warm">workflow queue</span></div>
+          </div>
+          <div class="card">
+            <h4><span class="sdot" style="width:7px;height:7px;border-radius:50%;background:var(--faint)"></span>analytics-replica</h4>
+            <div class="meta">10.0.0.4:5432/analytics<br>read-only · idle</div>
+            <div class="foot"><button class="btn ghost" style="padding:4px 10px;font-size:11px">Test connection</button></div>
+          </div>
+          <div class="card add">+ Add connection</div>
+        </div>
+
+        <div class="section-label">Document collections · RAG</div>
+        <div class="card-row">
+          <div class="card">
+            <h4>Product docs</h4>
+            <div class="meta">128 files · 4,212 chunks<br>text-embedding-3-small · indexed 2 h ago</div>
+            <div class="foot"><button class="btn ghost" style="padding:4px 10px;font-size:11px">Re-index</button><span class="tag">used in 3 chats</span></div>
+          </div>
+          <div class="card">
+            <h4>Support tickets</h4>
+            <div class="meta">synced from table: tickets<br>9,860 chunks · auto-embeds new rows</div>
+            <div class="foot"><span class="tag warm">live sync</span></div>
+          </div>
+          <div class="card add">+ New collection — drop files to embed</div>
+        </div>
+
+        <div class="section-label">Table browser</div>
+        <div class="table-shell">
+          <div class="table-bar">
+            <span class="pill"><b class="mono" style="color:var(--ice);font-weight:500;font-size:11px">orders</b> ▾</span>
+            <span class="pill">read-only query</span>
+          </div>
+          <table class="dtable">
+            <tr><th>ID</th><th>CUSTOMER</th><th>PRODUCT</th><th>TOTAL</th><th>CREATED_AT</th></tr>
+            <tr><td>1284</td><td>Meridian Co</td><td>Atlas Pro</td><td>$1,920</td><td>2026-06-12 18:04</td></tr>
+            <tr><td>1283</td><td>Halberd Labs</td><td>Nimbus API</td><td>$640</td><td>2026-06-12 16:31</td></tr>
+            <tr><td>1282</td><td>Outland LLC</td><td>Field Kit</td><td>$275</td><td>2026-06-12 14:09</td></tr>
+          </table>
+          <div class="table-foot">1,284 rows · changes here can trigger workflows</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══ DASHBOARDS ═══ -->
+    <section class="view" id="view-dash">
+      <aside class="auto-side">
+        <button class="btn primary">+ New dashboard</button>
+        <div style="font-family:var(--font-mono);font-size:9px;color:var(--faint);line-height:1.7;padding:0 3px">describe it in plain words ·<br>pick the model that builds it</div>
+        <div class="convo-list">
+          <div class="wf active" tabindex="0">
+            <div class="w-name">Sales overview <span class="status-pip live">LIVE</span></div>
+            <div class="w-meta">built by claude-sonnet-4-6<br>5 widgets · refreshes 15 min</div>
+          </div>
+          <div class="wf" tabindex="0">
+            <div class="w-name">Support health <span class="status-pip live">LIVE</span></div>
+            <div class="w-meta">built by gpt-4o<br>4 widgets · refreshes hourly</div>
+          </div>
+          <div class="wf" tabindex="0">
+            <div class="w-name">Infra costs <span class="status-pip paused">DRAFT</span></div>
+            <div class="w-meta">built by llama3 · local</div>
+          </div>
+        </div>
+      </aside>
+      <div class="auto-main">
+        <div class="auto-toolbar">
+          <span class="view-title">Sales overview</span>
+          <span class="pill"><b class="mono" style="color:var(--ice);font-weight:500;font-size:10.5px">built by claude-sonnet-4-6</b></span>
+          <span class="pill">auto-refresh · 15 min</span>
+          <div class="grow"></div>
+          <button class="btn primary">↻ Refresh now</button>
+          <button class="btn ghost">Share</button>
+          <button class="btn ghost" aria-label="More">⋯</button>
+        </div>
+        <div class="dash-wrap">
+          <div class="dash-grid">
+            <div class="widget">
+              <div class="w-label">Revenue · this month</div>
+              <div class="stat-num">$168.4k</div>
+              <div class="stat-delta up2">▲ +12% vs May</div>
+              <div class="w-sql">SELECT SUM(total) FROM orders WHERE created_at >= date_trunc('month', now())</div>
+            </div>
+            <div class="widget">
+              <div class="w-label">Orders</div>
+              <div class="stat-num">1,284</div>
+              <div class="stat-delta up2">▲ +6.1%</div>
+              <div class="w-sql">SELECT COUNT(*) FROM orders WHERE …</div>
+            </div>
+            <div class="widget span2">
+              <div class="w-label">Revenue · last 30 days <span class="w-by">claude-sonnet-4-6</span></div>
+              <svg class="spark" viewBox="0 0 320 100" aria-hidden="true">
+                <defs><linearGradient id="lg1" x1="0" y1="0" x2="1" y2="0">
+                  <stop offset="0" stop-color="#9DB9F0"/><stop offset="1" stop-color="#F2B14E"/>
+                </linearGradient></defs>
+                <path d="M10,76 L54,66 L98,71 L142,54 L186,60 L230,41 L274,46 L312,22" fill="none" stroke="url(#lg1)" stroke-width="1.6"/>
+                <g fill="#E8ECF8"><circle cx="10" cy="76" r="2"/><circle cx="54" cy="66" r="2"/><circle cx="98" cy="71" r="2"/><circle cx="142" cy="54" r="2"/><circle cx="186" cy="60" r="2"/><circle cx="230" cy="41" r="2"/><circle cx="274" cy="46" r="2"/></g>
+                <circle cx="312" cy="22" r="3" fill="#F2B14E"/>
+              </svg>
+              <div class="w-sql">SELECT date(created_at), SUM(total) FROM orders GROUP BY 1 ORDER BY 1</div>
+            </div>
+            <div class="widget span2">
+              <div class="w-label">Top products <span class="w-by">claude-sonnet-4-6</span></div>
+              <div class="bars">
+                <div class="bar-row"><span class="b-name">Atlas Pro</span><div class="bar-track"><div class="bar-fill" style="width:100%"></div></div><span class="b-val">$84.2k</span></div>
+                <div class="bar-row"><span class="b-name">Nimbus API</span><div class="bar-track"><div class="bar-fill" style="width:62%"></div></div><span class="b-val">$52.4k</span></div>
+                <div class="bar-row"><span class="b-name">Field Kit</span><div class="bar-track"><div class="bar-fill" style="width:38%"></div></div><span class="b-val">$31.9k</span></div>
+                <div class="bar-row"><span class="b-name">Halo Add-on</span><div class="bar-track"><div class="bar-fill" style="width:15%"></div></div><span class="b-val">$12.6k</span></div>
+              </div>
+              <div class="w-sql">SELECT product, SUM(total) FROM orders GROUP BY product ORDER BY 2 DESC LIMIT 4</div>
+            </div>
+            <div class="widget span2">
+              <div class="w-label">Latest orders <span class="w-by">added by gpt-4o</span></div>
+              <table class="mini-table">
+                <tr><th>CUSTOMER</th><th>PRODUCT</th><th>TOTAL</th></tr>
+                <tr><td>Meridian Co</td><td>Atlas Pro</td><td>$1,920</td></tr>
+                <tr><td>Halberd Labs</td><td>Nimbus API</td><td>$640</td></tr>
+                <tr><td>Outland LLC</td><td>Field Kit</td><td>$275</td></tr>
+              </table>
+              <div class="w-sql">SELECT customer, product, total FROM orders ORDER BY created_at DESC LIMIT 3</div>
+            </div>
+            <div class="widget span2 card add" style="min-height:0">+ Add a widget — or pin one from Chat</div>
+          </div>
+        </div>
+        <div class="revise">
+          <div class="composer-box">
+            <span class="pill model-pill" style="flex:none"><b>claude-sonnet-4-6</b> ▾</span>
+            <input placeholder="Change this dashboard — add a refunds widget, make revenue weekly…">
+            <button class="send" aria-label="Apply"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
+          </div>
+          <div class="hint2">designed by AI once — refreshing just re-runs the saved queries on your live data, no AI needed</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══ AUTOMATIONS ═══ -->
+    <section class="view" id="view-auto">
+      <aside class="auto-side">
+        <button class="btn primary">+ New workflow</button>
+        <div class="convo-list">
+          <div class="wf active" tabindex="0">
+            <div class="w-name">Morning sales digest <span class="status-pip live">ACTIVE</span></div>
+            <div class="w-meta">cron · weekdays 9:00<br>last run 9:00 ✓ · 98% ok</div>
+          </div>
+          <div class="wf" tabindex="0">
+            <div class="w-name">Ticket triage <span class="status-pip live">ACTIVE</span></div>
+            <div class="w-meta">on new row · tickets<br>live trigger · 124 runs</div>
+          </div>
+          <div class="wf" tabindex="0">
+            <div class="w-name">Doc reply drafts <span class="status-pip paused">PAUSED</span></div>
+            <div class="w-meta">webhook · /hooks/drafts</div>
+          </div>
+        </div>
+      </aside>
+      <div class="auto-main">
+        <div class="auto-toolbar">
+          <span class="view-title">Morning sales digest</span>
+          <span class="pill"><span class="sdot badge-on" style="background:var(--green);width:6px;height:6px"></span>Active</span>
+          <div class="grow"></div>
+          <button class="btn primary">▶ Run now</button>
+          <button class="btn">Pause</button>
+          <button class="btn ghost">Export JSON</button>
+          <button class="btn ghost" aria-label="More">⋯</button>
+        </div>
+
+        <div class="canvas-zone">
+          <div class="canvas" id="canvas">
+            <svg class="edges" id="edges"></svg>
+
+            <div class="palette">
+              <div class="p-label">Add a node</div>
+              <div class="p-item"><i style="background:var(--ice)"></i>Schedule</div>
+              <div class="p-item"><i style="background:var(--ice)"></i>On new row</div>
+              <div class="p-item"><i style="background:var(--amber)"></i>LLM prompt</div>
+              <div class="p-item"><i style="background:var(--amber)"></i>Search docs</div>
+              <div class="p-item"><i style="background:#7FD4C0"></i>DB query</div>
+              <div class="p-item"><i style="background:#7FD4C0"></i>HTTP request</div>
+              <div class="p-item"><i style="background:#C49DF0"></i>If / branch</div>
+              <div class="p-item"><i style="background:#C49DF0"></i>Python snippet</div>
+            </div>
+
+            <div class="node" id="n1" style="left:170px; top:118px" tabindex="0">
+              <div class="n-kind k-trigger"><span class="k-star"></span>Trigger</div>
+              <div class="n-title">Every weekday</div>
+              <div class="n-sub">cron 0 9 * * 1-5</div>
+              <span class="port out"></span>
+            </div>
+            <div class="node" id="n2" style="left:392px; top:118px" tabindex="0">
+              <div class="n-kind k-data"><span class="k-star"></span>Data</div>
+              <div class="n-title">Query orders</div>
+              <div class="n-sub">SELECT … WHERE created_at…</div>
+              <span class="port in"></span><span class="port out"></span>
+            </div>
+            <div class="node selected" id="n3" style="left:614px; top:110px" tabindex="0">
+              <div class="n-kind k-ai"><span class="k-star"></span>AI</div>
+              <div class="n-title">Write the digest</div>
+              <div class="n-sub">claude-sonnet-4-6 · {{n2.rows}}</div>
+              <span class="port in"></span><span class="port out"></span>
+            </div>
+            <div class="node" id="n4" style="left:836px; top:118px" tabindex="0">
+              <div class="n-kind k-logic"><span class="k-star"></span>Logic</div>
+              <div class="n-title">Any decline?</div>
+              <div class="n-sub">if growth < 0 → flag</div>
+              <span class="port in"></span><span class="port out"></span>
+            </div>
+            <div class="node" id="n5" style="left:836px; top:268px" tabindex="0">
+              <div class="n-kind k-data"><span class="k-star"></span>Data</div>
+              <div class="n-title">Post to Slack</div>
+              <div class="n-sub">POST hooks.slack.com/…</div>
+              <span class="port in"></span>
+            </div>
+            <div class="node" id="n6" style="left:614px; top:268px" tabindex="0">
+              <div class="n-kind k-data"><span class="k-star"></span>Data</div>
+              <div class="n-title">Save digest</div>
+              <div class="n-sub">INSERT INTO digests</div>
+              <span class="port in"></span>
+            </div>
+          </div>
+
+          <aside class="config" id="config"></aside>
+        </div>
+
+        <div class="runs">
+          <div class="runs-head">Run history <span style="color:var(--line)">·</span> stored in your database — runs survive app restarts</div>
+          <div class="run-row" data-steps="s1">
+            <span class="run-ok">✓</span><span class="r-when">Today 9:00 — completed</span><span class="r-time">4.2s</span>
+          </div>
+          <div class="run-steps" id="s1">
+            <div class="step"><b>Every weekday</b> fired on schedule · 0.0s</div>
+            <div class="step"><b>Query orders</b> 312 rows · 0.4s</div>
+            <div class="step"><b>Write the digest</b> 486 tokens · 2.9s</div>
+            <div class="step"><b>Any decline?</b> false → skip flag · 0.0s</div>
+            <div class="step"><b>Post to Slack · Save digest</b> 200 OK · inserted 1 row · 0.9s</div>
+          </div>
+          <div class="run-row" data-steps="s2">
+            <span class="run-fail">✕</span><span class="r-when">Jun 11, 9:00 — failed, then recovered</span><span class="r-time">31.8s</span>
+          </div>
+          <div class="run-steps" id="s2">
+            <div class="step"><b>Post to Slack</b> <span class="fail-note">HTTP 500 — retried ×3 with backoff, succeeded on attempt 4</span></div>
+          </div>
+          <div class="run-row" data-steps="s3">
+            <span class="run-ok">✓</span><span class="r-when">Jun 10, 9:00 — completed</span><span class="r-time">3.9s</span>
+          </div>
+          <div class="run-steps" id="s3">
+            <div class="step"><b>All 6 nodes</b> completed without retries</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══ AGENTS ═══ -->
+    <section class="view" id="view-agents">
+      <aside class="auto-side">
+        <button class="btn primary">+ New agent</button>
+        <div style="font-family:var(--font-mono);font-size:9px;color:var(--faint);line-height:1.7;padding:0 3px">a goal · a scope · a model ·<br>a way to run</div>
+        <div class="convo-list">
+          <div class="wf active" tabindex="0">
+            <div class="w-name">Ticket triager <span class="status-pip live">RUNNING</span></div>
+            <div class="w-meta">continuous · checks every 5 min<br>claude-sonnet-4-6 · scope: tickets</div>
+          </div>
+          <div class="wf" tabindex="0">
+            <div class="w-name">Data quality fixer <span class="status-pip paused">SLEEPS 1H</span></div>
+            <div class="w-meta">on a timer · wakes hourly<br>gpt-4o · scope: orders</div>
+          </div>
+          <div class="wf" tabindex="0">
+            <div class="w-name">Report improver <span class="status-pip iter">LOOP 4/10</span></div>
+            <div class="w-meta">until done · improving each pass<br>llama3 · local · scope: digests</div>
+          </div>
+        </div>
+      </aside>
+      <div class="auto-main">
+        <div class="auto-toolbar">
+          <span class="view-title">Ticket triager</span>
+          <span class="pill"><span class="pulse-dot"></span>Running</span>
+          <span class="pill"><b class="mono" style="color:var(--ice);font-weight:500;font-size:10.5px">claude-sonnet-4-6</b></span>
+          <div class="grow"></div>
+          <button class="btn">⏸ Pause</button>
+          <button class="btn ghost">■ Stop</button>
+          <button class="btn ghost">Edit scope</button>
+        </div>
+        <div class="agent-wrap">
+          <div class="agent-cards">
+            <div class="card acard">
+              <h5>Goal</h5>
+              <p>Keep every new support ticket triaged — category, priority, and a one-line summary. Accuracy matters more than speed; ask me when unsure.</p>
+            </div>
+            <div class="card acard">
+              <h5>Scope — works only here</h5>
+              <div class="scope-line">
+                tables · <b>tickets</b> read/write · <b>products</b> read<br>
+                tools · <b>database</b>, <b>LLM</b><br>
+                <span class="no">cannot</span> delete rows · touch other tables<br>
+                limits · 60 loops/day · 80% confidence bar
+              </div>
+            </div>
+            <div class="card acard">
+              <h5>Run mode &amp; budget</h5>
+              <div class="scope-line">continuous · checks every <b>5 min</b><br>stops when · you stop it · budget hit · 3 errors in a row</div>
+              <div style="font-family:var(--font-mono);font-size:10px;color:var(--muted);margin-top:10px">today $0.42 / $2.00</div>
+              <div class="slider" style="margin-top:7px"><div class="fill" style="width:21%"></div></div>
+            </div>
+          </div>
+
+          <div class="works-with">
+            <span class="section-label" style="margin:0">Works with</span>
+            <span class="pill">⇄ agent · Data quality fixer</span>
+            <span class="pill">→ automation · Doc reply drafts</span>
+            <span class="pill">→ you · approvals under 80% confidence</span>
+          </div>
+
+          <div class="feed">
+            <div class="feed-head"><span class="pulse-dot"></span>Live activity — every step and learning is logged</div>
+            <div class="fitem">
+              <span class="f-it">LOOP 12</span>
+              <span class="f-body">Found 3 new tickets → classified 2 billing, 1 bug at 94% confidence → wrote category, priority, summary to <span class="mono" style="color:#7FD4C0">tickets</span>.</span>
+              <span class="f-time">2m</span>
+            </div>
+            <div class="fitem learn">
+              <span class="f-it">NOTE</span>
+              <span class="f-body"><b>Learned:</b> "urgent" in a subject line is a weak signal — refund mentions predict priority better. Saved to my notes; future loops start from this.</span>
+              <span class="f-time">1h</span>
+            </div>
+            <div class="fitem">
+              <span class="f-it">LOOP 9</span>
+              <span class="f-body">Ticket #4811 classified at 61% — below my 80% bar, so it is waiting for you.
+                <span class="approve-btns"><button class="btn">Approve</button><button class="btn ghost">Reclassify</button></span>
+              </span>
+              <span class="f-time">1h</span>
+            </div>
+            <div class="fitem">
+              <span class="f-it">LOOP 8</span>
+              <span class="f-body">Idle pass — no new tickets. Re-checked the last 20 labels against my notes; all consistent.</span>
+              <span class="f-time">3h</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══ MEDIA HUB ═══ -->
+    <section class="view" id="view-media">
+      <div class="media-wrap">
+        <div class="media-toolbar">
+          <span class="view-title">Media Hub</span>
+          <div class="seg">
+            <button class="on">Image</button><button>Video</button><button>Library</button>
+          </div>
+          <span class="pill model-pill"><b>your image model</b> ▾</span>
+          <div class="grow"></div>
+          <span class="pill"><span class="sdot" style="width:6px;height:6px;background:var(--green)"></span>your keys</span>
+        </div>
+        <div class="media-body">
+          <div class="create-panel">
+            <div class="field"><label>Prompt</label><textarea rows="4" readonly>A bioluminescent observatory under a sweeping aurora, long exposure, ultra-detailed</textarea></div>
+            <div class="field"><label>Negative</label><div class="input mono" style="font-size:11px;color:var(--muted)">blurry, watermark, text</div></div>
+            <div class="field"><label>Aspect</label>
+              <div class="aspect-row"><span class="aspect on">1:1</span><span class="aspect">16:9</span><span class="aspect">9:16</span><span class="aspect">3:2</span></div>
+            </div>
+            <div class="field"><label>Count &amp; seed</label>
+              <div class="aspect-row"><span class="aspect">×4</span><span class="aspect">seed 7741</span><span class="aspect">steps 30</span></div>
+            </div>
+            <div class="field"><label>Reference (img→img / img→video)</label><div class="refdrop">drop an image, or pin one from Chat</div></div>
+            <button class="gen-btn">✦ Generate</button>
+            <div class="gen-cost">runs on the provider you chose · local model = $0</div>
+          </div>
+          <div class="gallery-wrap">
+            <div class="gallery">
+              <div class="tile wide">
+                <div class="art" style="background:radial-gradient(120% 100% at 20% 0%,#27407a,#0b1020 60%),radial-gradient(80% 80% at 80% 90%,#7a5acf55,transparent)"></div>
+                <span class="vbadge">▶ video · 6s</span>
+                <div class="play"><svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></div>
+                <div class="cap">aurora timelapse over the observatory — image→video</div>
+                <div class="acts"><span>Remix</span><span>⤓</span></div>
+              </div>
+              <div class="tile">
+                <div class="art" style="background:radial-gradient(100% 100% at 30% 20%,#2e6f8f,#0b1020 70%)"></div>
+                <span class="pinmark">★</span>
+                <div class="cap">observatory · aurora · v1</div>
+              </div>
+              <div class="tile">
+                <div class="art" style="background:radial-gradient(100% 100% at 70% 30%,#8f6b2e,#0b1020 70%)"></div>
+                <div class="cap">warmer palette · v2</div>
+                <div class="acts"><span>Pin</span><span>⤓</span></div>
+              </div>
+              <div class="tile">
+                <div class="art" style="background:radial-gradient(100% 100% at 40% 60%,#5b3a8f,#0b1020 70%)"></div>
+                <div class="cap">violet variant · v3</div>
+                <div class="acts"><span>Pin</span><span>⤓</span></div>
+              </div>
+              <div class="tile">
+                <div class="art" style="background:radial-gradient(100% 100% at 60% 40%,#2e8f6b,#0b1020 70%)"></div>
+                <div class="cap">teal variant · v4</div>
+                <div class="acts"><span>Pin</span><span>⤓</span></div>
+              </div>
+              <div class="tile add" style="border-style:dashed;display:flex;align-items:center;justify-content:center;color:var(--faint);font-size:11px;aspect-ratio:1">history →</div>
+            </div>
+          </div>
+        </div>
+        <div class="media-foot">prompts + settings saved to your database · files in your local media library · any asset is reusable from Chat and Automations</div>
+      </div>
+    </section>
+
+    <!-- ═══ SETTINGS ═══ -->
+    <section class="view" id="view-settings">
+      <div class="settings-wrap">
+        <span class="view-title">Settings</span>
+
+        <div class="section-label">API keys — stored in your system keychain, never in files</div>
+        <div class="srow">
+          <div class="s-icon">A</div>
+          <div class="s-body"><div class="s-name">Anthropic</div><div class="s-sub">sk-ant-••••••••3kF9 · <span class="keychain">⌗ in keychain</span></div></div>
+          <button class="btn ghost">Edit</button>
+        </div>
+        <div class="srow">
+          <div class="s-icon">O</div>
+          <div class="s-body"><div class="s-name">OpenAI</div><div class="s-sub">sk-••••••••q2Lm · <span class="keychain">⌗ in keychain</span></div></div>
+          <button class="btn ghost">Edit</button>
+        </div>
+        <div class="srow">
+          <div class="s-icon">λ</div>
+          <div class="s-body"><div class="s-name">Ollama — local models</div><div class="s-sub">http://localhost:11434 · no key needed</div></div>
+          <button class="btn ghost">Edit</button>
+        </div>
+        <button class="btn" style="margin-bottom:4px">+ Add provider</button>
+
+        <div class="section-label">MCP servers — plug your own tools into chat and workflows</div>
+        <div class="srow">
+          <div class="s-icon">⌥</div>
+          <div class="s-body"><div class="s-name">filesystem</div><div class="s-sub">connected · 4 tools available</div></div>
+          <span class="toggle on" role="switch" aria-checked="true" tabindex="0"></span>
+        </div>
+        <div class="srow">
+          <div class="s-icon">⌥</div>
+          <div class="s-body"><div class="s-name">github</div><div class="s-sub">not connected — arrives in Phase 6</div></div>
+          <span class="toggle" role="switch" aria-checked="false" tabindex="0"></span>
+        </div>
+
+        <div class="section-label">Defaults</div>
+        <div class="defaults-grid">
+          <div class="srow" style="margin:0">
+            <div class="s-body"><div class="s-name">Default model</div><div class="s-sub">claude-sonnet-4-6 ▾</div></div>
+          </div>
+          <div class="srow" style="margin:0">
+            <div class="s-body" style="width:100%"><div class="s-name" style="margin-bottom:9px">Temperature · 0.7</div>
+              <div class="slider-row"><div class="slider"><div class="fill"></div><div class="knob"></div></div></div>
+            </div>
+          </div>
+          <div class="srow" style="margin:0">
+            <div class="s-body"><div class="s-name">Theme</div><div class="s-sub">Night — default</div></div>
+          </div>
+          <div class="srow" style="margin:0">
+            <div class="s-body"><div class="s-name">Run logs retention</div><div class="s-sub">keep 90 days ▾</div></div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<script>
+// ── tab switching ─────────────────────────────────
+const tabs = document.querySelectorAll('.tab');
+tabs.forEach(t => t.addEventListener('click', () => {
+  tabs.forEach(x => x.classList.remove('active'));
+  t.classList.add('active');
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.getElementById('view-' + t.dataset.view).classList.add('active');
+  if (t.dataset.view === 'auto') requestAnimationFrame(drawEdges);
+}));
+
+// ── node config panel ─────────────────────────────
+const NODE_CFG = {
+  n1:{kind:'k-trigger',k:'Trigger',title:'Every weekday',fields:[
+    {l:'Schedule (cron)',t:'input',v:'0 9 * * 1-5'},
+    {l:'Timezone',t:'input',v:'Asia/Kolkata'},
+    {l:'Powered by',t:'note',v:'Built-in scheduler — stored in your database'}]},
+  n2:{kind:'k-data',k:'Data',title:'Query orders',fields:[
+    {l:'Connection',t:'input',v:'main'},
+    {l:'SQL',t:'area',v:"SELECT product, SUM(total)\nFROM orders\nWHERE created_at >= now() - interval '1 day'\nGROUP BY product;"},
+    {l:'On failure',t:'input',v:'Retry ×3, exponential backoff'}]},
+  n3:{kind:'k-ai',k:'AI',title:'Write the digest',fields:[
+    {l:'Model',t:'input',v:'claude-sonnet-4-6  (via litellm)'},
+    {l:'Prompt',t:'area',v:'Summarize yesterday\u2019s sales for the team.\nHighlight movers and one risk.\n\nData: {{n2.rows}}'},
+    {l:'Insert a variable',t:'vars',v:['{{n2.rows}}','{{n1.fired_at}}','{{run.id}}']},
+    {l:'On failure',t:'input',v:'Retry ×3, exponential backoff'}]},
+  n4:{kind:'k-logic',k:'Logic',title:'Any decline?',fields:[
+    {l:'Condition',t:'input',v:'{{n3.growth_min}} < 0'},
+    {l:'If true',t:'note',v:'continue to flag · if false, skip'}]},
+  n5:{kind:'k-data',k:'Data',title:'Post to Slack',fields:[
+    {l:'Method · URL',t:'input',v:'POST hooks.slack.com/T0…/B8…'},
+    {l:'Body',t:'area',v:'{ "text": "{{n3.text}}" }'},
+    {l:'On failure',t:'input',v:'Retry ×3, exponential backoff'}]},
+  n6:{kind:'k-data',k:'Data',title:'Save digest',fields:[
+    {l:'Connection · table',t:'input',v:'main · digests'},
+    {l:'Insert',t:'area',v:'{ "body": "{{n3.text}}",\n  "run_id": "{{run.id}}" }'}]}
+};
+const cfgEl = document.getElementById('config');
+function renderCfg(id){
+  const c = NODE_CFG[id];
+  let h = `<div class="cfg-head"><div class="n-kind ${c.kind}"><span class="k-star"></span>${c.k} node</div>
+           <div class="cfg-title">${c.title}</div></div>`;
+  c.fields.forEach(f => {
+    h += `<div class="field"><label>${f.l}</label>`;
+    if (f.t==='input') h += `<div class="input mono" style="font-size:11px">${f.v}</div>`;
+    if (f.t==='area')  h += `<textarea rows="5" readonly>${f.v}</textarea>`;
+    if (f.t==='note')  h += `<div style="font-size:11.5px;color:var(--muted);line-height:1.55">${f.v}</div>`;
+    if (f.t==='vars')  h += `<div class="var-chips">`+f.v.map(x=>`<span class="var-chip">${x}</span>`).join('')+`</div>`;
+    h += `</div>`;
+  });
+  h += `<button class="btn" style="margin-top:2px">Test this node</button>`;
+  cfgEl.innerHTML = h;
+}
+document.querySelectorAll('.node').forEach(n => {
+  n.addEventListener('click', () => {
+    document.querySelectorAll('.node').forEach(x => x.classList.remove('selected'));
+    n.classList.add('selected');
+    renderCfg(n.id);
+  });
+});
+renderCfg('n3');
+
+// ── constellation edges ───────────────────────────
+const EDGES = [['n1','n2'],['n2','n3'],['n3','n4'],['n4','n5'],['n3','n6']];
+function drawEdges(){
+  const cv = document.getElementById('canvas'), svg = document.getElementById('edges');
+  const cb = cv.getBoundingClientRect();
+  svg.setAttribute('viewBox', `0 0 ${cb.width} ${cb.height}`);
+  svg.innerHTML = EDGES.map(([a,b]) => {
+    const ra = document.getElementById(a).getBoundingClientRect();
+    const rb = document.getElementById(b).getBoundingClientRect();
+    const x1 = ra.right - cb.left, y1 = ra.top - cb.top + ra.height/2;
+    const x2 = rb.left  - cb.left, y2 = rb.top - cb.top + rb.height/2;
+    const dx = Math.max(36, (x2 - x1) / 2);
+    return `<path d="M ${x1} ${y1} C ${x1+dx} ${y1}, ${x2-dx} ${y2}, ${x2} ${y2}"/>`;
+  }).join('');
+}
+window.addEventListener('resize', drawEdges);
+
+// ── run history expand ────────────────────────────
+document.querySelectorAll('.run-row').forEach(r => {
+  r.addEventListener('click', () => document.getElementById(r.dataset.steps).classList.toggle('open'));
+});
+
+// ── toggles ───────────────────────────────────────
+document.querySelectorAll('.toggle').forEach(t => {
+  const flip = () => { t.classList.toggle('on'); t.setAttribute('aria-checked', t.classList.contains('on')); };
+  t.addEventListener('click', flip);
+  t.addEventListener('keydown', e => { if (e.key===' '||e.key==='Enter'){ e.preventDefault(); flip(); }});
+});
+</script>
+</body>
+</html>

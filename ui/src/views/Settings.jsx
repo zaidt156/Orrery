@@ -1,0 +1,793 @@
+import { useEffect, useState } from "react";
+import {
+  Building2,
+  Cpu,
+  Download,
+  ImagePlus,
+  KeyRound,
+  LogIn,
+  MessageSquareText,
+  Plug,
+  RefreshCw,
+  Save,
+  SlidersHorizontal,
+  Trash2,
+  WalletCards,
+} from "lucide-react";
+import Toggle from "../components/Toggle.jsx";
+import {
+  addCustomModel,
+  clearProviderKey,
+  connectPlan,
+  deleteCustomModel,
+  disconnectPlan,
+  getBranding,
+  getModelCatalog,
+  getProviders,
+  getUsage,
+  installPlanCli,
+  loginPlanCli,
+  refreshPlan,
+  setBranding,
+  setModelActive,
+  setProviderKey,
+  setSpendCap,
+  submitFeedback,
+} from "../lib/api.js";
+
+const PLAN_MODE_IDS = ["claude_plan", "chatgpt_plan", "gemini_plan"];
+
+const ICON = {
+  claude_plan: "C", chatgpt_plan: "O", gemini_plan: "G",
+  anthropic: "A", openai: "O", google: "G",
+  mistral: "M", deepseek: "D", ollama: "L", custom: "+",
+};
+
+const PROVIDER_LABEL = {
+  claude_plan: "Claude plan (Claude Code)", chatgpt_plan: "ChatGPT plan (Codex CLI)",
+  gemini_plan: "Google account (Gemini CLI)", anthropic: "Anthropic", openai: "OpenAI",
+  google: "Google", mistral: "Mistral (EU)", deepseek: "DeepSeek",
+  ollama: "Ollama (local)", custom: "Custom models",
+};
+
+const SETTINGS_SECTIONS = [
+  { id: "general", label: "General", Icon: SlidersHorizontal },
+  { id: "accounts", label: "Accounts", Icon: KeyRound },
+  { id: "models", label: "Models", Icon: Cpu },
+  { id: "usage", label: "Usage", Icon: WalletCards },
+  { id: "integrations", label: "Integrations", Icon: Plug },
+  { id: "feedback", label: "Feedback", Icon: MessageSquareText },
+];
+
+// OpenAI-compatible presets — picking one fills the base URL (and a sample model)
+const CUSTOM_PRESETS = [
+  { name: "OpenRouter", base_url: "https://openrouter.ai/api/v1", model: "" },
+  { name: "Qwen (Alibaba)", base_url: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1", model: "qwen3.7-max" },
+  { name: "Kimi (Moonshot)", base_url: "https://api.moonshot.ai/v1", model: "kimi-k2.7-code" },
+  { name: "GLM (Z.AI)", base_url: "https://api.z.ai/api/paas/v4", model: "glm-5.2" },
+  { name: "Together", base_url: "https://api.together.xyz/v1", model: "" },
+  { name: "Groq", base_url: "https://api.groq.com/openai/v1", model: "" },
+];
+
+function CtrlToggle({ on, busy, onClick }) {
+  return (
+    <span
+      className={`toggle${on ? " on" : ""}`}
+      role="switch"
+      aria-checked={on}
+      aria-busy={busy || undefined}
+      tabIndex={0}
+      onClick={onClick}
+      onKeyDown={(e) => { if (e.key === " " || e.key === "Enter") { e.preventDefault(); onClick(); } }}
+    />
+  );
+}
+
+function StatusText({ mode }) {
+  if (mode.configured) return <span className="keychain">✓ {mode.preview || "connected"}</span>;
+  if (mode.status === "unsupported") return <span className="mode-off">unsupported</span>;
+  if (mode.kind === "local") return <span className="keychain">local</span>;
+  return <span className="mode-off">not connected</span>;
+}
+
+function ApiKeyMode({ provider, info, mode, onSaved }) {
+  const [editing, setEditing] = useState(false);
+  const [val, setVal] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+
+  async function save() {
+    if (!val.trim()) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      await setProviderKey(provider, val.trim());
+      setVal("");
+      setEditing(false);
+      onSaved();
+    } catch (e) {
+      setErr(String(e.message || e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function remove() {
+    setBusy(true);
+    setErr(null);
+    try {
+      await clearProviderKey(provider);
+      onSaved();
+    } catch (e) {
+      setErr(String(e.message || e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="mode-row">
+      <div className="mode-main">
+        <div className="mode-name">{mode.label}</div>
+        {!editing && <div className="mode-sub"><StatusText mode={mode} /> · {mode.message}</div>}
+        {editing && (
+          <div className="key-edit">
+            <div className="key-edit-row">
+              <input
+                type="password"
+                className="key-input"
+                value={val}
+                onChange={(e) => setVal(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") save(); }}
+                placeholder={`Paste ${info.label} API key`}
+                autoFocus
+              />
+              <button className="btn primary" disabled={busy} onClick={save}>Save</button>
+              <button className="btn ghost" onClick={() => { setEditing(false); setVal(""); setErr(null); }}>Cancel</button>
+            </div>
+            {err && <span className="key-err">{err}</span>}
+          </div>
+        )}
+      </div>
+      {!editing && (
+        <div className="mode-actions">
+          <button className="btn ghost" disabled={busy} onClick={() => setEditing(true)}>
+            {mode.configured ? "Edit key" : "Add key"}
+          </button>
+          {mode.configured && <button className="btn ghost" disabled={busy} onClick={remove}>Remove</button>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PlanMode({ mode, onSaved }) {
+  const [busy, setBusy] = useState(null);
+  const [err, setErr] = useState(null);
+  const [notice, setNotice] = useState(null);
+  const [acknowledged, setAcknowledged] = useState(false);
+  const [installAcknowledged, setInstallAcknowledged] = useState(false);
+
+  async function run(action, fn, acknowledgement = false) {
+    setBusy(action);
+    setErr(null);
+    setNotice(null);
+    try {
+      await fn(mode.id, acknowledgement);
+      setAcknowledged(false);
+      setInstallAcknowledged(false);
+      await onSaved();
+    } catch (e) {
+      setErr(String(e.message || e));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function signIn() {
+    setBusy("login");
+    setErr(null);
+    setNotice(null);
+    try {
+      const result = await loginPlanCli(mode.id);
+      setNotice(result.message);
+    } catch (e) {
+      setErr(String(e.message || e));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function checkStatus() {
+    setBusy("refresh");
+    setErr(null);
+    setNotice(null);
+    try {
+      await refreshPlan(mode.id);
+      await onSaved();
+    } catch (e) {
+      setErr(String(e.message || e));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const showInstaller = mode.can_install && (
+    !mode.installed || mode.update_recommended || (mode.installed && !mode.available)
+  );
+  const needsConsent = !mode.configured && mode.available && mode.requires_acknowledgement;
+
+  return (
+    <div className="mode-row">
+      <div className="mode-main">
+        <div className="mode-name">
+          {mode.label}
+          {mode.version && <span className="mode-version">v{mode.version}</span>}
+        </div>
+        <div className="mode-sub"><StatusText mode={mode} /> · {mode.message}</div>
+        {mode.update_recommended && <div className="mode-warning">An official CLI update is recommended.</div>}
+        {mode.warning && <div className="mode-warning">⚠ {mode.warning}</div>}
+        {showInstaller && (
+          <label className="mode-ack">
+            <input
+              type="checkbox"
+              checked={installAcknowledged}
+              onChange={(e) => setInstallAcknowledged(e.target.checked)}
+            />
+            I agree to {mode.installed ? "update" : "install"} the official vendor CLI using Windows Package Manager.
+          </label>
+        )}
+        {needsConsent && (
+          <label className="mode-ack">
+            <input
+              type="checkbox"
+              checked={acknowledged}
+              onChange={(e) => setAcknowledged(e.target.checked)}
+            />
+            I understand this launches the official CLI and uses its account limits.
+          </label>
+        )}
+        {notice && <span className="mode-notice">{notice}</span>}
+        {err && <span className="key-err">{err}</span>}
+      </div>
+      <div className="mode-actions">
+        {showInstaller && (
+          <button
+            className="btn ghost icon-text-btn"
+            disabled={!!busy || !installAcknowledged}
+            onClick={() => run("install", installPlanCli, installAcknowledged)}
+          >
+            <Download />
+            {mode.installed ? "Update CLI" : "Install CLI"}
+          </button>
+        )}
+        {mode.can_login && (
+          <button className="btn ghost icon-text-btn" disabled={!!busy} onClick={signIn}>
+            <LogIn />
+            Sign in
+          </button>
+        )}
+        {mode.configured ? (
+          <button
+            className="btn ghost"
+            disabled={!!busy}
+            onClick={() => run("disconnect", disconnectPlan)}
+          >
+            Disconnect
+          </button>
+        ) : mode.available ? (
+          <button
+            className="btn primary"
+            disabled={!!busy || (mode.requires_acknowledgement && !acknowledged)}
+            onClick={() => run("connect", connectPlan, acknowledged)}
+          >
+            {busy === "connect" ? "Verifying…" : "Connect"}
+          </button>
+        ) : null}
+        <button
+          className="icon-button"
+          title="Check CLI status"
+          aria-label={`Check ${mode.label} status`}
+          disabled={!!busy}
+          onClick={checkStatus}
+        >
+          <RefreshCw className={busy === "refresh" ? "spin" : ""} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function PassiveMode({ mode }) {
+  return (
+    <div className={`mode-row${mode.status === "unsupported" ? " unsupported" : ""}`}>
+      <div className="mode-main">
+        <div className="mode-name">{mode.label}</div>
+        <div className="mode-sub"><StatusText mode={mode} /> · {mode.message}</div>
+      </div>
+      <div className="mode-actions">
+        <button className="btn ghost" disabled>{mode.status === "unsupported" ? "Unavailable" : "No action"}</button>
+      </div>
+    </div>
+  );
+}
+
+function ProviderBlock({ name, info, onSaved }) {
+  const modes = info.modes || [];
+  const apiMode = modes.find((m) => m.id === "api_key");
+  const rest = modes.filter((m) => m.id !== "api_key");
+
+  return (
+    <div className="provider-block">
+      <div className="provider-head">
+        <div className="s-icon">{ICON[name] || name[0].toUpperCase()}</div>
+        <div>
+          <div className="s-name">{info.label}</div>
+          <div className="s-sub">accounts and keys stay local to this machine</div>
+        </div>
+      </div>
+      {apiMode && <ApiKeyMode provider={name} info={info} mode={apiMode} onSaved={onSaved} />}
+      {rest.map((mode) =>
+        PLAN_MODE_IDS.includes(mode.id) ? (
+          <PlanMode key={mode.id} mode={mode} onSaved={onSaved} />
+        ) : (
+          <PassiveMode key={mode.id} mode={mode} />
+        )
+      )}
+    </div>
+  );
+}
+
+function AddCustomModel({ onAdded }) {
+  const [open, setOpen] = useState(false);
+  const [label, setLabel] = useState("");
+  const [baseUrl, setBaseUrl] = useState("");
+  const [model, setModel] = useState("");
+  const [key, setKey] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+
+  function preset(p) {
+    setBaseUrl(p.base_url);
+    setModel(p.model);
+    if (!label) setLabel(p.model ? `${p.name} · ${p.model}` : p.name);
+  }
+
+  async function save() {
+    if (!baseUrl.trim() || !model.trim()) { setErr("Base URL and model id are required."); return; }
+    setBusy(true);
+    setErr(null);
+    try {
+      await addCustomModel(label.trim() || model.trim(), baseUrl.trim(), model.trim(), key.trim());
+      setLabel(""); setBaseUrl(""); setModel(""); setKey(""); setOpen(false);
+      onAdded();
+    } catch (e) {
+      setErr(String(e.message || e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!open) {
+    return (
+      <div className="mode-row">
+        <div className="mode-main">
+          <div className="mode-name">+ Add a custom model</div>
+          <div className="mode-sub">Any OpenAI-compatible endpoint — Qwen, Kimi, GLM, OpenRouter, Together, local…</div>
+        </div>
+        <div className="mode-actions"><button className="btn primary" onClick={() => setOpen(true)}>Add model</button></div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="provider-block">
+      <div className="provider-head">
+        <div className="s-icon">+</div>
+        <div><div className="s-name">Add a custom model</div>
+          <div className="s-sub">OpenAI-compatible API · key stored in your keychain, never in files</div></div>
+      </div>
+      <div className="preset-row">
+        {CUSTOM_PRESETS.map((p) => (
+          <button key={p.name} className="cmd-chip" onClick={() => preset(p)}>{p.name}</button>
+        ))}
+      </div>
+      <div className="custom-form">
+        <input className="key-input" placeholder="Display name (e.g. Qwen Max)" value={label} onChange={(e) => setLabel(e.target.value)} />
+        <input className="key-input" placeholder="Base URL (https://…/v1)" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} />
+        <input className="key-input" placeholder="Model id (e.g. qwen-max)" value={model} onChange={(e) => setModel(e.target.value)} />
+        <input className="key-input" type="password" placeholder="API key" value={key} onChange={(e) => setKey(e.target.value)} />
+        <div className="sys-actions">
+          <button className="btn primary" disabled={busy} onClick={save}>{busy ? "Saving…" : "Save model"}</button>
+          <button className="btn ghost" onClick={() => { setOpen(false); setErr(null); }}>Cancel</button>
+        </div>
+        {err && <span className="key-err">{err}</span>}
+      </div>
+    </div>
+  );
+}
+
+function ModelsSection() {
+  const [catalog, setCatalog] = useState(null);
+  const [busy, setBusy] = useState(null);
+  const load = () => getModelCatalog().then((d) => setCatalog(d.models)).catch(() => setCatalog([]));
+  useEffect(() => { load(); }, []);
+
+  async function toggle(m) {
+    setBusy(m.id);
+    try { await setModelActive(m.id, m.label, m.provider, !m.active); await load(); }
+    catch { /* leave as-is on failure */ } finally { setBusy(null); }
+  }
+
+  async function removeCustom(m) {
+    if (!window.confirm(`Remove ${m.label}? This can't be undone.`)) return;
+    try { await deleteCustomModel(m.custom_id); await load(); } catch { /* already gone */ }
+  }
+
+  const groups = {};
+  (catalog || []).forEach((m) => { (groups[m.provider] ||= []).push(m); });
+  const order = ["claude_plan", "chatgpt_plan", "gemini_plan", "anthropic", "openai", "google", "mistral", "deepseek", "ollama", "custom"];
+  const activeCount = (catalog || []).filter((m) => m.active).length;
+
+  return (
+    <>
+      <div className="section-label">Models — turn on the ones you want in the chat picker · {activeCount} active</div>
+      {catalog === null && <div className="s-sub" style={{ padding: "4px 2px" }}>Loading…</div>}
+      {catalog && catalog.length === 0 && (
+        <div className="s-sub" style={{ padding: "4px 2px" }}>
+          No models yet — add an API key above, connect Claude plan, or add a custom model below.
+        </div>
+      )}
+      {order.filter((p) => groups[p]).map((p) => (
+        <div className="provider-block" key={p}>
+          <div className="provider-head">
+            <div className="s-icon">{(ICON[p] || p[0]).toUpperCase()}</div>
+            <div><div className="s-name">{PROVIDER_LABEL[p] || p}</div></div>
+          </div>
+          {groups[p].map((m) => (
+            <div className="mode-row" key={m.id}>
+              <div className="mode-main">
+                <div className="mode-name">
+                  {m.label}
+                  {m.provider === "custom" && m.configured === false && <span className="mode-off"> · no key</span>}
+                </div>
+                <div className="mode-sub">{m.id}</div>
+              </div>
+              <div className="mode-actions">
+                {m.provider === "custom" && <button className="btn ghost" onClick={() => removeCustom(m)}>Remove</button>}
+                <CtrlToggle on={m.active} busy={busy === m.id} onClick={() => toggle(m)} />
+              </div>
+            </div>
+          ))}
+        </div>
+      ))}
+      <AddCustomModel onAdded={load} />
+    </>
+  );
+}
+
+function BrandingSection() {
+  const [b, setB] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [err, setErr] = useState(null);
+
+  useEffect(() => {
+    getBranding().then(setB).catch(() => setB({
+      enabled: false, name: "", tagline: "", details: "", logo: "",
+    }));
+  }, []);
+
+  if (!b) {
+    return (<><div className="section-label">Branding</div><div className="s-sub" style={{ padding: "4px 2px" }}>Loading…</div></>);
+  }
+
+  const update = (patch) => setB((p) => ({ ...p, ...patch }));
+
+  function pickLogo(e) {
+    const f = e.target.files?.[0];
+    e.target.value = "";
+    if (!f) return;
+    const allowed = ["image/png", "image/jpeg", "image/webp", "image/gif"];
+    if (!allowed.includes(f.type)) {
+      setErr("Use a PNG, JPEG, WebP, or GIF logo.");
+      return;
+    }
+    if (f.size > 1024 * 1024) { window.alert("Logo too large (max 1 MB)."); return; }
+    setErr(null);
+    const r = new FileReader();
+    r.onload = () => update({ logo: String(r.result) });
+    r.readAsDataURL(f);
+  }
+
+  async function save() {
+    setBusy(true);
+    setSaved(false);
+    setErr(null);
+    try {
+      const next = await setBranding(b);
+      setB(next);
+      window.dispatchEvent(new CustomEvent("orrery-branding-changed", { detail: next }));
+      setSaved(true);
+      setTimeout(() => setSaved(false), 1500);
+    } catch (e) {
+      setErr(String(e.message || e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <div className="section-label">Branding — show your company logo and name in the app header</div>
+      <div className="provider-block">
+        <div className="mode-row">
+          <div className="mode-main">
+            <div className="mode-name">Show branding header</div>
+            <div className="mode-sub">When on, a header bar with your logo and name appears at the top of every tab.</div>
+          </div>
+          <div className="mode-actions"><CtrlToggle on={!!b.enabled} onClick={() => update({ enabled: !b.enabled })} /></div>
+        </div>
+        <div className="branding-preview" aria-label="Branding preview">
+          <div className="branding-preview-logo">
+            {b.logo ? <img src={b.logo} alt="" /> : <Building2 />}
+          </div>
+          <div className="brand-text">
+            <div className="brand-name">{b.name || "Company name"}</div>
+            <div className="brand-tagline">{b.tagline || "Optional company tagline"}</div>
+            {b.details && <div className="brand-details">{b.details}</div>}
+          </div>
+        </div>
+        <div className="custom-form branding-form">
+          <input className="key-input" maxLength={80} placeholder="Company name" value={b.name || ""} onChange={(e) => update({ name: e.target.value })} />
+          <input className="key-input" maxLength={160} placeholder="Tagline (optional)" value={b.tagline || ""} onChange={(e) => update({ tagline: e.target.value })} />
+          <textarea className="key-input" maxLength={280} rows={3} placeholder="Company details (optional)" value={b.details || ""} onChange={(e) => update({ details: e.target.value })} />
+          <div className="branding-actions">
+            <label className="btn ghost icon-text-btn">
+              <ImagePlus />
+              Upload logo
+              <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden onChange={pickLogo} />
+            </label>
+            {b.logo && (
+              <button className="btn ghost icon-text-btn" onClick={() => update({ logo: "" })}>
+                <Trash2 />
+                Remove
+              </button>
+            )}
+          </div>
+          <div className="sys-actions">
+            <button className="btn primary icon-text-btn" disabled={busy} onClick={save}>
+              <Save />
+              {busy ? "Saving…" : saved ? "Saved" : "Save branding"}
+            </button>
+          </div>
+          {err && <span className="key-err">{err}</span>}
+        </div>
+      </div>
+    </>
+  );
+}
+
+const CAP_PERIODS = ["hour", "day", "month", "all"];
+
+function SpendingSection() {
+  const [u, setU] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const load = () => getUsage().then(setU).catch(() => {});
+  useEffect(() => { load(); const id = setInterval(load, 10000); return () => clearInterval(id); }, []);
+
+  if (!u) return (<><div className="section-label">Spending (API keys only)</div><div className="s-sub" style={{ padding: "4px 2px" }}>Loading…</div></>);
+
+  const cap = u.cap || { enabled: false, limit_usd: 10, period: "month" };
+  const updateCap = (patch) => setU((p) => ({ ...p, cap: { ...p.cap, ...patch } }));
+  async function save() {
+    setBusy(true);
+    try { setU(await setSpendCap({ enabled: !!cap.enabled, limit_usd: Number(cap.limit_usd) || 0, period: cap.period })); }
+    finally { setBusy(false); }
+  }
+  const pct = cap.enabled && cap.limit_usd > 0 ? Math.min(100, (u.cost / cap.limit_usd) * 100) : 0;
+
+  return (
+    <>
+      <div className="section-label">Spending — live API-key cost · subscription &amp; local models don't count</div>
+      <div className="provider-block" style={{ gridColumn: "1 / -1" }}>
+        <div className="mode-row">
+          <div className="mode-main">
+            <div className="mode-name">${(u.cost || 0).toFixed(4)} this {u.period} · {((u.tokens_in || 0) + (u.tokens_out || 0)).toLocaleString()} tokens</div>
+            <div className="mode-sub">{u.over ? "Over cap — API-key models are blocked until the window resets or you raise the cap." : "Counts only API-key models (per-token billing); subscription/local are free of this."}</div>
+            {cap.enabled && <div className="slider" style={{ marginTop: "8px" }}><div className="fill" style={{ width: `${pct}%`, background: u.over ? "var(--red)" : "var(--amber)" }} /></div>}
+          </div>
+          <div className="mode-actions"><CtrlToggle on={!!cap.enabled} onClick={() => updateCap({ enabled: !cap.enabled })} /></div>
+        </div>
+        <div className="custom-form">
+          <div className="preset-row" style={{ alignItems: "center" }}>
+            <span className="s-sub">Cap&nbsp;$</span>
+            <input className="key-input" style={{ maxWidth: "120px" }} type="number" min="0" step="0.5" value={cap.limit_usd} onChange={(e) => updateCap({ limit_usd: e.target.value })} />
+            <span className="s-sub">per</span>
+            <select className="effort-pick" value={cap.period} onChange={(e) => updateCap({ period: e.target.value })}>
+              {CAP_PERIODS.map((p) => <option key={p} value={p}>{p === "all" ? "all time" : p}</option>)}
+            </select>
+          </div>
+          <div className="sys-actions"><button className="btn primary" disabled={busy} onClick={save}>{busy ? "Saving…" : "Save cap"}</button></div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+const FEEDBACK_CATS = [["general", "General"], ["bug", "Bug"], ["idea", "Idea"], ["praise", "Praise"]];
+
+function FeedbackSection() {
+  const [cat, setCat] = useState("general");
+  const [msg, setMsg] = useState("");
+  const [contact, setContact] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(false);
+  const [err, setErr] = useState(null);
+
+  async function send() {
+    if (!msg.trim()) { setErr("Write a message first."); return; }
+    setBusy(true);
+    setErr(null);
+    try {
+      await submitFeedback({ category: cat, message: msg.trim(), contact: contact.trim(), context: "" });
+      setMsg(""); setContact(""); setDone(true); setTimeout(() => setDone(false), 2500);
+    } catch (e) {
+      setErr(String(e.message || e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <div className="section-label">Feedback — tell us what's working or what's missing</div>
+      <div className="provider-block" style={{ gridColumn: "1 / -1" }}>
+        <div className="custom-form">
+          <div className="preset-row">
+            {FEEDBACK_CATS.map(([v, l]) => (
+              <button key={v} className={`cmd-chip${cat === v ? " warm" : ""}`} onClick={() => setCat(v)}>{l}</button>
+            ))}
+          </div>
+          <textarea className="key-input" style={{ resize: "vertical", minHeight: "60px" }} rows={3} placeholder="Your feedback…" value={msg} onChange={(e) => setMsg(e.target.value)} />
+          <input className="key-input" placeholder="Email (optional, if you want a reply)" value={contact} onChange={(e) => setContact(e.target.value)} />
+          <div className="sys-actions"><button className="btn primary" disabled={busy} onClick={send}>{busy ? "Sending…" : done ? "✓ Thanks!" : "Send feedback"}</button></div>
+          {err && <span className="key-err">{err}</span>}
+        </div>
+      </div>
+    </>
+  );
+}
+
+function SettingsPanelHeader({ title, description }) {
+  return (
+    <div className="settings-panel-header">
+      <h2>{title}</h2>
+      <p>{description}</p>
+    </div>
+  );
+}
+
+function DefaultsSection() {
+  return (
+    <>
+      <div className="section-label">Defaults</div>
+      <div className="defaults-grid">
+        <div className="srow">
+          <div className="s-body"><div className="s-name">Default model</div><div className="s-sub">set per chat in the model picker</div></div>
+        </div>
+        <div className="srow">
+          <div className="s-body" style={{ width: "100%" }}>
+            <div className="s-name" style={{ marginBottom: "9px" }}>Temperature · 0.7</div>
+            <div className="slider-row"><div className="slider"><div className="fill" /><div className="knob" /></div></div>
+          </div>
+        </div>
+        <div className="srow">
+          <div className="s-body"><div className="s-name">Theme</div><div className="s-sub">Night — default</div></div>
+        </div>
+        <div className="srow">
+          <div className="s-body"><div className="s-name">Run logs retention</div><div className="s-sub">keep 90 days ⌄</div></div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function IntegrationsSection() {
+  return (
+    <>
+      <div className="section-label">MCP servers — plug your own tools into chat and workflows</div>
+      <div className="srow">
+        <div className="s-icon">M</div>
+        <div className="s-body"><div className="s-name">filesystem</div><div className="s-sub">arrives in Phase 8</div></div>
+        <Toggle />
+      </div>
+      <div className="srow">
+        <div className="s-icon">M</div>
+        <div className="s-body"><div className="s-name">github</div><div className="s-sub">arrives in Phase 8</div></div>
+        <Toggle />
+      </div>
+    </>
+  );
+}
+
+export default function Settings() {
+  const [activeSection, setActiveSection] = useState("accounts");
+  const [providers, setProviders] = useState(null);
+  const load = () => getProviders().then(setProviders).catch(() => setProviders({}));
+  useEffect(() => { load(); }, []);
+
+  const entries = providers ? Object.entries(providers) : [];
+  const panels = {
+    general: (
+      <>
+        <SettingsPanelHeader title="General" description="Company identity and workspace defaults." />
+        <BrandingSection />
+        <DefaultsSection />
+      </>
+    ),
+    accounts: (
+      <>
+        <SettingsPanelHeader title="Accounts & Keys" description="Connect provider accounts, API keys, and local model access." />
+        <div className="section-label">Credentials stay in your system keychain, never in project files</div>
+        {providers === null && <div className="s-sub settings-loading">Loading…</div>}
+        {entries.map(([name, info]) => (
+          <ProviderBlock key={name} name={name} info={info} onSaved={load} />
+        ))}
+      </>
+    ),
+    models: (
+      <>
+        <SettingsPanelHeader title="Models" description="Choose which connected models appear in Chat." />
+        <ModelsSection />
+      </>
+    ),
+    usage: (
+      <>
+        <SettingsPanelHeader title="Usage" description="Monitor API-key costs and set a local spending cap." />
+        <SpendingSection />
+      </>
+    ),
+    integrations: (
+      <>
+        <SettingsPanelHeader title="Integrations" description="Manage external tools available to chats and workflows." />
+        <IntegrationsSection />
+      </>
+    ),
+    feedback: (
+      <>
+        <SettingsPanelHeader title="Feedback" description="Send product feedback from this installation." />
+        <FeedbackSection />
+      </>
+    ),
+  };
+
+  return (
+    <section className="view">
+      <div className="settings-wrap">
+        <div className="settings-page-header">
+          <span className="view-title">Settings</span>
+          <span>Configure this Orrery installation.</span>
+        </div>
+        <div className="settings-layout">
+          <nav className="settings-nav" aria-label="Settings sections">
+            {SETTINGS_SECTIONS.map(({ id, label, Icon }) => (
+              <button
+                key={id}
+                className={`settings-nav-button${activeSection === id ? " active" : ""}`}
+                aria-current={activeSection === id ? "page" : undefined}
+                onClick={() => setActiveSection(id)}
+              >
+                <Icon />
+                <span>{label}</span>
+              </button>
+            ))}
+          </nav>
+          <main className="settings-content">
+            {panels[activeSection]}
+          </main>
+        </div>
+      </div>
+    </section>
+  );
+}

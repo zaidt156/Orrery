@@ -1,0 +1,50 @@
+"""Local file library: generated files live on disk, metadata travels with the chat message.
+
+Per the file-generation architecture, large binaries never go in Postgres — they're written to a
+local directory and served by id. Each file gets a sidecar .meta with its display name + mime so
+the serving route stays self-describing.
+"""
+
+from __future__ import annotations
+
+import json
+import re
+import uuid
+from pathlib import Path
+
+_DIR = Path(__file__).resolve().parent.parent.parent / "tmp" / "generated"
+_SAFE = re.compile(r"[^A-Za-z0-9._-]+")
+MAX_FILE_BYTES = 25_000_000
+
+
+def _safe_name(name: str) -> str:
+    cleaned = _SAFE.sub("_", (name or "file").strip()).strip("._") or "file"
+    return cleaned[:120]
+
+
+def store(name: str, mime: str, data: bytes) -> dict:
+    """Persist a generated file and return its metadata record."""
+    if not data:
+        raise ValueError("Refusing to store an empty file.")
+    if len(data) > MAX_FILE_BYTES:
+        raise ValueError("Generated file exceeds the size limit.")
+    _DIR.mkdir(parents=True, exist_ok=True)
+    file_id = uuid.uuid4().hex
+    (_DIR / file_id).write_bytes(data)
+    meta = {"id": file_id, "name": _safe_name(name), "mime": mime or "application/octet-stream", "size": len(data)}
+    (_DIR / f"{file_id}.meta").write_text(json.dumps(meta), encoding="utf-8")
+    return meta
+
+
+def load(file_id: str) -> tuple[dict, bytes] | None:
+    if not re.fullmatch(r"[0-9a-f]{32}", file_id or ""):  # ids are uu4 hex; blocks path traversal
+        return None
+    blob = _DIR / file_id
+    meta_path = _DIR / f"{file_id}.meta"
+    if not blob.is_file() or not meta_path.is_file():
+        return None
+    try:
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return meta, blob.read_bytes()

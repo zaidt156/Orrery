@@ -1,0 +1,467 @@
+# Orrery — Development Log
+
+A plain-words record of every step we take building Orrery. Newest entries at the bottom. Each entry says **what we did, why, and what comes next.**
+
+---
+
+## Step 1 — The idea (June 13, 2026)
+
+We confirmed the concept is feasible: a desktop app like Claude/ChatGPT/Perplexity, but the user brings their **own API keys** and their **own database** (Postgres). The app provides the framework that ties them together. Similar apps exist (LibreChat, Jan, AnythingLLM), which proves the pattern works — we're building our own take on it.
+
+## Step 2 — Name and language (June 13, 2026)
+
+Named the app **Orrery**. Decided Python is the main language, with small amounts of JavaScript only where the screen needs it, and Rust only if ever truly necessary.
+
+## Step 3 — First plan, including Automations (June 13, 2026)
+
+Wrote the first development plan. Key addition: a standalone **Automations tab** where users build n8n-style visual workflows — for example, "every morning, query my database, have the AI summarize the results, and send it to Slack." The first plan used Tauri (Rust) + React + FastAPI.
+
+## Step 4 — Simplified the stack (June 13, 2026)
+
+The first stack felt too heavy, so we simplified it around Python:
+
+- **Removed:** Tauri (Rust), React, TypeScript, npm, all build tools, separate vector database.
+- **Kept / chose instead:**
+  - `pywebview` for the desktop window (pure Python),
+  - FastAPI for the backend,
+  - `litellm` so one library talks to every AI provider,
+  - SQLAlchemy with SQLite as the zero-setup default — the user's **Postgres** plugs in later by changing one connection string,
+  - plain HTML/JS for the screen, with Drawflow.js (one script tag) for the n8n-style canvas,
+  - APScheduler for scheduled automations, keyring for safe API key storage, PyInstaller for packaging.
+- **Result:** the entire app installs with one `pip install` line and starts with `python app.py`. One language to debug.
+
+Also created this DEVLOG.md — from now on, every step we complete gets written here in plain words.
+
+## Step 5 — Postgres-first, stronger automation stack (June 13, 2026)
+
+Decision: **PostgreSQL is now required and is the single source of truth** — chats, documents, workflows, run logs, and even the job queue all live in it. With Postgres committed, we upgraded the parts that were downgraded for simplicity:
+
+- **RAG:** back to **pgvector** (real vector search inside Postgres) instead of numpy.
+- **Automation engine:** adopted **Procrastinate**, a Postgres-native task queue for Python. It gives us durable workflow runs (a run survives the app being closed), automatic retries with backoff, and cron-style scheduling — all without Redis or Celery. It replaced APScheduler.
+- **Database triggers:** workflows can now react to new/changed rows in the user's tables using Postgres's built-in LISTEN/NOTIFY.
+- **Canvas:** upgraded from Drawflow to **React Flow**, the industry-standard node-editor library, inside one small React + Vite app (plain JavaScript, no TypeScript). All logic still lives in Python — React only paints the screen.
+
+Why this is "better but still simple": the only services Orrery needs are Python and Postgres. No message brokers, no extra databases, no Rust. The plan file was updated to v3.
+
+## Step 6 — Interface mockup (June 13, 2026)
+
+Built a clickable HTML mockup (`orrery_mockup.html`) showing every planned feature, so we can validate the interface before writing the real app. What it contains:
+
+- **Chat tab:** conversation list, streaming reply (with blinking cursor), model picker, "Use my data" toggle, a RAG citation chip showing which collection was searched, markdown table + SQL code block, composer.
+- **Data tab:** Postgres connection cards (with pgvector and queue badges), document collections for RAG (including a "live sync" collection that auto-embeds new table rows), and a read-only table browser.
+- **Automations tab:** workflow list with status and success rate, the node canvas (palette, six connected nodes, click any node to see its config panel with `{{variable}}` templating and retry policy), and a run-history drawer — click a run to expand per-node steps, including a failed run that recovered via automatic retries.
+- **Settings tab:** masked API keys with "in keychain" badges, MCP server toggles, defaults (model, temperature, theme, log retention).
+
+Design identity: **Orrery → a star map.** A workflow graph literally looks like a constellation, so the canvas is styled as one — deep indigo night sky, faint starfield, glowing "star" ports on nodes, warm amber for AI nodes and ice blue for triggers (stellar temperatures). Type: Bricolage Grotesque for headings, IBM Plex Sans/Mono for UI and data. The logo is a small constellation.
+
+This mockup is design reference only — the real app will rebuild these screens in React, but the layout, colors, and copy carry over.
+
+## Step 7 — Copy polish, design approved (June 13, 2026)
+
+The mockup design was approved with wording changes, now applied:
+
+- **Title bar:** just "Orrery" — tagline removed.
+- **"Postgres" no longer appears anywhere in the interface.** The rail indicator now reads DATABASE, connection cards show plain host addresses, and technical terms (pgvector, LISTEN/NOTIFY, queue names) were replaced with plain words: "vector search," "live trigger," "workflow queue," "built-in scheduler."
+- **Chat hint** is now: *"saved as you go — in your database, nowhere else"* — which doubles as the privacy promise.
+- Run history now reads "stored in your database — runs survive app restarts."
+
+Important distinction: this is interface copy only. Under the hood the stack is unchanged (PostgreSQL, pgvector, Procrastinate) — the app just never makes the user read implementation names. **The design is now locked.**
+
+## Step 8 — Added Dashboards (June 13, 2026)
+
+New feature added to the plan and mockup: **Dashboards** — a fifth tab where the user describes a dashboard in plain words and picks **which AI model builds it**. How it works:
+
+- The chosen model looks at the connected database schema, writes the SQL for each widget, and picks the chart types (big number, line, bar, table).
+- Orrery saves the result as a reusable **spec** in the database. From then on, opening or refreshing the dashboard simply re-runs the saved queries on live data — **no AI call and no token cost to reuse it.** The model is the designer, not the renderer.
+- Every dashboard and every widget records which model made it, and revisions ("add a refunds widget") can use a different model than the original. Specs are versioned, so a bad AI edit rolls back in one click.
+- Dashboards connect to the rest of Orrery: charts from Chat can be pinned to a dashboard, and automations get a "Refresh dashboard" node.
+
+The mockup now shows the Dashboards tab: a "Sales overview" built by claude-sonnet-4-6 with five widgets (each showing the SQL behind it), a "Latest orders" widget added by gpt-4o to demonstrate model mixing, and a revise bar at the bottom. Charting library for the real app: Apache ECharts. Dashboards slot in as **Phase 3** (~1 week), pushing Automations to Phase 4 and Power features to Phase 5.
+
+## Step 9 — Added Agents (June 13, 2026)
+
+Sixth and final tab added: **Agents** — continuous workers that get a goal instead of a recipe. The difference from Automations in one line: an automation follows fixed steps you designed; an agent figures out its own steps and loops — plan, act, check its own work, improve — until the goal is met, a limit is hit, or you stop it.
+
+Every agent is defined by four things:
+- **Goal** in plain words ("keep every new ticket triaged; ask me when unsure").
+- **Scope** — the only area it may touch: named tables (read/write split), allowed tools, and hard limits (loops per day, spend per day, confidence bar). Enforced at the tool layer, so the agent literally cannot act outside its area.
+- **Model** — each agent runs on whichever model you pick, just like dashboards.
+- **Run mode** — continuous until stopped, until done, on a timer, or on a trigger.
+
+"Improving again and again" works through **learning notes**: each loop ends with a self-review, and the agent saves what it learned to its own memory table — the next loop reads those notes first, so mistakes become rules over time. Agents collaborate the same way workflows connect: an automation can start an agent, an agent can fire an automation, and agents hand work to each other (or to you, via approval gates) through a shared handoff queue — solo, alongside, or in collaboration.
+
+Oversight built in from day one: a live activity feed of every action and learning, a daily budget meter, approval gates for low-confidence writes, and a stop button that always works. The mockup shows a running "Ticket triager" with its goal/scope/budget cards, collaboration pills, and a live feed — including an amber "Learned:" note and a ticket waiting for human approval. Agents are **Phase 5** (~2 weeks); the detailed execution model gets designed when we reach it, as agreed.
+
+## Step 10 — Created the Orrery project skill (June 13, 2026)
+
+To build Orrery in an organized, secure, consistent way across many sessions, we packaged the project's principles into a reusable **skill** — a self-contained set of instructions that gets loaded whenever someone works on Orrery, so every session follows the same rules instead of re-deciding them.
+
+The skill (`orrery-development`) is built around five non-negotiable principles: security is the floor (not a feature), local-first and private by default, accuracy over assumption, Python for all logic, and document every step in plain words. Its main file stays short and points to four deeper references read as needed:
+
+- **security.md** — the most important one. Because Orrery handles three dangerous things at once (the user's secret API keys, direct database access, and autonomous agents), this spells out exactly how to handle secrets, write safe parameterized SQL, enforce read-only access where it belongs, sandbox agents at the tool layer so their limits can't be talked around, isolate the code-running node, defend against malicious instructions hidden in retrieved documents or data, lock the app to localhost, vet dependencies, and keep an audit trail — ending in a pre-ship checklist.
+- **architecture.md** — the stack, the project folder layout, how a request flows at runtime, and what each of the six tabs does and how they connect.
+- **conventions.md** — how code is written and, crucially, the one repeatable pattern for adding a new workflow node, dashboard widget, or agent capability, plus error handling and what must be tested.
+- **roadmap.md** — the six build phases, why they're in that order, the decisions we deliberately deferred, and the competitive context.
+
+We validated the skill and packaged it into an installable file. From now on it travels with the project as its rulebook.
+
+## Step 11 — Settled the project name: Orrery (June 13, 2026)
+
+Locked in **Orrery** as the name and propagated it consistently across every artifact — the mockup's title bar, logo label, and the assistant's name in chat; the plan; this log; and the project skill (its folder, its `name`, every reference file, the example database name, and the project-root paths in the structure diagrams). An orrery is a clockwork model of the solar system, where the planets turn in relation to one another around a common centre — which is exactly how Orrery's parts behave: Chat, Dashboards, Automations, and Agents all moving in concert around the one thing at the centre, the user's database. It also makes the star-map design we already built feel native rather than decorative. The files are now `ORRERY_PLAN.md`, `orrery_mockup.html`, and `orrery-development.skill`; the skill was re-validated after the change.
+
+## Step 12 — Added an AI quality & safety layer (June 13, 2026)
+
+Folded five AI technologies into the plan and skill, each chosen to reinforce Orrery's two non-negotiables — privacy/local-first and accuracy — rather than to chase features. None of them adds a server, and four of the five live in phases already on the roadmap. They are:
+
+- **Local embeddings** — an option to compute document embeddings on the machine itself (no document text sent to a cloud service), so RAG can run fully private. Added to Phase 2.
+- **Hybrid search** — combine the existing vector search with the database's built-in keyword search for materially better retrieval, with no new infrastructure. Added to Phase 2.
+- **Structured outputs** — force the model to return schema-checked, valid output. This is the biggest single reliability lever for agent tool calls and for generated SQL, so it threads through Dashboards, Automations, and Agents (Phases 3–5).
+- **SQL validation** — every query the AI writes for a dashboard is parsed and dry-run in read-only mode before it is saved or shown, and the model self-corrects on error. Accuracy for Phase 3.
+- **PII redaction** — scan rows and documents and strip personal data before any content is sent to a cloud model. Because Orrery connects to a real database, this matters a lot; it got its own section in the security rulebook (now §10), an entry in the pre-ship checklist, and is applied as a default on the outbound path to cloud providers (local models can be exempted explicitly).
+
+Updated four files: the plan (a new "AI quality & safety layer" table plus the build-phases timings), and the skill's roadmap, security, and architecture references so future sessions build these in by default. The skill was re-validated and repackaged.
+
+## Step 13 — Added Media Hub + made Chat a universal command surface (June 13, 2026)
+
+Two additions, both consistent with how Orrery already works.
+
+**Media Hub (a seventh tab):** a playground for image and video generation on the user's own media-model keys, with an optional fully-local backend (Stable Diffusion / ComfyUI) so generation can happen entirely on-device — reinforcing the privacy story. The user writes a prompt, picks a model, tunes parameters (aspect, seed, count, negative prompt), and can turn a reference image into a new image or a short video. A key design choice: generated **files live in a local media library on disk, and only their details** (prompt, model, settings, file path, tags) go in the database — large media never gets stored as database blobs. Any asset can be pinned into Chat or used as a step in an Automation. It slots in as Phase 6.
+
+**Chat as a universal command surface:** the user can now reach any feature straight from the chat box — type `/` or just ask to generate media, run an automation, start or query an agent, build or refresh a dashboard, or search their data. This was natural to add because Chat, Automations, and Agents already share one tool registry; Chat simply gets access to that same registry. The important rule, written into the security file: this is glue, not a bypass. Every action triggered from Chat goes through the exact same protections as everywhere else — approval gates for sensitive or destructive actions, scope limits, read-only defaults, and personal-data redaction. "The user asked in chat" never skips a check. It slots in as Phase 7 (after the features it invokes exist, and after Agents so the approval/scope machinery is proven). Power moves to Phase 8.
+
+Updated the mockup (the seventh tab with a create panel and a reusable media gallery, plus a command row in the chat composer showing `/image`, `/video`, `/run automation`, `/agent`, `/dashboard`), the plan, and all the skill references — including a new security section (§11) covering generative-media hard lines (never any sexual content involving minors; no non-consensual or deepfake imagery of real people), provenance metadata as good practice, and the command-surface "no bypass" rule. The skill was re-validated and repackaged.
+
+## Step 14 — Set up the real project workspace (June 14, 2026)
+
+Turned the pile of planning documents into an actual buildable project. What we did and why:
+
+- **Gave Orrery its own home.** The files had been sitting in a generic "New folder"; we made the Orrery folder a proper, self-contained project (its own version history, separate from everything else on the machine) and moved every document into the place it belongs — the plan, this log, and the design mockup at the top level; the architecture, security, roadmap, and conventions guides packaged as the project's built-in rulebook so they load automatically whenever someone works on Orrery.
+- **Wrote the one missing rulebook page.** The rulebook referred to a "conventions" page (how code is written, and the single repeatable way to add a new workflow node, dashboard widget, or agent ability) that had never actually been written. We wrote it, matching the others.
+- **Prepared the workbench.** Added the list of building blocks the app needs, a one-command local database setup (Postgres with vector search built in, via Docker — chosen over a manual install because the vector piece is otherwise fiddly on Windows), an example settings file, a readable setup guide, and the project's ignore rules.
+- **Guarded against a known trap.** This project lives inside OneDrive, which has a habit of corrupting the large "downloaded building blocks" folders by syncing them mid-write. We added small scripts that keep those folders safely outside OneDrive, the same fix that worked on an earlier project.
+
+We also confirmed the machine is ready: Python, Node, and Git are installed; Docker is the remaining piece to install for the database.
+
+**New working rule (from the user):** document *each* step here as it happens, not only at the end. This log is now updated continuously as we build.
+
+## Step 15 — Wrote the Phase 0 skeleton code (June 14, 2026)
+
+Wrote the first working version of the app's spine — the smallest thing that proves every part connects, with no real features yet. In plain words:
+
+- **The launcher (`app.py`).** Running one command does the whole start-up dance: find the database (checking the secure keychain first, then the local settings file, and asking you once if neither has it), prepare the database on first run (turn on vector search and create the tables the built-in task scheduler needs), start the local web server and the background worker together, and open the desktop window pointed at them. The window and the backend only talk to each other privately on this machine, and they share a fresh one-time password each launch so nothing else on the computer can sneak in.
+- **The backend pieces**, each kept to one job: settings, secure key storage (with a helper that hides passwords before anything is ever printed to a log), the database connection, the first-run preparation, the task scheduler, and the web server — which for now answers a single "are you healthy?" question (used to show the connection light) and serves the screen.
+- **The screen (a small React app).** A star-map styled shell with the seven tabs down the side (Chat, Data, Dashboards, Automations, Agents, Media Hub, Settings) and a live "Database connected" indicator. Each tab is a placeholder that names the phase its real version arrives in. This is the visible proof that screen → backend → database all talk.
+
+None of this is run yet — that needs the database and the installed building blocks, which is the next step. We wrote it carefully against the security rules (secrets only in the keychain and never logged, the backend locked to this machine and password-protected, only the database setup is allowed to change the database) so the habits are right from the very first file.
+
+## Step 16 — Built the workbench and verified the code (June 14, 2026)
+
+Installed everything the app needs and checked the code as far as possible without the database yet.
+
+- **Installed the building blocks**, kept safely outside OneDrive: the Python environment and its libraries, and the screen's libraries (with the folder automatically moved out of OneDrive and linked back, the way that protects against the syncing problem). We also wrote down the *exact* versions that got installed, so this set-up can be reproduced precisely later.
+- **Built the screen** into the small bundle of files the app serves, and switched the default so a single command (`python app.py`) shows the finished screen — the live-reload mode is still there for when we're actively changing the look.
+- **Checked the code runs** and caught two genuine bugs early, both specific to running on Windows:
+  - The background worker must not try to grab the operating system's stop-signals — only the program's main part is allowed to do that, so left unfixed it would have crashed the worker on start-up.
+  - Windows' default way of handling many-things-at-once is incompatible with how we talk to the database; we switched to the compatible mode at start-up. Without this the app couldn't have reached the database *at all* on this machine, even with everything else perfect. We confirmed the fix: a connection attempt now fails only because the database isn't running yet, not because of the incompatibility.
+  We also confirmed the screen is served correctly and the login-token check works (requests without the one-time token are refused), and that passwords are masked before anything is logged.
+- **Installed Docker** (the tool that runs the local database). It downloaded and installed, but it needs a one-time **restart of the computer and a first launch** before it works — that's the only thing left before we can run the whole app.
+
+Everything else is ready and waiting. The moment Docker is running, one command starts the database and a second opens the app window.
+
+## Step 17 — Phase 0 is done: the app runs (June 14, 2026)
+
+The skeleton is alive. We started the local database and ran the app, and the whole spine worked end to end on the first real run.
+
+- **The database is up.** Docker started cleanly (no restart was needed — the Windows virtualization layer it relies on was already in place). One snag along the way: Docker's command-line tools weren't yet on the system's search path in our working session, so the first attempt couldn't fetch the database image; pointing it at Docker's own folder fixed it. The database came up healthy: PostgreSQL 17.10 with vector search switched on.
+- **One command, the whole app.** Running the launcher did everything we designed: found the database (with the password safely hidden in the log), prepared it on first run (vector search on, task-scheduler tables created), started the local web server and the background worker, and opened the desktop window.
+- **Proven, not assumed.** The window opened, loaded the seven-tab screen, and the screen successfully asked the backend "are you healthy?" and got a yes — which only works if the screen, the private one-time password, the local server, and the database are all wired correctly. We confirmed the window stays open and the app keeps running.
+
+**Phase 0 is complete** — the definition we set ("one command opens a window served by the local backend, talking to the database") is met. Everything from here builds on a spine we know works.
+
+## Step 18 — Built the real screen to match the design (June 15, 2026)
+
+Replaced the plain placeholder shell with the full interface, rebuilt faithfully from the approved design mockup — the star-map look and all seven tabs (Chat, Data, Dashboards, Automations, Agents, Media Hub, Settings) with the same layout, colours, and wording.
+
+- **Faithful, not approximate.** Every tab was recreated to match the mockup: the chat thread with its data-citation chip and code block, the data connections and table browser, the dashboard widgets and charts, the automation canvas with its glowing nodes and the animated "constellation" lines between them, the agent goal/scope/budget cards and live activity feed, the media create-panel and gallery, and the settings rows.
+- **Fonts now travel with the app.** Instead of fetching the typefaces from Google (which would break offline and quietly "phone home"), we bundled them into the app itself — keeping the local-first promise. This was the only new building block added, and it earns its place for that reason.
+- **Design now, wiring later — on purpose.** This is the visible shell; the real behind-the-scenes behaviour of each tab still arrives in its own phase. The one thing actually live is the small database light, which reflects the real connection.
+- **Proved it on screen.** Confirmed the interface renders correctly. (A wrinkle worth noting for the future: ordinary screen-capture photographs the app's window frame but not its web content, because of how that content is drawn; we verified instead by loading the very same screen in a separate browser and by the app's own signals — the fonts loading and the live connection check firing, which only happen if the screen actually rendered.)
+- Small extra: the address can name a tab (used for that verification), a harmless convenience.
+
+## Step 19 — Phase 1: Chat actually works (June 15, 2026)
+
+The Chat screen is no longer a mock — it's connected to real models and the database.
+
+- **Hold a real conversation.** Add your provider key in Settings, pick a model, type a message, and the reply streams in word by word. Every message is saved in your database, and your past chats reappear in the list (titled automatically from your first line).
+- **One menu, every provider.** A single library talks to Anthropic, OpenAI, Google, or a local model — switching is just picking from the model menu. We turned that library's usage-reporting off so nothing phones home (local-first).
+- **Keys handled to the security floor.** Your key lives only in the operating system's keychain. The screen only ever sees a masked preview (e.g. `sk-ant-••••3kF9`) and a "in keychain" tick — never the real value, which is never written to a file, a log, a prompt, or the reply. The key is read only at the instant of the call and handed straight to the provider. If a provider rejects a request, we show a plain message and never echo anything that looks like a key.
+- **New storage.** Two tables were added to your database for chats and their messages; like all schema, they're created on first run, with nothing else allowed to change the structure behind your back.
+- **Proved it.** Created chats and confirmed they persist and reappear; confirmed that with no key you get a clear "add your key in Settings" message instead of an error; confirmed saving a key returns only a masked preview. (Streaming a real answer needs your own key — the pipe is built and waiting for it.)
+
+## Step 20 — The model list is now live and key-gated (June 15, 2026)
+
+Two fixes the user asked for, plus a real-provider test.
+
+- **You only see models you can actually use.** The model picker no longer shows a hard-coded list. When you add a provider's key, Orrery asks that provider what models your key can use and shows exactly those — including models newer than this assistant's own knowledge. Add an OpenAI key → OpenAI's current models appear; add Anthropic → Claude's appear; run a local model → it appears. A provider with no key simply doesn't show up. (Verified: with only an OpenAI key attached, the picker listed 32 current OpenAI chat models and nothing else.)
+- **Settings tidy-up + clearer guidance.** The "Save" button now sits neatly beside the key box, and if a chat is pointed at a model whose provider has no key, a plain amber note explains it and the picker steers you to one that works.
+- **Tested against a real provider.** Using a real OpenAI key, we confirmed the whole chat path is correct — it authenticates, sends the request, and handles the response and errors properly. The test also revealed that this particular account has no remaining credit, so getting actual replies needs billing enabled on the account (or just use a different provider, or a local model). The integration itself is sound.
+
+## Step 21 — Shorter model menu + standard chat controls (June 15, 2026)
+
+Two rounds of polish the user asked for.
+
+- **A tidy, current model menu.** Instead of listing every model a key can touch (the OpenAI key alone exposed 32), the picker now shows about **four current ones per provider** — the latest flagship, a fast one, a "pro", and a dedicated **reasoning** model — chosen live from what your key unlocks. (For the test OpenAI key that landed on gpt‑5.5, a reasoning model, a fast mini, and the pro.) Claude shows its current Opus/Sonnet/Haiku/Fable; local models show whatever you have.
+- **The controls people expect from a chat tool.** You can now **Stop** a reply mid‑stream — and Orrery keeps whatever was written so far — **Regenerate** the last answer, **Delete** a chat (with a confirm), and **Copy** any reply. All verified against the live backend.
+
+## Step 22 — File & image attachments in Chat (June 15, 2026)
+
+The first of the agreed Chat upgrades.
+
+- **Attach images and text files.** The paperclip in the composer now opens a file picker; attached items show as chips before you send and as thumbnails (images) or chips (files) on your message. Images are sent to the model to look at; text files are read in alongside your question. Verified end to end — an image attachment is accepted and the message is saved with a small "📎 filename" note so your history shows what was attached.
+- **Scope for now:** images and text files. **PDF reading is the next addition** (it needs either a provider's native document support or a small parser, per the agreed native-plus-neutral approach).
+- Also removed the placeholder sentence in the empty chat, as requested.
+
+## Step 23 — PDF reading (June 15, 2026)
+
+Attach a PDF and the model reads it. Orrery pulls the text out of the PDF **on your machine** and passes it to whichever model you're using — so it works the same on a cloud model or a local one (the neutral path of the agreed native‑plus‑neutral plan). Verified on a real PDF (≈4,700 characters extracted). A scanned/image‑only PDF (no text layer) says so plainly instead of failing.
+
+- **New building block:** a small, widely‑used pure‑Python PDF reader (`pypdf`) — noted here per the dependency rule; it keeps PDF parsing local (nothing sent to a separate service) and earns its place for that.
+- **Also this round:** clearer provider error messages — an out‑of‑credit account now reads *"You're out of API credit for this provider…"* instead of a raw library dump; and the empty‑chat **star pattern** was restored (only the text sentence was removed).
+
+## Step 24 — Security review + an automated safety net (June 15, 2026)
+
+Before opening the most dangerous part of the app (Phase 2 connects to your real database), we did a deep pass on safety and added tests — the user flagged this as essential.
+
+- **Security review (against the project's pre-ship checklist).** The dangerous areas are sound today: your keys live only in the operating system's keychain and the app only ever shows a masked preview, never the real value; error messages are scrubbed so they can never echo a key back; the app listens only on this machine and every request carries the one-time session password; and there is no place yet where untrusted text could turn into a database command. The genuinely risky capabilities — querying your real database, autonomous agents, running code — aren't built yet, so there's nothing unsafe wired in. We wrote down the rules that **must** hold the moment Phase 2 adds real database access: every query uses bound parameters (never built by gluing text together), read-only is enforced at the connection itself (not by trusting the query text), every query has a time limit and a row cap, and personal data is screened before anything is sent to a cloud model.
+- **Automated safety net.** Added 21 tests that guard the security-critical behavior so a future change can't quietly break it: keys never leave the backend, error text never contains a key, connection-string passwords are masked, the model list only shows what your key unlocks, and attachments are handled safely. They run in ~2 seconds with `pytest`.
+- **Pinned versions.** Recorded the exact version of every building block (`requirements.lock.txt`) so the app rebuilds identically and a surprise upstream change can't silently alter behavior.
+
+## Step 25 — Tidied the code; trimmed the model menu (June 15, 2026)
+
+- **Comments cleaned up (user request):** removed the long, verbose comment blocks and module headers across the code, while **keeping the short one-line explanation comments** that say a useful "why" (e.g. "masked, never the raw key", "off the main thread → no signal handlers"). The DEVLOG remains the project's plain-words record, so nothing was lost. Updated the project's own conventions to match, and confirmed the 21 tests still pass and the screen still builds.
+- **Model menu trimmed (earlier user request, now standard):** each provider shows ~4 current/latest models rather than the full list, and the set always includes a reasoning model (OpenAI's o-series, the Claude tiers, a Gemini thinking variant). A model still appears only when its key is attached.
+
+## Step 26 — Phase 2 (part 1): connect a database, browse it read-only (June 15, 2026)
+
+The Data tab is real. You can connect one or more of your own databases by pasting a connection string; Orrery tests it, saves it, and lets you browse any table's rows. This is the most dangerous part of the whole app, so it was built to the security rules from the first line — and each rule was verified, not assumed:
+
+- **Read-only, enforced by the database itself.** Orrery runs every query inside a read-only transaction, so any attempt to write — insert, update, delete, or create a table — is refused by Postgres, not by Orrery trying to guess intent from the text. Confirmed live: all three write attempts were blocked.
+- **Time-limited and capped.** Every query has a time limit and a maximum number of rows returned, so a huge or slow table can't hang or flood the app.
+- **Table names are allow-listed.** A table name is checked against the database's real list and quoted safely before use, so a crafted name can't become an injection. An unknown table returns "not found".
+- **The password never leaves the keychain.** The connection string (which holds your database password) is stored only in the OS keychain; the app keeps just a redacted label (host/database) and never sends the password back to the screen. Confirmed: the password does not appear anywhere in the app's responses.
+
+Added tests for the safety helpers (safe quoting, password redaction, value handling); the suite is now **25 green**.
+
+## Step 27 — Accounts & Keys and Claude plan route (June 16, 2026)
+
+Added the account/subscription layer the user asked for, without weakening the existing API-key path.
+
+- **Settings now says Accounts & Keys.** OpenAI, Anthropic, and Google API keys still work the same way as before: they are saved in the operating system keychain and the screen only sees a masked preview. Ollama is still local and needs no key.
+- **Claude plan access is the first official subscription-backed route.** Orrery can now check whether Claude Code is installed, signed in with a supported Claude plan, and ready for the official credit path. If it is, the user can connect it locally and Chat shows **Claude plan · default** as a model option.
+- **No unsafe subscription shortcuts.** Orrery does not store OAuth/session tokens, browser cookies, or web-session data, and it does not scrape private web UIs. The Claude plan route runs through the official Claude Code path with tools disabled and no session persistence. ChatGPT Pro and Gemini subscription rows are shown as unavailable with clear explanations, because those subscriptions do not pay for third-party model API calls.
+- **Routing is explicit.** Existing `openai/...`, `anthropic/...`, `gemini/...`, and `ollama/...` model IDs still go through the existing provider path. The new `claude_plan/default` model goes through its own adapter. Text and locally extracted PDF/text attachments are allowed; image attachments ask the user to pick an API-key vision model instead.
+- **Tests were added for the dangerous parts.** Provider status cannot leak secrets, unsupported subscription routes stay unavailable, the Claude plan model only appears after readiness is verified, and chat routing sends the new model ID through the Claude plan adapter.
+
+## Step 28 — Phase 2 (part 2): "use my data" with on-device embeddings (June 16, 2026)
+
+Orrery can now answer from your own documents, and the document text stays on your machine.
+
+- **Collections in the Data tab.** Create a collection, drop in text or PDF files; Orrery splits each into overlapping chunks and turns them into embeddings **on your machine** (a small local model — no PyTorch, nothing uploaded). Each collection shows its chunk count.
+- **Hybrid retrieval.** A question is matched two ways at once — by meaning (vector search) and by keywords (the database's full-text search) — and the two rankings are fused, which finds the right passage more reliably than either alone.
+- **"Use my data" in Chat.** Toggle it on, pick a collection, and your question is answered from those documents, with the sources named in the reply (e.g. it cited `[facts.txt]`). Verified end to end: it returned the correct fact and the source.
+- **Personal data screened before the cloud.** When the answer uses a cloud model, the retrieved snippets are run through a personal-data scrubber first (emails, phone numbers, card/SSN-like numbers, IPs are masked). For a local model nothing is sent out, so nothing is masked. Confirmed: a document with an email and an IP still answered the (non-personal) question correctly, with the personal bits redacted on the outbound path.
+- **New building block, justified:** a lightweight on-device embedding library (ONNX-based, no PyTorch) — it keeps embeddings local, which is the whole point. Tests were added for the chunker and the redactor; the suite is now **39 green**.
+
+Also confirmed this round: the new **Claude plan (account) route works for real** — a "use my data" question answered through the connected Claude plan, citing its source. And a boot hang was traced to a leftover app process from repeated restarts (not a code bug); a clean single instance starts normally.
+
+## Step 29 — Chat quality: formatted replies, model switching everywhere, effort control (June 16, 2026)
+
+Chat now reads and behaves like the tools people are used to.
+
+- **Replies are properly formatted.** Answers render as rich text: headings, lists, tables, links, and — most importantly — **code in real code blocks** with a language label, syntax colours, and a one-click **Copy** button. Inline `code` is styled too. Verified live: asking for a Python function returned a `python` code block that rendered with highlighting and a working Copy button.
+- **Switch model on any route, any time.** The model menu lists every route you actually have — API keys *and* the Claude plan account — and you can change the model mid-chat; the choice is saved to that conversation. The Claude plan route now offers four picks (default, Opus, Sonnet, Haiku) instead of one, so the subscription path is no longer locked to a single model.
+- **Effort setting.** A per-chat control lets you ask for more or less thinking — *auto, low, medium, high, extra high*. It's saved with the conversation and passed to models that support a reasoning-effort dial; models that don't simply ignore it (the unsupported setting is dropped, never sent as an error). Verified: effort persists across reload (`high` set, `high` read back).
+- **Why this was safe to add.** Formatting is done by a well-known Markdown renderer on the screen only; nothing about how replies are generated or stored changed. The whole suite stays **39 green** (one test's stub was updated to match the richer Claude-plan call signature), and the screen still builds.
+
+## Step 30 — Speed pass: faster startup, model loading, and status checks (June 16, 2026)
+
+The app was feeling slow, so this round focused on latency without removing features or loosening security.
+
+- **Model loading no longer waits on unnecessary account checks.** The model picker skips Claude Code probing unless the Claude plan was already connected locally. Settings still does the full readiness check, because that screen needs to tell the user whether the plan can be connected.
+- **Provider discovery runs in parallel.** If OpenAI, Anthropic, Google, and Ollama are all configured, Orrery now asks them at the same time instead of waiting for one provider before starting the next. API keys are still read only from the keychain, and model results are still key-gated.
+- **Blocking Claude Code checks moved off the API loop.** Settings and Claude-plan connect/disconnect checks now run in a worker thread, so a slow local Claude Code status command does not stall other local API calls.
+- **Health checks are cached briefly.** The database light still updates, but repeated `/api/health` calls no longer run a fresh database query every time when a recent answer already exists. Startup still forces a real database check.
+- **Chat opens faster.** Conversations load first; model discovery and document collection loading happen alongside it. That means the user can see the current chat while slower provider/model work finishes.
+- **The frontend bundle was split by tab.** The main app bundle dropped from about 535 kB to about 153 kB, and each tab now loads its own code when needed. This keeps the same tabs and behavior, but avoids paying for every screen at launch.
+
+Verified after the speed pass: **40 backend tests green**, and the screen still builds.
+
+## Step 31 — Clean restart and safer startup logs (June 16, 2026)
+
+Restarted Orrery so the user could test the speed pass and the existing features in the running desktop app.
+
+- **A stuck earlier app process was stopped and restarted.** The fresh run connected to Postgres, confirmed the app tables and job-queue schema, started the local API, started the worker, and opened the Orrery window.
+- **One security issue was caught during restart.** The temporary startup log captured the window URL, which includes the per-session local token. That token should never be written to a file, so Uvicorn access logging is now disabled. The app still logs important startup events, but it no longer logs request URLs containing the session token.
+- **Verified after the fix.** The backend test suite stayed green (**40 passed**), Orrery started cleanly, and the new startup logs show `API ready` and `Opening Orrery window` without the session token.
+- **Only expected warning seen:** Ollama model discovery failed because no local Ollama server answered on `localhost:11434`. That does not break OpenAI/Claude/Google/API-key routes or the rest of the app; it only means local Ollama models will appear when Ollama is running.
+
+## Step 32 - Better chat actions and code formatting (June 16, 2026)
+
+Chat now has the extra prompt controls the user asked for, and the formatter is more forgiving when a model forgets Markdown fences.
+
+- **Prompt actions on user messages.** Every user prompt now has **Copy prompt**, **Edit**, **Resubmit**, and **Rewrite**. Edit moves the prompt back into the composer; Resubmit sends the same prompt again; Rewrite asks the current model to return a cleaner version of the prompt.
+- **Assistant actions are clearer.** Replies now say **Copy reply**, and the latest reply still supports **Regenerate**. There is also a **Resubmit prompt** action on the latest reply, so the user can quickly rerun the prompt that produced it.
+- **A proper multiline composer.** The chat box is now a textarea: **Enter** sends, **Shift+Enter** creates a new line, and file attachments still work the same way.
+- **Stronger code formatting.** The backend now tells models to answer in GitHub-flavored Markdown and to fence code, commands, SQL, JSON, logs, config, and file contents with language tags. The UI also repairs common unfenced code output before rendering, so missed code blocks still become labeled, copyable blocks for many languages instead of plain text.
+- **Prompt formatting too.** User prompts now render with Markdown as well, so pasted code/config in the user's own message is easier to read and copy without changing what is sent to the model.
+
+## Step 30 — Faster chat, many more models, and full conversation memory (June 22, 2026)
+
+A big round of chat improvements, driven by three things the user asked for: speed, more model choices, and the chat remembering everything.
+
+- **Speed: the Claude-plan route now streams.** Before, an account (OAuth) reply was produced in full behind the scenes and then appeared all at once — so it felt slow. Now the words stream in as they're written, the same as the API-key models. (There's still a short start-up pause whenever an account route is used, because it goes through the official Claude Code program, which has to launch each time; the API-key routes don't have that pause and stay the fastest.) The sign-in check that used to run on every screen is now remembered for a short while, so the app stops re-checking constantly.
+- **Many more models, your choice.** Added **Mistral (EU)** and **DeepSeek** as built-in API-key providers, and — the big one — a universal **"Add a custom model"** option that works with *any* OpenAI-compatible service: Qwen, Kimi (Moonshot), GLM (Zhipu), OpenRouter, Together, Groq, or a local server. One-click presets fill in the address for the popular ones; you just paste your key and the model name. Every key still lives only in your system keychain, never in a file.
+- **You pick which models show up.** Settings now has a **Models** section listing everything you could turn on, each with an on/off switch; the chat model menu shows **only the ones you've turned on**. Turning on a provider (adding its key, connecting Claude plan, or adding a custom model) switches its models on automatically, and you can fine-tune from there. Existing Claude-plan users keep their menu — the app seeds it once on upgrade.
+- **The chat now remembers the whole conversation, including files.** Earlier, a question would only "see" earlier messages — but an attached file's contents were forgotten after the turn you sent it on. Now the full text of attached text/PDF files is kept with the conversation, so you can ask about a document many messages later and it still knows. (Replies and code were already remembered; this closes the file gap. Images are noted by name in later turns; re-reading an image across turns will come with the image-model work.)
+- **Small fix:** user message bubbles were clipping their text at the top after the recent formatting change; corrected so the message and its action buttons show fully.
+- **Why this was safe:** no new dependencies (the model library already speaks all these services); keys stay in the keychain and are never shown or logged; the new "remembered context" is the user's own data living in the user's own database, which is exactly where Orrery keeps everything. Test suite is **45 green**, including new checks for custom-model routing, the keychain namespace for custom keys, and Mistral model curation.
+
+**On "log in instead of API keys" for ChatGPT and others:** the honest finding is that a safe, *official* subscription login only exists where the provider ships a real command-line tool — that's Claude (already wired) and, in principle, ChatGPT via OpenAI's `codex` and Gemini via Google's `gemini`. On this machine `gemini` isn't installed, and `codex` is both currently mis-configured and heavyweight (it's a full coding agent, so it's slow for plain chat) — which clashes with the "speed matters" goal. So the fast, official answer for everything other than Claude is **API keys**, which now cover OpenAI, Google, Mistral, DeepSeek, and anything OpenAI-compatible. We can revisit a ChatGPT login later if the speed trade-off is acceptable.
+
+## Step 34 - A context window for every chat (June 22, 2026)
+
+Long conversations no longer have to send their entire history to the model every time.
+
+- **A setting on each conversation.** Chat now has a **context** selector beside the model and effort controls: Auto, 8K, 16K, 32K, 64K, 128K, or 256K. The choice is saved with that conversation and comes back when it is reopened.
+- **Auto preserves the old behavior.** Existing chats default to Auto, which keeps sending the full remembered history exactly as before. Nothing changes unless the user chooses a limit.
+- **Limits do not delete messages.** A fixed window only controls what is included in the next model request. The full conversation and attached-file text stay saved and visible in the database.
+- **Recent complete turns win.** Orrery estimates the request size locally, reserves 25% of the selected window for the answer, and removes the oldest complete user/assistant turns first. The newest user turn is always kept. Image data is counted with a fixed estimate instead of counting large base64 bytes.
+- **No new dependency.** The estimate uses a conservative local calculation, so no tokenizer package, network request, or provider-specific code was added. API validation rejects context values outside the supported range.
+- **Verified and applied.** The backend suite is now **50 green**, the production UI build succeeds, the additive database migration completed, and Orrery was restarted with the session-token protection still active.
+
+## Step 35 - Context choices simplified and raised to 1M (June 22, 2026)
+
+The context selector now has only the three larger choices the user wanted: **128K, 256K, and 1M**.
+
+- **1M is the default and maximum.** New chats start at 1M, and older chats that still had the previous Auto value are upgraded to 1M.
+- **Only the requested choices are accepted.** The API now rejects other context sizes, so the screen and backend cannot drift apart.
+- **The existing safety behavior is unchanged.** Orrery still reserves 25% for the answer, removes only the oldest complete turns from the model request, and never deletes saved messages or attached-file text.
+- **Provider limits still apply.** The setting is Orrery's maximum request budget; a selected model with a smaller native context window may reject a request before 1M.
+- **Verified and applied.** All **50 backend tests** pass, the production UI build succeeds, older chats were backfilled, and Orrery restarted with its local session-token protection active.
+
+## Step 36 — Security hardening pass 1 (June 22, 2026)
+
+Went through the live app looking for ways it could be attacked, and fixed what we found. Plain-words summary (full report: `../security/SECURITY_HARDENING.md`):
+
+- **Closed a "make the app fetch the wrong thing" hole.** The new *Add custom model* feature lets you type the address of a model service, and the app then calls it. We now check that address first: only normal web addresses are allowed, and we block tricks that try to point the app at the computer's own internal/cloud-metadata services. Plain (unencrypted) addresses are allowed only for models running on your own machine. Checked both when you add the model and again each time it's used.
+- **Stopped a possible key leak into logs.** One provider (Google) was being called with the secret key in the web address; if that call failed, the error written to the log could contain the key. The key now travels in a header instead, so it never appears in a URL or a log.
+- **Hardened the local door.** The app's private password check is now done in a way that doesn't leak hints through timing, oversized requests are refused, and every response carries standard browser-safety headers (including a strict content policy that blocks injected scripts).
+- **Belt-and-suspenders on error messages.** Any stray key-looking text in a provider error is now scrubbed before it could ever reach the screen.
+- **Confirmed the already-safe parts:** database access stays read-only and parameterized with table-name allow-listing; the model command-line bridges never run through a shell; secret keys are only ever shown masked.
+
+What's explicitly *not* done yet, by design: the code-running feature (Phase 4) must arrive sandboxed, and deeper prompt-injection defenses come with Agents (Phase 5). Tests added for all of the above; suite is **60 green**.
+
+## Step 37 - Official CLI account routes completed (June 22, 2026)
+
+Finished the account work that was left half-complete, while keeping every API-key and local-model route intact.
+
+- **Codex / ChatGPT plan now connects correctly.** Orrery detects the installed official Codex CLI, verifies its saved ChatGPT sign-in, and works around an invalid old `service_tier` value without editing the user's config file. Requests run in an empty temporary folder with a read-only sandbox, no approval prompts, and an ephemeral session.
+- **No OAuth-token copying.** Claude Code, Codex, and Gemini CLI keep ownership of their own login files. Orrery launches the official executable and stores only a small local `connected` marker in the operating-system keychain. It never reads browser cookies, vendor auth files, refresh tokens, or private web sessions.
+- **The warnings now match official documentation.** OpenAI documents ChatGPT sign-in and `codex exec`, so the old blanket "unsupported and may ban you" claim was removed. Google officially ended consumer free, Google AI Pro, and Google AI Ultra service through Gemini CLI on **June 18, 2026** and moved those users to Antigravity CLI. Orrery keeps Gemini CLI only for supported enterprise/API-key accounts and does not pretend Antigravity is integrated before Google publishes a stable restricted headless interface.
+- **Connect requires a deliberate acknowledgement.** Settings explains that these are local coding-agent CLIs, may be slower than API models, use plan limits, and can load normal CLI configuration on older releases. The Connect button stays disabled until the user checks the acknowledgement box.
+- **Chinese API presets were refreshed.** DeepSeek remains built in. The custom-model presets now use current official examples for Qwen (`qwen3.7-max`), Kimi (`kimi-k2.7-code`), and GLM (`glm-5.2`), while preserving the universal OpenAI-compatible form for any other provider.
+- **Safety and speed checks.** Required CLI safety flags are checked before a route becomes available, Codex login status is cached briefly so the model picker does not repeatedly launch the CLI, failed runs clean up their temporary folders, and Gemini JSONL output ignores tool events. The full backend suite is **68 green** and the production UI build succeeds.
+
+## Step 38 - Orrery logo and Git repository hygiene (June 22, 2026)
+
+Updated Orrery's visual identity and tightened what can be pushed to Git.
+
+- **A clearer Orrery mark.** Replaced the small constellation with an orbital **O**: an amber core, ice-blue orbit, and small satellite inside the existing dark UI palette. The same mark now appears in the sidebar, browser favicon, design mockup, and native desktop icon.
+- **Native app icon included.** Added versioned PNG and multi-size Windows ICO assets and wired the ICO into pywebview startup. The app still starts normally if an icon file is missing.
+- **Git ignores now cover real project risks.** Expanded the ignore rules for Python/Node caches, virtual environments, UI builds, coverage output, logs, runtime data, local databases, temporary files, IDE metadata, credentials, and generated package artifacts.
+- **Local agent permissions stay local.** The shared Orrery development skill remains source-controlled, while `.claude/settings.local.json` is ignored because it contains machine-specific permissions. The generated `docs/orrery-development.skill` package is also ignored because its editable source already lives under `.claude/skills/`.
+- **Important source remains included.** `.env.example`, package lockfiles, Python requirement locks, source code, tests, documentation, and branding assets are not ignored.
+
+## Step 39 - Production-ready CLI setup and icon controls (June 22, 2026)
+
+Fixed the account-route problem the user found and made the setup understandable without terminal knowledge.
+
+- **Codex plan access works for real.** Orrery was passing its config repair before `codex exec`, so Codex read the user's old invalid `service_tier = "priority"` first and stopped. The override now goes in the correct place. A live request through Orrery returned `ORRERY_PLAN_OK`.
+- **The right Codex executable wins.** Orrery now prefers the official Windows Package Manager installation over stale npm shims and editor-extension copies. On this machine it found the official Codex `0.142.0`, verified ChatGPT sign-in, and connected the plan successfully.
+- **Version-aware models.** Current Codex uses GPT-5.5. An older compatible CLI automatically uses GPT-5.4 mini for the default/fast route instead of failing; the old saved fast-model id remains compatible.
+- **Install, update, sign in, check, then connect.** Settings now shows the installed CLI version and the exact next action. With consent, one click installs or updates only the hard-coded official WinGet packages (`OpenAI.Codex` and `Anthropic.ClaudeCode`). Sign in opens only the vendor executable's fixed login command in a separate console. A refresh button rechecks status, and Connect runs a small safe readiness request before saving Orrery's local marker.
+- **No token handling changed.** Orrery still never reads or copies Claude/Codex login files. Installer package ids and login arguments are backend constants; the screen cannot submit a command, package, URL, or shell text.
+- **Message actions are icons.** Copy, edit, resubmit, rewrite, regenerate, and resubmit-last-prompt are now compact familiar icons with hover tooltips and accessible labels.
+- **Navigation icons were upgraded.** Every main tab now uses a consistent Lucide symbol, and Agents has a distinct bot mark instead of the previous orbit symbol.
+- **New dependency, justified and pinned.** Added `lucide-react` for standard, accessible interface icons instead of maintaining more hand-drawn SVGs. The dependency audit reports zero known vulnerabilities.
+- **Verified.** Both Claude Pro and Codex/ChatGPT plan status are connected. The complete backend suite is **74 green**, the production UI build succeeds, and the live Codex route produced the expected reply.
+
+## Step 40 - Responsive Settings and honest Claude limit errors (June 22, 2026)
+
+Rebuilt Settings without removing any of its existing controls, and fixed the Claude failure message that made a normal plan limit look like a broken connection.
+
+- **Settings is organized instead of split into two long columns.** General, Accounts, Models, Usage, Integrations, and Feedback now have a dedicated category navigation. Desktop uses a compact side rail; tablets and phones use a horizontally scrollable category bar.
+- **Small-screen controls stay usable.** Provider rows and their buttons stack on narrow screens, long provider messages wrap, API-key editing can wrap safely, and Defaults becomes one column. Browser checks at 1440, 900, and 390 pixels found no page overflow, off-screen controls, or overlapping account actions.
+- **Every existing setting remains.** API keys, Claude/Codex/Gemini CLI routes, Ollama, model visibility, custom models, spending caps, MCP placeholders, defaults, and feedback are still available under the new categories.
+- **Company branding is complete.** General can enable a company header with an uploaded logo, name, tagline, and short details. Saving updates the visible header immediately. Logos are limited to local PNG, JPEG, WebP, or GIF uploads up to 1 MB; remote URLs and SVG data are rejected.
+- **Claude did not lose its connection.** The live Claude Code account was authenticated, but Claude returned a provider session-limit response with a reset time. Orrery now reads JSON result errors even when the CLI exits normally and preserves Claude's exact session-limit/reset message instead of showing a generic sign-in failure.
+- **Verified.** The full backend suite is **77 green**, the production UI build succeeds, and the responsive screen checks pass.
+
+## Step 41 - Project folders reorganized for growth (June 22, 2026)
+
+Reorganized the repository so related files stay together and new work has an obvious home, without changing how Orrery behaves.
+
+- **The backend now follows ownership.** `backend/core` holds configuration, database, migrations, models, and queue setup. `backend/providers` holds model accounts, routing, and the catalog. `backend/features` holds Chat, Data, RAG, usage, and feedback. `backend/security` holds the keychain, privacy redaction, and network guards. The API entry point stays easy to find at `backend/api.py`.
+- **Tests mirror the backend.** Provider, feature, and security tests now live in matching folders, while API tests and shared fixtures remain at the test root.
+- **Documentation has clear shelves.** Plans, history, research, security records, and design references now have separate folders under `docs`, with `docs/README.md` as the index. The DEVLOG is now `docs/history/DEVLOG.md`.
+- **Setup and assets are grouped.** OneDrive setup helpers live in `scripts/setup`, desktop icons live in `assets/desktop`, and generated documentation packages live under the ignored `docs/generated` folder.
+- **Standard entry files stayed at the root.** `README.md`, `app.py`, dependency files, `.env.example`, and `docker-compose.yml` remain where Python, npm, Docker, and new contributors expect them.
+- **Navigation notes were added.** Backend, tests, scripts, assets, and documentation each have a short README explaining what belongs there.
+- **No behavior changed.** All imports, setup commands, icon paths, project rules, and documentation links were updated to the new locations.
+- **A move-sensitive startup path is now protected.** Moving configuration into `backend/core` initially made it look for `.env` one folder too low. The project-root calculation was corrected and a regression test now verifies that it always resolves to the launcher directory.
+- **Verified and running.** All **78 backend tests** pass, the production UI build succeeds, the moved setup command works, the API serves the built screen, and the Orrery desktop window is open and responsive.
+
+## Step 42 - Trusted PDF, Word, and Excel exports from Chat (June 23, 2026)
+
+Added the first safe file-production feature: a completed Chat reply can now be downloaded without running any model-written code.
+
+- **One download control, three formats.** Every saved assistant reply has a compact download icon beside Copy. Its menu offers PDF, Word, and Excel.
+- **Formatting is reconstructed locally.** Orrery parses the saved Markdown itself and preserves headings, paragraphs, bold/italic text, lists, quotes, code blocks, dividers, and tables in PDF and Word.
+- **Excel handles prose and tables.** The workbook includes a structured Reply sheet, and every Markdown table gets its own worksheet with headers, wrapping, filters, and practical column widths.
+- **Spreadsheet formulas are treated as text.** Values beginning with `=`, `+`, `-`, or `@` (including after leading spaces) are neutralized before entering a workbook, preventing formula injection.
+- **Only saved replies can be exported.** The frontend sends the conversation and assistant-message IDs. The backend verifies that the message belongs to that conversation and is an assistant reply; it accepts no file path and executes no supplied code.
+- **Resource limits are explicit.** Extremely large replies or tables are refused with a clear error instead of consuming unbounded memory.
+- **New dependencies, justified and pinned.** ReportLab writes PDF, python-docx writes Word, openpyxl writes Excel, and markdown-it-py supplies the restricted Markdown parser. All work is local; no export content is sent to another service.
+- **Verified with real saved content.** All **86 backend tests** pass, dependency checks are clean, the production UI build succeeds, the download menu fits desktop and phone widths, and a saved Orrery reply produced readable PDF, Word, and Excel files through the real database-backed export service.
+
+## Step 43 - Safe code-rendered images, visible reasoning routes, and one-click local models (June 23, 2026)
+
+Expanded Chat and local model support without allowing models to execute arbitrary code.
+
+- **Chat can create code-rendered images.** `/image` and natural requests such as "create an image", "draw a diagram", or "design a logo" use the selected text model to write SVG vector markup. The result appears inside the conversation and can be downloaded as SVG.
+- **The image path is declarative, not executable.** Orrery rejects scripts, event handlers, CSS, `foreignObject`, embedded or remote files, links, animation, XML entities/DOCTYPE, unsupported tags/attributes, and oversized output. It never runs model-written Python, JavaScript, shell commands, HTML, browser automation, or filesystem code.
+- **Image artifacts are saved with the assistant message.** Reopening the conversation restores the rendered SVG from the user's own Postgres database. Standard text/PDF/Word/Excel reply exports continue to work as before.
+- **Claude thinking control is real.** The official Claude Code adapter now passes the per-chat effort choice through `--effort` when the installed CLI exposes it. Default, Opus, and Sonnet labels identify adaptive thinking; Haiku is labeled as the fast route.
+- **ChatGPT plan routes identify reasoning.** The existing Codex configuration already passed `model_reasoning_effort`; the model labels now make that behavior visible instead of hiding it behind generic names.
+- **A new Local Models tab manages Ollama end to end.** With explicit consent, Orrery installs only the fixed official WinGet package `Ollama.Ollama`, starts the local service, streams model-download progress, activates downloaded models in Chat, hides/shows them, and removes them from disk.
+- **Reviewed one-click starters.** Qwen 3 4B, Gemma 3 4B, DeepSeek R1 8B, and Llama 3.2 3B are offered with size/capability guidance. Orrery still discovers every Ollama model already installed instead of limiting the model list to four.
+- **Chat handoff is direct.** Clicking Chat beside an installed local model opens Chat with that model preferred; local routes remain keyless and use the existing Ollama/litellm chat path.
+- **Security boundaries remain fixed.** Installer package ids and service commands are backend constants, no user-provided shell command is accepted, model names are validated, subprocesses use argument arrays with no shell, and provider/account secrets are unchanged.
+- **Verification expanded.** New tests cover SVG allowlisting, malicious SVG rejection, fixed-package Ollama installation, model-name validation, local status, API acknowledgement, corrupt artifact handling, and Claude effort forwarding. All **101 backend tests** pass, the production UI build succeeds, the production npm audit reports zero vulnerabilities, Python dependencies are consistent, the migration is applied, and the restarted app is serving normally.
+
+## Step 44 - Requested file previews and model-resilient SVGs (June 23, 2026)
+
+Made Chat's generated-file path match what the user actually asked for, instead of treating every reply as every file type.
+
+- **Only the requested file type shows.** If the user asks for a PDF, only a PDF chip appears; if they ask for Excel and CSV, those two appear; normal answers show no file controls. The recognized safe formats are PDF, Word/DOCX, Excel/XLSX, PowerPoint/PPTX, CSV, Markdown, text, HTML, and JSON.
+- **Click the file to preview it.** The file chip itself opens a preview in the side panel. The small download icon beside it saves the real file. PDF previews use the PDF renderer; Office/text formats use an Orrery-built HTML preview from the same cleaned content.
+- **Exports use the requested artifact, not the whole chat wrapper.** The backend now looks at the preceding user prompt, strips common assistant wrapper lines like "Here is..." / "Let me know...", extracts Markdown tables for spreadsheet/CSV files, extracts fenced JSON/HTML/Markdown/text when present, and then renders only that body.
+- **More formats without extra dependencies.** Existing PDF, Word, and Excel exports remain. CSV, Markdown, text, HTML, JSON, and dependency-free PPTX export were added. Spreadsheet-style outputs still neutralize formula-like values before they enter CSV/XLSX.
+- **SVG generation is less model-fragile.** The SVG prompt is stricter, validation gets one extra repair attempt, safe opacity/font attributes are allowed, and if the model repeatedly returns invalid SVG, Orrery creates a safe built-in SVG fallback instead of executing code or failing with no visual.
+- **Security boundary is unchanged.** The backend still accepts only known formats, verifies the message belongs to the conversation and is an assistant reply, never accepts file paths, never executes model-written code, and keeps previews temporary.
+- **Startup check.** Launch reaches database migration and `API ready on http://127.0.0.1:8765`, but this machine currently fails when pywebview initializes WebView2 with `0x8000FFFF (E_UNEXPECTED)`. Orrery now gives WebView2 a writable ignored `tmp/webview2` profile path, but the remaining failure is in the local WebView2 runtime/session rather than the export code.
+- **Verified.** All **109 backend tests** pass, the production UI build succeeds, `pip check` reports no broken requirements, and the production npm audit reports zero vulnerabilities.
+
+## Next up
+
+The next Chat feature is **web search with visible citations and source links**. Photorealistic image/video provider adapters and the reusable media library remain in the Media Hub roadmap; the safe SVG path is available now for illustrations, diagrams, posters, icons, and logos.

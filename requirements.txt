@@ -1,0 +1,48 @@
+# Orrery backend dependencies.
+#
+# These are lower-bound ranges for the core stack. After the first successful
+# install we lock EXACT versions into requirements.lock.txt via `pip freeze`
+# (security.md §8 — pinned, reproducible builds). Install from the lock file
+# once it exists; use this file to add/upgrade a dependency.
+
+# Desktop window (pure Python; Tauri comes later per roadmap.md Phase 8)
+pywebview>=5.3
+
+# Backend / API — localhost only, SSE streaming
+fastapi>=0.115
+uvicorn[standard]>=0.32
+
+# Model access — one interface to every provider (Phase 1+)
+litellm>=1.55
+
+# Database — single source of truth (chats, docs, specs, runs, queue)
+SQLAlchemy>=2.0
+psycopg[binary]>=3.2
+
+# Vector search for RAG (Phase 2; extension enabled at Phase 0 migration)
+pgvector>=0.3
+
+# Local embeddings for RAG (Phase 2) — ONNX, no PyTorch; runs on-device (local-first)
+fastembed>=0.4
+
+# Postgres-native job queue + scheduler — durable runs, retries, cron.
+# 3.x ships the psycopg connector in core (no [psycopg] extra).
+procrastinate>=3.0
+
+# Secrets — OS keychain (security.md §1)
+keyring>=25.5
+
+# Configuration
+pydantic>=2.10
+pydantic-settings>=2.7
+python-dotenv>=1.0
+
+# PDF text extraction (local-first — pure Python, no cloud parsing). See DEVLOG.
+pypdf>=5.1
+
+# Trusted Chat exports: Markdown parsing plus local PDF, Word, and Excel writers.
+markdown-it-py>=4.2
+reportlab>=5.0
+python-docx>=1.2
+openpyxl>=3.1
+python-pptx>=1.0

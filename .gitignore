@@ -1,0 +1,92 @@
+# Python environments, bytecode, and packaging
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+ENV/
+.eggs/
+*.egg-info/
+build/
+dist/
+*.whl
+
+# Python tooling and test output
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.nox/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+pytestdebug.log
+
+# Environment files and local credentials
+.env
+.env.*
+!.env.example
+.envrc
+.direnv/
+*.pem
+*.p12
+*.pfx
+*.token
+credentials*.json
+secrets*.json
+
+# Machine-specific agent and editor state
+.claude/settings.local.json
+.codex/
+.idea/
+.vscode/
+*.code-workspace
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Node and frontend build output
+node_modules/
+ui/node_modules/
+ui/dist/
+ui/.vite/
+ui/coverage/
+.npm/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Orrery runtime data
+logs/
+media_library/
+uploads/
+tmp/
+temp/
+*.log
+*.pid
+*.sqlite
+*.sqlite3
+*.db
+
+# Generated project artifacts
+*.skill
+docs/generated/
+
+# OS and temporary files
+.DS_Store
+._*
+Thumbs.db
+ehthumbs.db
+desktop.ini
+$RECYCLE.BIN/
+*.swp
+*.swo
+*~
+*.tmp
+*.bak
+*.orig
+* conflicted copy*

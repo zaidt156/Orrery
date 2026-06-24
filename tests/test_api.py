@@ -1,0 +1,176 @@
+import json
+
+import pytest
+from fastapi.testclient import TestClient
+from pydantic import ValidationError
+
+from backend.api import Branding, NewConversation, create_app
+from backend.features import exports
+from backend.providers import accounts
+from backend.security import secrets
+
+TOKEN = "secret-token"
+
+
+def _client():
+    return TestClient(create_app(TOKEN))
+
+
+def test_api_requires_token():
+    assert _client().get("/api/health").status_code == 401
+
+
+def test_health_with_token():
+    r = _client().get("/api/health", headers={"X-Orrery-Token": TOKEN})
+    assert r.status_code == 200
+    assert "database" in r.json()
+
+
+def test_security_headers_present():
+    r = _client().get("/api/health", headers={"X-Orrery-Token": TOKEN})
+    assert r.headers["X-Content-Type-Options"] == "nosniff"
+    assert r.headers["X-Frame-Options"] == "DENY"
+    assert "default-src 'self'" in r.headers["Content-Security-Policy"]
+
+
+def test_wrong_token_rejected():
+    assert _client().get("/api/health", headers={"X-Orrery-Token": "nope"}).status_code == 401
+
+
+def test_context_window_has_safe_bounds():
+    assert NewConversation(model="openai/test").context_window == 1_000_000
+    assert NewConversation(model="openai/test", context_window=131072).context_window == 131072
+    with pytest.raises(ValidationError):
+        NewConversation(model="openai/test", context_window=65536)
+
+
+def test_branding_accepts_uploaded_raster_images_only():
+    branding = Branding(
+        enabled=True,
+        name="Acme",
+        details="Internal workspace",
+        logo="data:image/png;base64,AA==",
+    )
+    assert branding.details == "Internal workspace"
+
+    with pytest.raises(ValidationError):
+        Branding(logo="https://example.com/logo.png")
+    with pytest.raises(ValidationError):
+        Branding(logo="data:image/svg+xml;base64,PHN2Zz4=")
+
+
+def test_providers_never_return_raw_key():
+    secrets.set_provider_key("openai", "sk-proj-SECRETKEY999")
+    r = _client().get("/api/providers", headers={"X-Orrery-Token": TOKEN})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["openai"]["configured"] is True
+    # The raw key must not appear anywhere in the response payload.
+    assert "SECRETKEY999" not in json.dumps(body)
+
+
+def test_set_key_returns_masked_status():
+    r = _client().put(
+        "/api/providers/openai/key",
+        headers={"X-Orrery-Token": TOKEN},
+        json={"key": "sk-proj-ANOTHERSECRET42"},
+    )
+    assert r.status_code == 200
+    assert "ANOTHERSECRET42" not in json.dumps(r.json())
+    assert r.json()["configured"] is True
+
+
+def test_connect_claude_plan_endpoint(monkeypatch):
+    monkeypatch.setattr(
+        accounts,
+        "_run_claude_auth_status",
+        lambda: (
+            True,
+            {
+                "loggedIn": True,
+                "authMethod": "claude.ai",
+                "apiProvider": "firstParty",
+                "email": "person@example.com",
+                "subscriptionType": "pro",
+            },
+            None,
+        ),
+    )
+
+    r = _client().post("/api/providers/anthropic/claude-plan/connect", headers={"X-Orrery-Token": TOKEN})
+
+    assert r.status_code == 200
+    body = r.json()
+    assert body["configured"] is True
+    assert "person@example.com" not in json.dumps(body)
+
+
+def test_connect_claude_plan_endpoint_unavailable():
+    r = _client().post("/api/providers/anthropic/claude-plan/connect", headers={"X-Orrery-Token": TOKEN})
+
+    assert r.status_code == 400
+    assert "Claude Code" in r.json()["detail"]
+
+
+def test_cli_install_endpoint_requires_acknowledgement():
+    r = _client().post(
+        "/api/providers/openai/chatgpt-plan/install",
+        headers={"X-Orrery-Token": TOKEN},
+        json={"acknowledged": False},
+    )
+
+    assert r.status_code == 400
+    assert "Confirm" in r.json()["detail"]
+
+
+def test_local_runtime_install_requires_acknowledgement():
+    r = _client().post(
+        "/api/local-models/install",
+        headers={"X-Orrery-Token": TOKEN},
+        json={"acknowledged": False},
+    )
+
+    assert r.status_code == 400
+    assert "Confirm" in r.json()["detail"]
+
+
+def test_cli_login_endpoint_uses_account_helper(monkeypatch):
+    monkeypatch.setattr(
+        accounts,
+        "launch_plan_login",
+        lambda mode_id: {"started": True, "message": f"started {mode_id}"},
+    )
+
+    r = _client().post(
+        "/api/providers/openai/chatgpt-plan/login",
+        headers={"X-Orrery-Token": TOKEN},
+    )
+
+    assert r.status_code == 200
+    assert r.json()["message"] == "started chatgpt_plan"
+
+
+def test_reply_export_returns_download(monkeypatch):
+    async def fake_export(*args):
+        return exports.ExportResult(b"%PDF-test", "application/pdf", "reply.pdf")
+
+    monkeypatch.setattr(exports, "export_message", fake_export)
+    r = _client().get(
+        "/api/conversations/c1/messages/m1/export/pdf",
+        headers={"X-Orrery-Token": TOKEN},
+    )
+
+    assert r.status_code == 200
+    assert r.content == b"%PDF-test"
+    assert r.headers["content-type"].startswith("application/pdf")
+    assert 'filename="reply.pdf"' in r.headers["content-disposition"]
+    assert r.headers["cache-control"] == "no-store"
+
+
+def test_reply_export_rejects_unsupported_format():
+    r = _client().get(
+        "/api/conversations/c1/messages/m1/export/exe",
+        headers={"X-Orrery-Token": TOKEN},
+    )
+
+    assert r.status_code == 404
