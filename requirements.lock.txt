@@ -62,10 +62,10 @@ psycopg-binary==3.3.4
 psycopg-pool==3.3.1
 pycparser==3.0
 pydantic==2.13.4
-pydantic-settings==2.14.1
+pydantic-settings==2.14.2
 pydantic_core==2.46.4
 Pygments==2.20.0
-pypdf==6.13.2
+pypdf==6.13.3
 pytest==9.1.0
 python-dateutil==2.9.0.post0
 python-docx==1.2.0
