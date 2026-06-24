@@ -1,0 +1,32 @@
+# Local development database for Orrery.
+#
+# Uses the official pgvector image so the `vector` extension is available out of
+# the box (Phase 2 RAG). This is a LOCAL DEV container only — its password is a
+# throwaway in .env (gitignored). Your real database and provider keys are never
+# stored here; they go in the OS keychain (security.md §1).
+#
+#   docker compose up -d      # start
+#   docker compose down       # stop (keeps data in the named volume)
+#   docker compose down -v    # stop and DELETE all data
+
+services:
+  db:
+    image: pgvector/pgvector:pg17
+    container_name: orrery-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-orrery}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-orrery_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-orrery}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - orrery_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-orrery} -d ${POSTGRES_DB:-orrery}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+volumes:
+  orrery_pgdata:
