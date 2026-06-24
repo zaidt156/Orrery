@@ -16,6 +16,8 @@ from backend.features import sandbox, skills
 from backend.providers import ai
 
 MAX_ATTEMPTS = 3
+QUALITY_FILE_EFFORT = "high"
+QUALITY_CLAUDE_PLAN_EFFORT = "xhigh"
 _CODE_FENCE = re.compile(r"```(?:python|py)?\s*\n([\s\S]*?)```", re.IGNORECASE)
 
 # strong, precise file intent: a creation verb is not required — naming a concrete artifact is enough
@@ -32,19 +34,23 @@ _CREATE_VERB = re.compile(
 )
 
 _SYSTEM = (
-    "You generate FILES by writing ONE Python program that runs in a locked-down, OFFLINE sandbox.\n"
-    "Reply with a single ```python code block and NOTHING else - no prose before or after.\n"
-    "Requirements:\n"
-    "- Save every deliverable into the ./out directory (it already exists), with clear filenames and "
-    "correct extensions.\n"
-    "- Build real, complete, polished files that fully satisfy the request - never placeholders, stubs, "
-    "or 'TODO' content.\n"
-    "- Available libraries: python-docx, openpyxl, XlsxWriter, python-pptx, reportlab, fpdf2, pandas, "
-    "numpy, matplotlib (use matplotlib.use('Agg')), Pillow, markdown, beautifulsoup4, lxml, odfpy, plus "
-    "the Python standard library.\n"
-    "- No network access of any kind; everything must work fully offline.\n"
-    "- Do not read or write outside ./out. print() the name of each file you create.\n"
-    "- If the user asks for a presentation also consider saving a PDF copy for preview; for charts save PNG."
+    'You generate FILES by writing ONE Python program that runs in a locked-down, OFFLINE sandbox.\n'
+    'Reply with a single ```python code block and NOTHING else - no prose before or after.\n'
+    'Quality bar:\n'
+    "- Think like a senior document designer and production engineer before writing code. The file must be complete, polished, useful, and directly tailored to the user's request.\n"
+    '- Never create placeholder, stub, filler, lorem ipsum, TODO, empty, single-slide, or generic template files unless the user explicitly requested a template.\n'
+    '- Use the strongest suitable library for the format: python-pptx for PPTX, reportlab/fpdf2 for PDF, python-docx for Word, openpyxl/XlsxWriter for Excel, pandas only when it helps.\n'
+    '- For PowerPoint: use a real widescreen deck, a designed cover slide, clear slide hierarchy, concise slide titles, useful speaker notes when appropriate, balanced spacing, readable type sizes, restrained colors, and no overcrowded bullet dumps.\n'
+    '- For PDF/Word: use headings, sections, tables where useful, page numbers or document metadata when appropriate, readable margins, and professional typography.\n'
+    '- For Excel/CSV: create clean headers, typed rows, formatting, widths, freeze panes, filters, formulas only when useful, and neutralize formula-like user text when it should remain text.\n'
+    'Requirements:\n'
+    '- Save every deliverable into the ./out directory (it already exists), with clear filenames and correct extensions.\n'
+    "- Build real, complete, polished files that fully satisfy the request - never placeholders, stubs, or 'TODO' content.\n"
+    '- Reopen or validate each generated file in code before finishing when the library supports it. If validation fails, fix the file before printing success.\n'
+    "- Available libraries: python-docx, openpyxl, XlsxWriter, python-pptx, reportlab, fpdf2, pandas, numpy, matplotlib (use matplotlib.use('Agg')), Pillow, markdown, beautifulsoup4, lxml, odfpy, plus the Python standard library.\n"
+    '- No network access of any kind; everything must work fully offline.\n'
+    '- Do not read or write outside ./out. print() the name of each file you create.\n'
+    '- Create only the file types the user asked for, unless they explicitly request companion exports.'
 )
 
 
@@ -53,6 +59,30 @@ def wants_file(text: str) -> bool:
     if not text:
         return False
     return bool(_FILE_INTENT.search(text) and (_CREATE_VERB.search(text) or "." in text))
+
+
+# File requests that genuinely need code execution (charts, images, computation). Plain
+# documents/decks/spreadsheets go through the much faster structured builder instead of
+# the spin-up-a-container, write-code, run, maybe-retry loop.
+_NEEDS_CODE = re.compile(
+    r"\b(chart|graph|plot|diagram|figure|visuali[sz]|infographic|image|picture|photo|logo|icon|"
+    r"calculat|comput|analy[sz]|statistic|regression|simulat|forecast|matplotlib|seaborn|"
+    r"\.(png|jpe?g|gif|svg|zip|tar))\b",
+    re.IGNORECASE,
+)
+
+
+def needs_code(text: str) -> bool:
+    return bool(text and _NEEDS_CODE.search(text))
+
+
+def quality_effort(model: str, effort: str | None) -> str:
+    """File jobs should not inherit low/auto chat effort; they need deliberate planning."""
+    if effort in {"high", "xhigh", "max"}:
+        return effort
+    if (model or "").startswith("claude_plan/"):
+        return QUALITY_CLAUDE_PLAN_EFFORT
+    return QUALITY_FILE_EFFORT
 
 
 def _extract_code(text: str) -> str:
@@ -77,6 +107,7 @@ def _summary(files: list[sandbox.SandboxFile]) -> str:
 
 async def run(model: str, request: str, system_prompt: str | None, effort: str | None) -> AsyncIterator[dict]:
     """Yield {'status': ...} progress and a final {'result': {...}} with files or an error."""
+    file_effort = quality_effort(model, effort)
     skill_block = skills.skills_prompt(request)
     instructions = _SYSTEM + (f"\n\n{skill_block}" if skill_block else "")
     if system_prompt:
@@ -85,11 +116,13 @@ async def run(model: str, request: str, system_prompt: str | None, effort: str |
     last_error = ""
 
     for attempt in range(MAX_ATTEMPTS):
-        yield {"status": "Designing and writing code…" if attempt == 0 else f"Fixing errors and retrying ({attempt + 1}/{MAX_ATTEMPTS})…"}
+        yield {"status": "Designing a polished file with high reasoning..." if attempt == 0 else f"Fixing errors and retrying ({attempt + 1}/{MAX_ATTEMPTS})…"}
         parts: list[str] = []
         try:
-            async for delta in ai.stream_chat(model, convo, instructions, effort):
-                if not isinstance(delta, ai.ReasoningDelta):
+            async for delta in ai.stream_chat(model, convo, instructions, file_effort):
+                if isinstance(delta, ai.ReasoningDelta):
+                    yield {"reasoning": str(delta)}  # show the model's thinking live
+                else:
                     parts.append(str(delta))
         except ai.MissingKeyError as exc:
             yield {"result": {"ok": False, "error": f"No API key for {exc.provider}. Add it in Settings."}}

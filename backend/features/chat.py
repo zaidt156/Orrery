@@ -435,12 +435,13 @@ async def stream_reply(
             gen_system = (f"{system_prompt}\n\n" if system_prompt else "") + preamble + block
             yield {"sources": sources}
 
-    # File generation: the model writes code, the sandbox runs it, real files come back. Falls
-    # through to the structured/markdown reply if the sandbox is unavailable or codegen fails.
+    # File generation: the model WRITES CODE that the sandbox runs (richer output than the
+    # structured builder). Falls through to the structured/markdown reply if the sandbox is
+    # unavailable or codegen fails.
     if filegen.wants_file(user_content) and sandbox.image_ready():
         result = None
         async for ev in filegen.run(model, user_content, gen_system, effort):
-            if "status" in ev:
+            if "status" in ev or "reasoning" in ev:
                 yield ev
             elif "result" in ev:
                 result = ev["result"]

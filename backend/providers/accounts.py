@@ -417,14 +417,21 @@ class _CliFailure:
         self.message = message
 
 
+class ReasoningChunk(str):
+    """A streamed 'thinking' token from a CLI route — surfaced to the UI as reasoning, not answer."""
+
+
 def _claude_text_delta(obj: dict) -> str | _CliFailure | None:
-    """Pull the assistant text out of one Claude Code stream-json line."""
+    """Pull the assistant text (and thinking) out of one Claude Code stream-json line."""
     if obj.get("type") == "stream_event":
         event = obj.get("event") or {}
         if event.get("type") == "content_block_delta":
             delta = event.get("delta") or {}
             if delta.get("type") == "text_delta":
                 return delta.get("text") or None
+            if delta.get("type") == "thinking_delta":  # extended-thinking tokens → show as reasoning
+                thinking = delta.get("thinking") or ""
+                return ReasoningChunk(thinking) if thinking else None
     if obj.get("type") == "result" and obj.get("is_error"):
         return _CliFailure(str(obj.get("result") or "Claude Code returned an error."))
     return None
@@ -520,7 +527,13 @@ class ClaudePlanAdapter:
             yield delta
 
 
-_LIMIT_KEYWORDS = ("limit", "rate", "quota", "exceeded", "usage cap", "429", "resets", "too many")
+# Precise phrases only. Bare "rate"/"limit" matched ordinary words (e.g. "generate" contains
+# "rate") and falsely reported "limit reached" on normal responses.
+_LIMIT_KEYWORDS = (
+    "rate limit", "rate-limit", "ratelimit", "usage limit", "usage cap", "quota",
+    "limit reached", "limit exceeded", "exceeded your", "too many requests", "429",
+    "plan limit", "you have hit", "usage_limit", "resets at",
+)
 
 
 def _limit_text(err: str, plan: str) -> str | None:
@@ -618,7 +631,7 @@ _CHATGPT_PLAN_KEY = "account:openai:chatgpt_plan"
 _GEMINI_PLAN_KEY = "account:google:gemini_plan"
 
 CHATGPT_PLAN_VARIANTS = [
-    ("chatgpt_plan/default", "ChatGPT plan - best available - reasoning", None),
+    ("chatgpt_plan/default", "ChatGPT plan - best available (auto) - reasoning", None),
     ("chatgpt_plan/gpt-5.5", "ChatGPT plan - GPT-5.5 - reasoning", "gpt-5.5"),
     # Keep the persisted id for existing users; the old GPT-5.5 mini name was never valid.
     ("chatgpt_plan/gpt-5.5-mini", "ChatGPT plan - GPT-5.4 mini - fast reasoning", "gpt-5.4-mini"),
@@ -628,6 +641,9 @@ GEMINI_PLAN_VARIANTS = [
 ]
 _CHATGPT_PLAN_FLAG = {vid: flag for vid, _l, flag in CHATGPT_PLAN_VARIANTS}
 _GEMINI_PLAN_FLAG = {vid: flag for vid, _l, flag in GEMINI_PLAN_VARIANTS}
+
+_CODEX_LATEST_PINNED_MODEL = "gpt-5.5"
+_CODEX_OLD_FAST_MODEL = "gpt-5.4-mini"
 
 _CHATGPT_WARNING = (
     "Runs OpenAI's official Codex CLI in an empty temporary folder with a read-only sandbox, "
@@ -863,7 +879,12 @@ def chatgpt_plan_mode_status(force: bool = False) -> dict:
     available = installed and flags_ok and logged_in
     connected = secrets.get_secret(_CHATGPT_PLAN_KEY) == "connected" and available
     status = "connected" if connected else "available" if available else "unavailable"
-    if connected:
+    if connected and update_recommended:
+        message = (
+            "Using your Codex/ChatGPT plan through Codex CLI. This older CLI will auto-select "
+            "its best compatible model; update Codex to unlock the newest GPT model pins."
+        )
+    elif connected:
         message = "Using your Codex/ChatGPT plan through the official local Codex CLI."
     elif available:
         message = "Codex is signed in. Connect it to use this official CLI route in Orrery."
@@ -890,6 +911,9 @@ def chatgpt_plan_mode_status(force: bool = False) -> dict:
         "can_install": os.name == "nt" and shutil.which("winget") is not None,
         "can_login": installed and not logged_in,
         "install_action": "update" if installed else "install",
+        "model_strategy": (
+            "Default ChatGPT-plan chats let Codex choose the newest model this installed CLI supports."
+        ),
         "docs_url": "https://developers.openai.com/codex/noninteractive/",
     }
 
@@ -967,8 +991,24 @@ def chatgpt_plan_models() -> list[dict]:
         return []
     return [
         {"id": vid, "label": label, "provider": "chatgpt_plan", "auth_mode": "chatgpt_plan"}
-        for vid, label, _flag in CHATGPT_PLAN_VARIANTS
+        for vid, label, _flag in _chatgpt_plan_variants()
     ]
+
+
+def _codex_can_pin_latest(cmd: str | None = None) -> bool:
+    version = _command_version(cmd or _codex_command())
+    return bool(version and version >= _CODEX_RECOMMENDED_VERSION)
+
+
+def _chatgpt_plan_variants() -> list[tuple[str, str, str | None]]:
+    cmd = _codex_command()
+    can_pin_latest = _codex_can_pin_latest(cmd) if cmd else False
+    out: list[tuple[str, str, str | None]] = []
+    for vid, label, flag in CHATGPT_PLAN_VARIANTS:
+        if flag == _CODEX_LATEST_PINNED_MODEL and not can_pin_latest:
+            continue
+        out.append((vid, label, flag))
+    return out
 
 
 def gemini_plan_models() -> list[dict]:
@@ -1000,11 +1040,13 @@ def _run_codex(args: list[str], prompt: str, outfile: str) -> str:
         return (result.stdout or "").strip()
 
 
-def _codex_model_flag(model_id: str | None, cmd: str) -> str:
+def _codex_model_flag(model_id: str | None, cmd: str, config_isolated: bool = True) -> str | None:
     if not model_id or model_id == "chatgpt_plan/default":
-        version = _command_version(cmd)
-        return "gpt-5.4-mini" if version and version < _CODEX_RECOMMENDED_VERSION else "gpt-5.5"
-    return _CHATGPT_PLAN_FLAG.get(model_id) or "gpt-5.5"
+        return None if config_isolated else _CODEX_OLD_FAST_MODEL
+    flag = _CHATGPT_PLAN_FLAG.get(model_id)
+    if flag == _CODEX_LATEST_PINNED_MODEL and not _codex_can_pin_latest(cmd):
+        return None if config_isolated else _CODEX_OLD_FAST_MODEL
+    return flag or None
 
 
 def _codex_exec_args(
@@ -1013,6 +1055,7 @@ def _codex_exec_args(
     outfile: str,
     model_id: str | None,
     effort: str | None,
+    force_auto: bool = False,
 ) -> list[str]:
     flags_ok, config_isolated, reason = _codex_exec_flags()
     if not flags_ok:
@@ -1030,16 +1073,43 @@ def _codex_exec_args(
         "--skip-git-repo-check",
         "-C", workdir,
         "--color", "never",
-        "-m", _codex_model_flag(model_id, cmd),
         "-o", outfile,
     ]
+    model_flag = None if force_auto else _codex_model_flag(model_id, cmd, config_isolated)
+    if model_flag:
+        args += ["-m", model_flag]
     return args
+
+
+def _codex_model_mismatch_error(raw: str) -> bool:
+    low = (raw or "").lower()
+    if "requires a newer version of codex" in low or "upgrade to the latest app or cli" in low:
+        return True
+    if "unknown model" in low or "unsupported model" in low or "model not found" in low:
+        return True
+    return "model" in low and ("unavailable" in low or "not supported" in low or "invalid" in low)
+
+
+def _codex_should_retry_auto(model_id: str | None, raw: str, args: list[str] | None = None) -> bool:
+    if not _codex_model_mismatch_error(raw):
+        return False
+    if model_id and model_id != "chatgpt_plan/default":
+        return True
+    return bool(args and "-m" in args)
 
 
 def _friendly_codex_error(raw: str) -> str:
     low = (raw or "").lower()
     if "requires a newer version of codex" in low or "upgrade to the latest app or cli" in low:
-        return "Codex is signed in but too old for this model. Update Codex in Settings, then try again."
+        return (
+            "Codex is signed in but too old for this pinned model. Orrery's default ChatGPT-plan "
+            "model uses Codex auto-selection; update Codex in Settings to unlock the newest model pin."
+        )
+    if _codex_model_mismatch_error(raw):
+        return (
+            "Codex rejected that pinned model. Pick the default ChatGPT-plan model so Codex can "
+            "auto-select the newest compatible GPT model, or update Codex in Settings."
+        )
     if "not logged in" in low or "login" in low and ("required" in low or "expired" in low):
         return "Codex needs sign-in. Open Settings, choose Sign in, then check status."
     if "rate limit" in low or "usage limit" in low or "quota" in low:
@@ -1102,8 +1172,18 @@ async def stream_chatgpt_plan(
     except subprocess.TimeoutExpired:
         raise CliRouteUnavailable("ChatGPT plan request timed out.") from None
     except CliStreamError as exc:
-        limit = _limit_text(exc.message or "", "ChatGPT plan")
-        raise CliRouteUnavailable(limit or _friendly_codex_error(exc.message)) from None
+        if _codex_should_retry_auto(model_id, exc.message, args):
+            try:
+                args = _codex_exec_args(cmd, workdir, outfile, "chatgpt_plan/default", effort, force_auto=True)
+                text = await asyncio.to_thread(_run_codex, args, prompt, outfile)
+            except subprocess.TimeoutExpired:
+                raise CliRouteUnavailable("ChatGPT plan request timed out.") from None
+            except CliStreamError as retry_exc:
+                limit = _limit_text(retry_exc.message or "", "ChatGPT plan")
+                raise CliRouteUnavailable(limit or _friendly_codex_error(retry_exc.message)) from None
+        else:
+            limit = _limit_text(exc.message or "", "ChatGPT plan")
+            raise CliRouteUnavailable(limit or _friendly_codex_error(exc.message)) from None
     finally:
         shutil.rmtree(workdir, ignore_errors=True)
     if not text.strip():

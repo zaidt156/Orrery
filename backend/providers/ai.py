@@ -436,7 +436,7 @@ async def stream_chat(
     if provider == "claude_plan":
         try:
             async for delta in accounts.stream_claude_plan(messages, system_prompt, model_id, effort):
-                yield delta
+                yield ReasoningDelta(str(delta)) if isinstance(delta, accounts.ReasoningChunk) else delta
             return
         except accounts.UnsupportedClaudePlanInput:
             raise
@@ -511,9 +511,16 @@ async def stream_chat(
                 captured = chunk.usage
             if chunk.choices:
                 d = chunk.choices[0].delta
-                reasoning = getattr(d, "reasoning_content", None)
+                # Providers expose reasoning under different fields — handle them all:
+                # reasoning_content (DeepSeek/most), reasoning (some), thinking_blocks (Anthropic).
+                reasoning = getattr(d, "reasoning_content", None) or getattr(d, "reasoning", None)
                 if reasoning:
-                    yield ReasoningDelta(reasoning)  # the model's visible "thinking"
+                    yield ReasoningDelta(reasoning if isinstance(reasoning, str) else str(reasoning))
+                else:
+                    for block in (getattr(d, "thinking_blocks", None) or []):
+                        text = (block.get("thinking") or block.get("text") or "") if isinstance(block, dict) else ""
+                        if text:
+                            yield ReasoningDelta(text)
                 if d.content:
                     yield d.content
     except MissingKeyError:

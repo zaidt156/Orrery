@@ -226,6 +226,7 @@ function PlanMode({ mode, onSaved }) {
         </div>
         <div className="mode-sub"><StatusText mode={mode} /> · {mode.message}</div>
         {mode.update_recommended && <div className="mode-warning">An official CLI update is recommended.</div>}
+        {mode.model_strategy && <div className="mode-hint">{mode.model_strategy}</div>}
         {mode.warning && <div className="mode-warning">⚠ {mode.warning}</div>}
         {showInstaller && (
           <label className="mode-ack">

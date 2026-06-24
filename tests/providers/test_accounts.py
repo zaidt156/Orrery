@@ -149,7 +149,7 @@ async def test_codex_route_uses_ephemeral_read_only_temp_execution(monkeypatch):
     captured = {}
     secrets.set_secret(accounts._CHATGPT_PLAN_KEY, "connected")
     monkeypatch.setattr(accounts, "_codex_command", lambda: "codex.cmd")
-    monkeypatch.setattr(accounts, "_codex_exec_flags", lambda: (True, False, None))
+    monkeypatch.setattr(accounts, "_codex_exec_flags", lambda: (True, True, None))
 
     def fake_run(args, prompt, outfile):
         captured.update(args=args, prompt=prompt, outfile=outfile)
@@ -171,14 +171,98 @@ async def test_codex_route_uses_ephemeral_read_only_temp_execution(monkeypatch):
     assert captured["args"][captured["args"].index("-s") + 1] == "read-only"
     assert 'service_tier="fast"' in captured["args"]
     assert 'model_reasoning_effort="high"' in captured["args"]
-    assert captured["args"][captured["args"].index("-m") + 1] == "gpt-5.5"
+    assert "-m" not in captured["args"]
 
 
-def test_old_codex_default_uses_compatible_fast_model(monkeypatch):
+def test_old_codex_default_uses_cli_auto_model(monkeypatch):
     monkeypatch.setattr(accounts, "_command_version", lambda _cmd: (0, 121, 0))
 
-    assert accounts._codex_model_flag("chatgpt_plan/default", "codex.cmd") == "gpt-5.4-mini"
+    assert accounts._codex_model_flag("chatgpt_plan/default", "codex.cmd") is None
+    assert accounts._codex_model_flag("chatgpt_plan/default", "codex.cmd", config_isolated=False) == "gpt-5.4-mini"
+    assert accounts._codex_model_flag("chatgpt_plan/gpt-5.5", "codex.cmd") is None
+    assert accounts._codex_model_flag("chatgpt_plan/gpt-5.5", "codex.cmd", config_isolated=False) == "gpt-5.4-mini"
     assert accounts._codex_model_flag("chatgpt_plan/gpt-5.5-mini", "codex.cmd") == "gpt-5.4-mini"
+
+
+def test_old_codex_hides_latest_pinned_model(monkeypatch):
+    secrets.set_secret(accounts._CHATGPT_PLAN_KEY, "connected")
+    monkeypatch.setattr(accounts, "_codex_command", lambda: "codex.cmd")
+    monkeypatch.setattr(accounts, "_command_version", lambda _cmd: (0, 121, 0))
+    monkeypatch.setattr(accounts, "chatgpt_plan_mode_status", lambda: {"configured": True})
+
+    ids = {m["id"] for m in accounts.chatgpt_plan_models()}
+
+    assert "chatgpt_plan/default" in ids
+    assert "chatgpt_plan/gpt-5.5" not in ids
+    assert "chatgpt_plan/gpt-5.5-mini" in ids
+
+
+def test_current_codex_shows_latest_pinned_model(monkeypatch):
+    secrets.set_secret(accounts._CHATGPT_PLAN_KEY, "connected")
+    monkeypatch.setattr(accounts, "_codex_command", lambda: "codex.cmd")
+    monkeypatch.setattr(accounts, "_command_version", lambda _cmd: (0, 142, 0))
+    monkeypatch.setattr(accounts, "chatgpt_plan_mode_status", lambda: {"configured": True})
+
+    ids = {m["id"] for m in accounts.chatgpt_plan_models()}
+
+    assert "chatgpt_plan/default" in ids
+    assert "chatgpt_plan/gpt-5.5" in ids
+
+
+@pytest.mark.anyio
+async def test_codex_pinned_model_failure_retries_cli_auto(monkeypatch):
+    calls = []
+    secrets.set_secret(accounts._CHATGPT_PLAN_KEY, "connected")
+    monkeypatch.setattr(accounts, "_codex_command", lambda: "codex.cmd")
+    monkeypatch.setattr(accounts, "_codex_exec_flags", lambda: (True, True, None))
+    monkeypatch.setattr(accounts, "_command_version", lambda _cmd: (0, 142, 0))
+
+    def fake_run(args, prompt, outfile):
+        calls.append(args)
+        if len(calls) == 1:
+            raise accounts.CliStreamError("unknown model: gpt-5.5")
+        return "auto reply"
+
+    monkeypatch.setattr(accounts, "_run_codex", fake_run)
+    out = [
+        delta
+        async for delta in accounts.stream_chatgpt_plan(
+            [{"role": "user", "content": "hello"}],
+            model_id="chatgpt_plan/gpt-5.5",
+        )
+    ]
+
+    assert out == ["auto reply"]
+    assert calls[0][calls[0].index("-m") + 1] == "gpt-5.5"
+    assert "-m" not in calls[1]
+
+
+@pytest.mark.anyio
+async def test_codex_default_model_override_retries_auto(monkeypatch):
+    calls = []
+    secrets.set_secret(accounts._CHATGPT_PLAN_KEY, "connected")
+    monkeypatch.setattr(accounts, "_codex_command", lambda: "codex.cmd")
+    monkeypatch.setattr(accounts, "_codex_exec_flags", lambda: (True, False, None))
+    monkeypatch.setattr(accounts, "_command_version", lambda _cmd: (0, 121, 0))
+
+    def fake_run(args, prompt, outfile):
+        calls.append(args)
+        if len(calls) == 1:
+            raise accounts.CliStreamError("unknown model: gpt-5.4-mini")
+        return "auto reply"
+
+    monkeypatch.setattr(accounts, "_run_codex", fake_run)
+    out = [
+        delta
+        async for delta in accounts.stream_chatgpt_plan(
+            [{"role": "user", "content": "hello"}],
+            model_id="chatgpt_plan/default",
+        )
+    ]
+
+    assert out == ["auto reply"]
+    assert calls[0][calls[0].index("-m") + 1] == "gpt-5.4-mini"
+    assert "-m" not in calls[1]
 
 
 def test_plan_cli_install_requires_consent():

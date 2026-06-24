@@ -316,7 +316,7 @@ export default function Chat() {
         else if (ev.reasoning) appendReasoning(setMessages, ev.reasoning);
         else if (ev.artifact) setLast({ artifacts: [ev.artifact] });
         else if (ev.files) setLast({ artifacts: ev.files, status: "" });
-        else if (ev.status) setLast({ status: ev.status });
+        else if (ev.status) appendStep(setMessages, ev.status);
         else if (ev.title) setConvos((p) => p.map((c) => (c.id === cid ? { ...c, title: ev.title } : c)));
         else if (ev.sources) setLast({ sources: ev.sources });
         else if (ev.message_id) setLast({ id: ev.message_id });
@@ -604,10 +604,9 @@ export default function Chat() {
                   Orrery
                   {m.sources?.length > 0 && <span className="rag-chip">searched: {m.sources.join(", ")}</span>}
                 </div>
-                {m.streaming && m.status && <div className="gen-status"><span className="think-stars" aria-hidden="true"><i>✦</i><i>✦</i><i>✦</i></span>{m.status}</div>}
-                {(m.reasoning || (m.streaming && !m.content && !m.status)) && (
-                  <ThinkingBlock text={m.reasoning} streaming={m.streaming} />
-                )}
+                {m.reasoning
+                  ? <ThinkingBlock text={m.reasoning} streaming={m.streaming} />
+                  : (m.streaming && !m.content && <ThinkingPulse />)}
                 {(() => {
                   const base = stripDocSpec(m.content);
                   const { svgs, cleaned } = m.streaming ? { svgs: [], cleaned: base } : extractSvgs(base);
@@ -615,9 +614,8 @@ export default function Chat() {
                   return (
                     <>
                       <div className="ai-text">
-                        {m.streaming
-                          ? (m.content ? <span className="stream-raw">{m.content}<span className="caret" /></span> : null)
-                          : (cleaned ? <Markdown>{cleaned}</Markdown> : null)}
+                        {cleaned ? <Markdown>{cleaned}</Markdown> : null}
+                        {m.streaming && m.content && <span className="caret" />}
                       </div>
                       {svgs.map((svg, si) => (
                         <InlineSvg
@@ -898,6 +896,52 @@ function GeneratedFileCard({ file, onPreview, onDownload }) {
   );
 }
 
+// Playful, on-brand status lines that rotate while a response is being produced.
+const CREATIVE_LINES = [
+  "Consulting the constellations…",
+  "Charting your request…",
+  "Aligning the orbits…",
+  "Designing something polished…",
+  "Gathering stardust…",
+  "Plotting the trajectory…",
+  "Crunching the structure…",
+  "Arranging slides and cells…",
+  "Calibrating the instruments…",
+  "Drafting with care…",
+  "Polishing every pixel…",
+  "Running the numbers…",
+  "Mapping the details…",
+  "Tuning the typography…",
+  "Threading the logic together…",
+  "Composing the layout…",
+  "Reticulating splines…",
+  "Bringing it all together…",
+  "Almost in orbit…",
+];
+
+// The Orrery "working" pulse: the three twinkling stars + a creative line that
+// changes at random while the model is processing.
+function ThinkingPulse() {
+  const pick = () => CREATIVE_LINES[Math.floor(Math.random() * CREATIVE_LINES.length)];
+  const [line, setLine] = useState(pick);
+  useEffect(() => {
+    const id = setInterval(() => {
+      setLine((prev) => {
+        let next = pick();
+        if (CREATIVE_LINES.length > 1) while (next === prev) next = pick();
+        return next;
+      });
+    }, 2600);
+    return () => clearInterval(id);
+  }, []);
+  return (
+    <div className="thinking">
+      <span className="think-stars" aria-hidden="true"><i>✦</i><i>✦</i><i>✦</i></span>
+      <span className="thinking-label">{line}</span>
+    </div>
+  );
+}
+
 // The "Thinking" indicator: a shimmer before the first token, and a collapsible
 // reasoning trace (auto-open while streaming, collapsed once the answer is done).
 function ThinkingBlock({ text, streaming }) {
@@ -928,6 +972,18 @@ function appendDelta(setMessages, delta) {
     const a = [...p];
     const last = a[a.length - 1];
     a[a.length - 1] = { ...last, content: last.content + delta };
+    return a;
+  });
+}
+
+// Accumulate a progress step into the last assistant message's activity timeline.
+function appendStep(setMessages, step) {
+  setMessages((p) => {
+    const a = [...p];
+    const last = a[a.length - 1];
+    const steps = last.steps ? [...last.steps] : [];
+    if (step && steps[steps.length - 1] !== step) steps.push(step);
+    a[a.length - 1] = { ...last, steps, status: step };
     return a;
   });
 }

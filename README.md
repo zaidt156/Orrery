@@ -1,11 +1,35 @@
-# Orrery
+<div align="center">
 
-**A local-first desktop AI workspace.** Bring your own model accounts or API keys and your own
-PostgreSQL database — Orrery ties them together into one private workspace that runs on your machine.
-Nothing leaves your computer except the calls to the model providers you choose.
+<img src="assets/orrery-logo.svg" alt="Orrery" width="560">
 
-Your data sits at the centre, with focused tabs around it: **Chat · Data · Dashboards · Automations ·
-Agents · Media Hub · Local Models · Settings**.
+### A local-first desktop AI workspace
+
+Bring your own model accounts / API keys and your own PostgreSQL database — Orrery ties them together
+into one private workspace that runs on your machine.
+
+![License](https://img.shields.io/badge/License-Apache_2.0-F2B14E)
+![Python](https://img.shields.io/badge/Python-3.12+-9DB9F0?logo=python&logoColor=white)
+![React](https://img.shields.io/badge/React-Vite-9DB9F0?logo=react&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-0B1020?logo=fastapi&logoColor=009688)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-pgvector-0B1020?logo=postgresql&logoColor=4169E1)
+![PRs welcome](https://img.shields.io/badge/PRs-welcome-5BC489)
+
+</div>
+
+Nothing leaves your computer except the calls to the model providers you choose. Your data sits at the
+centre, with focused tabs around it: **Chat · Data · Dashboards · Automations · Agents · Media Hub ·
+Local Models · Settings**.
+
+## Built with
+
+| Layer | Technology |
+|---|---|
+| Backend | **Python 3.12** · FastAPI · SQLAlchemy + psycopg · Procrastinate (job queue) |
+| Frontend | **React + Vite** (JavaScript) |
+| Database | **PostgreSQL** + pgvector |
+| Desktop shell | pywebview |
+| Models | litellm (API providers) · official CLI plans · Ollama (local) |
+| File sandbox | Docker (isolated code execution) |
 
 ## Features
 
@@ -56,6 +80,11 @@ In **Settings → Accounts** you can add API keys for major providers, connect s
 plans, add any OpenAI-compatible endpoint, or run local models with Ollama. **API keys are stored in
 your operating system's keychain** — never in files, logs, or this repository — and the interface
 only ever shows a masked preview.
+
+For ChatGPT-plan access, the default model is automatic: Orrery lets the official Codex CLI choose
+the newest GPT model that the installed CLI and signed-in account can use. If the local CLI is too
+old, Settings shows an update action; if a pinned GPT model is rejected by Codex, Orrery retries the
+same request through the automatic default route instead of failing immediately.
 
 ## Security
 
