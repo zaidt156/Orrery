@@ -34,7 +34,7 @@ keyring>=25.5
 
 # Configuration
 pydantic>=2.10
-pydantic-settings>=2.7
+pydantic-settings>=2.14.2
 python-dotenv>=1.0
 
 # PDF text extraction (local-first — pure Python, no cloud parsing). See DEVLOG.
