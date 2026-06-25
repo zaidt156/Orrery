@@ -532,20 +532,26 @@ class ClaudePlanAdapter:
 _LIMIT_KEYWORDS = (
     "rate limit", "rate-limit", "ratelimit", "usage limit", "usage cap", "quota",
     "limit reached", "limit exceeded", "exceeded your", "too many requests", "429",
-    "plan limit", "you have hit", "usage_limit", "resets at",
+    "plan limit", "you have hit", "you've hit", "usage_limit", "resets at",
 )
+# When the CLI already gives a clear, human message (often with a reset time), show it verbatim.
+_LIMIT_VERBATIM = ("usage limit", "you've hit", "you have hit", "try again at", "resets at", "resets in")
 
 
 def _limit_text(err: str, plan: str) -> str | None:
     """A clear, actionable message if the CLI error looks like a plan usage/rate limit."""
-    low = (err or "").lower()
-    if any(k in low for k in _LIMIT_KEYWORDS):
-        return (
-            f"{plan} usage limit reached. These plans cap usage over rolling time windows "
-            "(e.g. every 5 hours) and reset automatically after a while. Wait and try again, "
-            "or switch to an API-key model or a local model in the meantime."
-        )
-    return None
+    raw = (err or "").strip()
+    low = raw.lower()
+    if not any(k in low for k in _LIMIT_KEYWORDS):
+        return None
+    if any(k in low for k in _LIMIT_VERBATIM):  # surface the real message incl. the reset time
+        clean = " ".join(raw.split())
+        return f"{plan}: {clean[:400]}"
+    return (
+        f"{plan} usage limit reached. These plans cap usage over rolling time windows "
+        "(e.g. every 5 hours) and reset automatically after a while. Wait and try again, "
+        "or switch to an API-key model or a local model in the meantime."
+    )
 
 
 async def _stream_claude_plan_impl(
