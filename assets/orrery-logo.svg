@@ -7,13 +7,11 @@
   </defs>
   <rect width="720" height="180" rx="22" fill="url(#bg)"/>
   <rect x="1" y="1" width="718" height="178" rx="21" stroke="#26314F" stroke-width="2"/>
-  <!-- starfield -->
   <circle cx="592" cy="38" r="1.5" fill="#ffffff" opacity=".55"/>
   <circle cx="664" cy="118" r="1.6" fill="#9DB9F0" opacity=".65"/>
   <circle cx="548" cy="140" r="1.1" fill="#F2B14E" opacity=".6"/>
   <circle cx="694" cy="66" r="1.1" fill="#ffffff" opacity=".4"/>
   <circle cx="512" cy="44" r="1" fill="#ffffff" opacity=".35"/>
-  <!-- orbital mark -->
   <g transform="translate(42,30) scale(1.875)">
     <ellipse cx="32" cy="32" rx="24" ry="10" transform="rotate(-22 32 32)" stroke="#9DB9F0" stroke-width="3"/>
     <circle cx="32" cy="32" r="12" fill="#F2B14E"/>
@@ -22,7 +20,6 @@
     <circle cx="50.2" cy="19.2" r="4.2" fill="#9DB9F0"/>
     <circle cx="13.3" cy="18.2" r="2" fill="#F2B14E"/>
   </g>
-  <!-- wordmark -->
   <text x="204" y="90" font-family="'Segoe UI', Arial, sans-serif" font-size="60" font-weight="700" fill="#E8ECF8" letter-spacing="-1">Orrery</text>
   <text x="206" y="122" font-family="'Segoe UI', Arial, sans-serif" font-size="19" fill="#9DB9F0">Local-first desktop AI workspace</text>
 </svg>
