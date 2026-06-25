@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 import datetime
 import io
@@ -13,7 +14,7 @@ from sqlalchemy import select
 
 from backend.core.database import get_sessionmaker
 from backend.core.models import Conversation, Message
-from backend.features import code_images, filegen, rag, sandbox, skills
+from backend.features import code_images, docgen, filegen, rag, sandbox, skills
 from backend.features import files as file_library
 from backend.providers import ai
 from backend.security import privacy
@@ -403,6 +404,61 @@ async def _rag_context(model: str, collection_id: str, query: str) -> tuple[str 
     return block, sources
 
 
+_FILE_FORMAT_PATTERNS = [
+    ("pptx", re.compile(r"\b(powerpoint|pptx?|presentation|slide|deck)\b", re.IGNORECASE)),
+    ("xlsx", re.compile(r"\b(excel|xlsx?|spreadsheet|workbook|sheet)\b", re.IGNORECASE)),
+    ("docx", re.compile(r"\b(word|docx?|document)\b", re.IGNORECASE)),
+    ("csv", re.compile(r"\bcsv\b", re.IGNORECASE)),
+    ("pdf", re.compile(r"\b(pdf|report)\b", re.IGNORECASE)),
+]
+
+
+def _detect_formats(text: str) -> list[str]:
+    found = [fmt for fmt, pattern in _FILE_FORMAT_PATTERNS if pattern.search(text or "")]
+    return found or ["pdf"]
+
+
+async def _conv_title(cid: uuid.UUID) -> str:
+    async with get_sessionmaker()() as s:
+        conv = await s.get(Conversation, cid)
+        return (conv.title if conv and conv.title else None) or "Orrery file"
+
+
+async def _deliver_docspec(cid: uuid.UUID, model: str, request: str, system_prompt: str | None, effort: str | None) -> AsyncIterator[dict]:
+    """Reliable fallback when code-execution misses: ask for a structured spec, then build the
+    file deterministically with docgen and deliver it. Yields nothing if no spec comes back."""
+    yield {"status": "Building it a more reliable way…"}
+    instructions = f"{FORMAT_INSTRUCTIONS}\n\n{system_prompt}" if system_prompt else FORMAT_INSTRUCTIONS
+    parts: list[str] = []
+    try:
+        async for delta in ai.stream_chat(model, [{"role": "user", "content": request}], instructions, filegen.quality_effort(model, effort)):
+            if not isinstance(delta, ai.ReasoningDelta):
+                parts.append(str(delta))
+    except Exception:  # noqa: BLE001 — fall through to a normal reply
+        return
+    content = "".join(parts)
+    spec = docgen.parse_doc_spec(content)
+    if spec is None:
+        return
+    title = await _conv_title(cid)
+    produced: list[dict] = []
+    for fmt in _detect_formats(request):
+        try:
+            result = await asyncio.to_thread(docgen.render_spec, title, model, spec, fmt)
+            produced.append({"kind": "file", **file_library.store(result.filename, result.media_type, result.content)})
+        except Exception:  # noqa: BLE001 — skip a format that fails to build
+            continue
+    if not produced:
+        return
+    idx = content.lower().find("```orrery-doc")
+    summary = (content[:idx] if idx >= 0 else content).strip()[:300] or "Here is your file."
+    message_id = await _persist_assistant(cid, summary, model, produced)
+    yield {"delta": summary}
+    yield {"files": produced}
+    yield {"message_id": message_id}
+    yield {"done": True}
+
+
 async def stream_reply(
     conv_id: str,
     user_content: str,
@@ -479,7 +535,15 @@ async def stream_reply(
                 yield {"message_id": message_id}
                 yield {"done": True}
                 return
-        yield {"status": ""}  # clear the progress note before the fallback reply streams
+        # Code-exec missed → build the file deterministically with docgen so we never come up empty.
+        delivered = False
+        async for ev in _deliver_docspec(cid, model, user_content, gen_system, effort):
+            if "files" in ev:
+                delivered = True
+            yield ev
+        if delivered:
+            return
+        yield {"status": ""}  # clear the progress note before the plain fallback reply streams
 
     messages = _limit_messages(messages, context_window, gen_system)
     async for event in _generate(cid, model, gen_system, messages, effort):
