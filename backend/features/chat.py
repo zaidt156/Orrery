@@ -5,6 +5,7 @@ import datetime
 import io
 import json
 import mimetypes
+import re
 import uuid
 from collections.abc import AsyncIterator
 
@@ -336,16 +337,33 @@ def _latest_user_text(messages: list[dict]) -> str:
     return ""
 
 
+_HIGH_EFFORT_INTENT = re.compile(
+    r"\b(code|coding|function|script|program|app|web\s*app|website|web\s*page|frontend|backend|"
+    r"component|api|endpoint|algorithm|data\s*structure|implement|refactor|debug|optimi[sz]e|"
+    r"svg|diagram|flow\s*chart|chart|infographic|mockup|prototype|architecture|schema|query|regex|"
+    r"build\s+(a|an|me)|design\s+(a|an)|create\s+(a|an)|make\s+(a|an)|write\s+(a|an|me))\b",
+    re.IGNORECASE,
+)
+
+
+def _wants_high_effort(text: str) -> bool:
+    """Code/creative/build requests deserve deliberate, high-effort reasoning."""
+    return bool(text and _HIGH_EFFORT_INTENT.search(text))
+
+
 async def _generate(cid: uuid.UUID, model: str, system_prompt: str | None, messages: list[dict], effort: str | None = None) -> AsyncIterator[dict]:
     """Stream the assistant reply and persist it (saved even if the client cancels)."""
     parts: list[str] = []
     message_id: str | None = None
     usage_out: dict = {}
     base_prompt = f"{FORMAT_INSTRUCTIONS}\n\n{system_prompt}" if system_prompt else FORMAT_INSTRUCTIONS
-    skill_block = skills.skills_prompt(_latest_user_text(messages))  # inject matching skills for this turn
+    user_text = _latest_user_text(messages)
+    skill_block = skills.skills_prompt(user_text)  # inject matching skills for this turn
     formatted_prompt = f"{base_prompt}\n\n{skill_block}" if skill_block else base_prompt
+    # Code/creative work (code, web apps, SVGs, diagrams, building things) always gets high effort.
+    gen_effort = filegen.quality_effort(model, effort) if _wants_high_effort(user_text) else effort
     try:
-        async for delta in ai.stream_chat(model, messages, formatted_prompt, effort, usage_out):
+        async for delta in ai.stream_chat(model, messages, formatted_prompt, gen_effort, usage_out):
             if isinstance(delta, ai.ReasoningDelta):
                 yield {"reasoning": str(delta)}  # the model's thinking — shown live, not saved
                 continue
@@ -496,7 +514,7 @@ async def stream_code_image(conv_id: str, user_content: str) -> AsyncIterator[di
     yield {"title": new_title}
     yield {"status": "Rendering a safe SVG image..."}
     try:
-        svg = await code_images.generate_svg(model, user_content, system_prompt, effort)
+        svg = await code_images.generate_svg(model, user_content, system_prompt, filegen.quality_effort(model, effort))
     except ai.MissingKeyError as exc:
         yield {"error": f"No API key for {exc.provider}. Add it in Settings."}
         return

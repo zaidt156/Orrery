@@ -165,7 +165,7 @@ export default function Chat() {
     try {
       const { url, mime } = await previewGeneratedFile(file.id);
       if ((mime || "").startsWith("image/")) setArtifact({ image: url, title: file.name });
-      else setArtifact({ url, title: file.name, sandbox: false }); // pdf renders in the webview viewer
+      else setArtifact({ url, title: file.name, sandbox: (mime || "").startsWith("text/html") });
     } catch (e) {
       setBanner(String(e.message || e));
     }
@@ -852,7 +852,7 @@ function CodeImageArtifact({ artifact, onPreview, onError }) {
   );
 }
 
-const PREVIEWABLE_FILE = /\.(pdf|png|jpe?g|gif|webp|svg)$/i;
+const PREVIEWABLE_FILE = /\.(pdf|png|jpe?g|gif|webp|svg|pptx|xlsx|docx|csv|md|markdown|txt|html?|json)$/i;
 
 function formatBytes(n) {
   if (!n) return "";

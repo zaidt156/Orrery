@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from backend.core import appconfig, database
 from backend.core.config import settings
-from backend.features import artifacts, chat, data, exports, feedback, local_models, rag, usage
+from backend.features import artifacts, chat, data, exports, feedback, filepreview, local_models, rag, usage
 from backend.features import files as file_library
 from backend.providers import accounts, ai, catalog
 from backend.security import secrets
@@ -596,8 +596,9 @@ def create_app(session_token: str) -> FastAPI:
         if item is None:
             raise HTTPException(status_code=404, detail="File not found or expired")
         meta, data = item
-        artifact_id = artifacts.register(data, meta["mime"])
-        return {"url": f"/artifacts/{artifact_id}", "mime": meta["mime"]}
+        content, media = filepreview.to_preview(meta["name"], meta["mime"], data)
+        artifact_id = artifacts.register(content, media)
+        return {"url": f"/artifacts/{artifact_id}", "mime": media}
 
     @r.post("/artifacts")
     async def create_artifact(body: NewArtifact) -> dict:
