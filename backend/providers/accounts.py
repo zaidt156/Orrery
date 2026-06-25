@@ -534,23 +534,29 @@ _LIMIT_KEYWORDS = (
     "limit reached", "limit exceeded", "exceeded your", "too many requests", "429",
     "plan limit", "you have hit", "you've hit", "usage_limit", "resets at",
 )
-# When the CLI already gives a clear, human message (often with a reset time), show it verbatim.
-_LIMIT_VERBATIM = ("usage limit", "you've hit", "you have hit", "try again at", "resets at", "resets in")
+# Phrases that begin the real limit sentence (CLI output is prefixed with startup noise we skip).
+_LIMIT_SENTENCE_START = ("you've hit", "you have hit", "you've reached", "you have reached")
 
 
 def _limit_text(err: str, plan: str) -> str | None:
     """A clear, actionable message if the CLI error looks like a plan usage/rate limit."""
-    raw = (err or "").strip()
+    raw = " ".join((err or "").split())  # collapse the CLI's multi-line preamble
     low = raw.lower()
     if not any(k in low for k in _LIMIT_KEYWORDS):
         return None
-    if any(k in low for k in _LIMIT_VERBATIM):  # surface the real message incl. the reset time
-        clean = " ".join(raw.split())
-        return f"{plan}: {clean[:400]}"
+    # Extract just the limit sentence — the raw output is prefixed with "Reading prompt…
+    # OpenAI Codex v… workdir… model… user <prompt>" noise that must not be shown.
+    for marker in (*_LIMIT_SENTENCE_START, "usage limit", "rate limit", "too many requests", "quota"):
+        index = low.find(marker)
+        if index < 0:
+            continue
+        start = index if marker in _LIMIT_SENTENCE_START else max(0, raw.rfind(". ", 0, index) + 2)
+        sentence = raw[start:index + 300].strip(" .")
+        if sentence:
+            return f"{plan}: {sentence}."
     return (
         f"{plan} usage limit reached. These plans cap usage over rolling time windows "
-        "(e.g. every 5 hours) and reset automatically after a while. Wait and try again, "
-        "or switch to an API-key model or a local model in the meantime."
+        "and reset automatically. Wait and try again, or switch to an API-key or local model."
     )
 
 
