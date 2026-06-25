@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { memo, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
@@ -23,7 +23,9 @@ function CodeBlock({ className, children }) {
   );
 }
 
-export default function Markdown({ children, plain }) {
+// memo: a completed message's Markdown is re-parsed only when its text changes, not on every
+// token of the streaming reply — a big speedup in long conversations.
+function Markdown({ children, plain }) {
   // plain = render exactly what was typed (user prompts): never auto-fence natural language
   const normalized = plain ? String(children ?? "") : normalizeMarkdown(children);
   return (
@@ -45,3 +47,5 @@ export default function Markdown({ children, plain }) {
     </ReactMarkdown>
   );
 }
+
+export default memo(Markdown);
