@@ -551,7 +551,13 @@ def _limit_text(err: str, plan: str) -> str | None:
         if index < 0:
             continue
         start = index if marker in _LIMIT_SENTENCE_START else max(0, raw.rfind(". ", 0, index) + 2)
-        sentence = raw[start:index + 300].strip(" .")
+        tail = raw[start:]
+        low_tail = tail.lower()
+        cut = 320
+        for boundary in (low_tail.find(" error", 8), low_tail.find(marker, len(marker) + 4)):
+            if 0 < boundary < cut:  # stop before the CLI repeats the same message
+                cut = boundary
+        sentence = tail[:cut].strip(" .")
         if sentence:
             return f"{plan}: {sentence}."
     return (
