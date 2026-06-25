@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="assets/orrery-logo.svg" alt="Orrery" width="560">
+<img src="assets/orrery-brand.png" alt="Orrery" width="300">
 
 ### A local-first desktop AI workspace
 
