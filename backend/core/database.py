@@ -44,6 +44,11 @@ def save_database_url(url: str) -> None:
     secrets.set_secret(_CONN_KEY, normalize_url(url))
 
 
+def clear_database_url() -> None:
+    """Forget the saved connection (reverts to the .env default, or none)."""
+    secrets.delete_secret(_CONN_KEY)
+
+
 def connection_info() -> dict:
     """Current connection for display — masked (never exposes the password)."""
     url = resolve_database_url()

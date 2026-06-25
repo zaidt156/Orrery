@@ -26,6 +26,7 @@ import {
   getDatabase,
   testDatabase,
   saveDatabase,
+  clearDatabase,
   getModelCatalog,
   getProviders,
   getUsage,
@@ -589,7 +590,28 @@ function DatabaseSection() {
     try {
       const r = kind === "save" ? await saveDatabase(url) : await testDatabase(url);
       setResult({ ...r, kind });
-      if (kind === "save" && r.ok) reload();
+      if (kind === "save" && r.ok) { setUrl(""); reload(); }
+    } catch (e) {
+      setResult({ ok: false, error: String(e.message || e) });
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function reconnect() {
+    setBusy("reconnect"); setResult(null);
+    await reload();
+    setBusy("");
+    setResult({ kind: "reconnect", ok: true });
+  }
+
+  async function disconnect() {
+    if (!window.confirm("Remove this database connection? Orrery will use the .env default (or prompt for a new one) after a restart.")) return;
+    setBusy("disconnect"); setResult(null);
+    try {
+      await clearDatabase();
+      setResult({ kind: "disconnect", ok: true });
+      reload();
     } catch (e) {
       setResult({ ok: false, error: String(e.message || e) });
     } finally {
@@ -603,13 +625,19 @@ function DatabaseSection() {
       {info && (
         <div className="db-current">
           <span className="db-dot" data-ok={info.status === "ok"} />
-          <div style={{ minWidth: 0 }}>
+          <div style={{ minWidth: 0, flex: 1 }}>
             <div className="db-url mono">{info.configured ? info.masked : "No database configured yet"}</div>
             <div className="s-sub">{info.configured ? `${info.status === "ok" ? "Connected" : "Not reachable"} · loaded from ${info.source}` : "Enter a connection string below to get started"}</div>
           </div>
+          {info.configured && (
+            <div className="db-manage">
+              <button className="btn ghost" disabled={!!busy} onClick={reconnect}>{busy === "reconnect" ? "Checking…" : "Reconnect"}</button>
+              <button className="btn ghost" disabled={!!busy} onClick={disconnect}>{busy === "disconnect" ? "Removing…" : "Disconnect"}</button>
+            </div>
+          )}
         </div>
       )}
-      <label className="db-label">Connection string</label>
+      <label className="db-label">Switch to / add another Postgres server (local, Docker, Supabase, Neon, RDS…)</label>
       <input
         className="search db-input"
         placeholder="postgresql://user:password@host:5432/dbname"
@@ -631,6 +659,12 @@ function DatabaseSection() {
       )}
       {result && result.kind === "test" && result.ok && (
         <div className="db-msg ok">Connection successful.</div>
+      )}
+      {result && result.kind === "reconnect" && result.ok && (
+        <div className="db-msg ok">Re-checked the current connection.</div>
+      )}
+      {result && result.kind === "disconnect" && result.ok && (
+        <div className="db-msg ok">Connection removed. <strong>Restart Orrery</strong> to apply.</div>
       )}
       {result && result.ok === false && (
         <div className="db-msg err">{result.error || "Could not connect."}</div>

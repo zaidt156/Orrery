@@ -449,6 +449,8 @@ body{
 .db-url{font-size:12.5px; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
 .db-label{display:block; font-size:12px; color:var(--muted); margin:4px 0 6px}
 .db-input{width:100%; font-family:var(--font-mono); font-size:12px}
+.db-manage{display:flex; gap:7px; flex:none}
+.db-manage .btn{font-size:11.5px; padding:5px 10px}
 .db-actions{display:flex; gap:9px; margin-top:12px}
 .db-msg{margin-top:12px; font-size:12.5px; padding:9px 12px; border-radius:8px}
 .db-msg.ok{color:var(--green); background:rgba(91,196,137,.12); border:1px solid #5BC48955}

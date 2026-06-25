@@ -271,8 +271,13 @@ def create_app(session_token: str) -> FastAPI:
     @r.get("/database")
     async def get_database() -> dict:
         info = database.connection_info()
-        info["status"] = "ok" if info["configured"] and await database.check_connection() else "error"
+        info["status"] = "ok" if info["configured"] and await database.check_connection(force=True) else "error"
         return info
+
+    @r.delete("/database")
+    async def clear_database() -> dict:
+        database.clear_database_url()
+        return {"ok": True, "restart_required": True}
 
     @r.post("/database/test")
     async def test_database(body: DbConnection) -> dict:
