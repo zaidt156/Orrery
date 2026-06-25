@@ -441,6 +441,18 @@ body{
   text-transform:uppercase; margin:22px 0 10px;
 }
 .section-label:first-of-type{margin-top:16px}
+
+/* Database connection panel */
+.db-current{display:flex; align-items:center; gap:10px; background:var(--bg1); border:1px solid var(--line); border-radius:10px; padding:12px 14px; margin-bottom:16px}
+.db-dot{width:9px; height:9px; border-radius:50%; flex:none; background:var(--red); box-shadow:0 0 8px var(--red)}
+.db-dot[data-ok="true"]{background:var(--green); box-shadow:0 0 8px var(--green)}
+.db-url{font-size:12.5px; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.db-label{display:block; font-size:12px; color:var(--muted); margin:4px 0 6px}
+.db-input{width:100%; font-family:var(--font-mono); font-size:12px}
+.db-actions{display:flex; gap:9px; margin-top:12px}
+.db-msg{margin-top:12px; font-size:12.5px; padding:9px 12px; border-radius:8px}
+.db-msg.ok{color:var(--green); background:rgba(91,196,137,.12); border:1px solid #5BC48955}
+.db-msg.err{color:var(--red); background:rgba(227,108,108,.12); border:1px solid #E36C6C55; word-break:break-word}
 .card-row{display:grid; grid-template-columns:repeat(3,1fr); gap:12px}
 .card{background:var(--bg1); border:1px solid var(--line); border-radius:11px; padding:14px 15px}
 .card.add{

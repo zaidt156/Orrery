@@ -29,9 +29,48 @@ def resolve_database_url() -> str | None:
     return secrets.get_secret(_CONN_KEY) or settings.database_url
 
 
+def normalize_url(url: str) -> str:
+    """Accept common Postgres URL forms and force the async psycopg driver."""
+    url = (url or "").strip()
+    if url.startswith("postgres://"):
+        url = "postgresql://" + url[len("postgres://"):]
+    if url.startswith("postgresql://"):
+        url = "postgresql+psycopg://" + url[len("postgresql://"):]
+    return url
+
+
 def save_database_url(url: str) -> None:
     """Persist the connection string to the OS keychain."""
-    secrets.set_secret(_CONN_KEY, url)
+    secrets.set_secret(_CONN_KEY, normalize_url(url))
+
+
+def connection_info() -> dict:
+    """Current connection for display — masked (never exposes the password)."""
+    url = resolve_database_url()
+    if not url:
+        return {"configured": False, "masked": "", "source": None}
+    source = "keychain" if secrets.get_secret(_CONN_KEY) else "env"
+    return {"configured": True, "masked": secrets.redact_url(url), "source": source}
+
+
+async def test_url(url: str) -> tuple[bool, str]:
+    """Try connecting to a candidate URL without touching the live engine."""
+    candidate = normalize_url(url)
+    if not candidate:
+        return False, "Enter a connection string."
+    if not candidate.startswith("postgresql+psycopg://"):
+        return False, "Use a PostgreSQL URL, e.g. postgresql://user:password@host:5432/dbname"
+    probe = None
+    try:
+        probe = create_async_engine(candidate, pool_pre_ping=True, connect_args={"connect_timeout": 8})
+        async with probe.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+        return True, ""
+    except Exception as exc:  # noqa: BLE001 — report a sanitized reason
+        return False, secrets.redact_url(str(exc))[:280]
+    finally:
+        if probe is not None:
+            await probe.dispose()
 
 
 def get_engine() -> AsyncEngine:

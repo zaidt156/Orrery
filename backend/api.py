@@ -148,6 +148,10 @@ class NewArtifact(BaseModel):
     html: str
 
 
+class DbConnection(BaseModel):
+    url: str
+
+
 _MAX_BODY_BYTES = 64 * 1024 * 1024  # generous for multi-image messages; blocks runaway payloads
 _CSP = (
     "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; "
@@ -263,6 +267,25 @@ def create_app(session_token: str) -> FastAPI:
     @r.put("/branding")
     async def put_branding(body: Branding) -> dict:
         return await appconfig.set_setting("branding", body.model_dump())
+
+    @r.get("/database")
+    async def get_database() -> dict:
+        info = database.connection_info()
+        info["status"] = "ok" if info["configured"] and await database.check_connection() else "error"
+        return info
+
+    @r.post("/database/test")
+    async def test_database(body: DbConnection) -> dict:
+        ok, error = await database.test_url(body.url)
+        return {"ok": ok, "error": error}
+
+    @r.put("/database")
+    async def set_database(body: DbConnection) -> dict:
+        ok, error = await database.test_url(body.url)
+        if not ok:
+            return {"ok": False, "error": error}
+        database.save_database_url(body.url)
+        return {"ok": True, "restart_required": True}
 
     @r.get("/usage")
     async def get_usage() -> dict:

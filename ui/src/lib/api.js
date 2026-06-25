@@ -84,6 +84,9 @@ export const setModelActive = (id, label, provider, active) =>
 export const addCustomModel = (label, base_url, model, key) =>
   apiSend("/api/custom-models", "POST", { label, base_url, model, key });
 export const deleteCustomModel = (cid) => apiSend(`/api/custom-models/${cid}`, "DELETE");
+export const getDatabase = () => apiGet("/api/database");
+export const testDatabase = (url) => apiSend("/api/database/test", "POST", { url });
+export const saveDatabase = (url) => apiSend("/api/database", "PUT", { url });
 export const getBranding = () => apiGet("/api/branding");
 export const setBranding = (branding) => apiSend("/api/branding", "PUT", branding);
 export const getUsage = () => apiGet("/api/usage");

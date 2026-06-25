@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import {
   Building2,
   Cpu,
+  Database,
   Download,
   ImagePlus,
   KeyRound,
@@ -22,6 +23,9 @@ import {
   deleteCustomModel,
   disconnectPlan,
   getBranding,
+  getDatabase,
+  testDatabase,
+  saveDatabase,
   getModelCatalog,
   getProviders,
   getUsage,
@@ -53,6 +57,7 @@ const PROVIDER_LABEL = {
 const SETTINGS_SECTIONS = [
   { id: "general", label: "General", Icon: SlidersHorizontal },
   { id: "accounts", label: "Accounts", Icon: KeyRound },
+  { id: "database", label: "Database", Icon: Database },
   { id: "models", label: "Models", Icon: Cpu },
   { id: "usage", label: "Usage", Icon: WalletCards },
   { id: "integrations", label: "Integrations", Icon: Plug },
@@ -571,6 +576,69 @@ function BrandingSection() {
 
 const CAP_PERIODS = ["hour", "day", "month", "all"];
 
+function DatabaseSection() {
+  const [info, setInfo] = useState(null);
+  const [url, setUrl] = useState("");
+  const [busy, setBusy] = useState("");
+  const [result, setResult] = useState(null);
+  const reload = () => getDatabase().then(setInfo).catch(() => setInfo({ configured: false }));
+  useEffect(() => { reload(); }, []);
+
+  async function run(kind) {
+    setBusy(kind); setResult(null);
+    try {
+      const r = kind === "save" ? await saveDatabase(url) : await testDatabase(url);
+      setResult({ ...r, kind });
+      if (kind === "save" && r.ok) reload();
+    } catch (e) {
+      setResult({ ok: false, error: String(e.message || e) });
+    } finally {
+      setBusy("");
+    }
+  }
+
+  return (
+    <div className="s-card">
+      <div className="section-label">The primary PostgreSQL database where Orrery stores everything — connection is kept in your OS keychain, never in project files.</div>
+      {info && (
+        <div className="db-current">
+          <span className="db-dot" data-ok={info.status === "ok"} />
+          <div style={{ minWidth: 0 }}>
+            <div className="db-url mono">{info.configured ? info.masked : "No database configured yet"}</div>
+            <div className="s-sub">{info.configured ? `${info.status === "ok" ? "Connected" : "Not reachable"} · loaded from ${info.source}` : "Enter a connection string below to get started"}</div>
+          </div>
+        </div>
+      )}
+      <label className="db-label">Connection string</label>
+      <input
+        className="search db-input"
+        placeholder="postgresql://user:password@host:5432/dbname"
+        value={url}
+        onChange={(e) => setUrl(e.target.value)}
+        autoComplete="off"
+        spellCheck={false}
+      />
+      <div className="db-actions">
+        <button className="btn" disabled={!url.trim() || !!busy} onClick={() => run("test")}>
+          {busy === "test" ? "Testing…" : "Test connection"}
+        </button>
+        <button className="btn primary" disabled={!url.trim() || !!busy} onClick={() => run("save")}>
+          {busy === "save" ? "Saving…" : "Save & connect"}
+        </button>
+      </div>
+      {result && result.kind === "save" && result.ok && (
+        <div className="db-msg ok">Saved. <strong>Restart Orrery</strong> to connect to the new database.</div>
+      )}
+      {result && result.kind === "test" && result.ok && (
+        <div className="db-msg ok">Connection successful.</div>
+      )}
+      {result && result.ok === false && (
+        <div className="db-msg err">{result.error || "Could not connect."}</div>
+      )}
+    </div>
+  );
+}
+
 function SpendingSection() {
   const [u, setU] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -735,6 +803,12 @@ export default function Settings() {
         {entries.map(([name, info]) => (
           <ProviderBlock key={name} name={name} info={info} onSaved={load} />
         ))}
+      </>
+    ),
+    database: (
+      <>
+        <SettingsPanelHeader title="Database" description="Connect Orrery to your own PostgreSQL server." />
+        <DatabaseSection />
       </>
     ),
     models: (
