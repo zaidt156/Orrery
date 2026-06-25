@@ -213,6 +213,12 @@ def create_app(session_token: str) -> FastAPI:
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
 
+    def _sse_run(conv_id: str, source) -> StreamingResponse:
+        """Stream a conversation generation that keeps running on the backend even if the
+        client disconnects (navigates away), so the reply always completes and is saved."""
+        queue = chat.start_detached(conv_id, source)
+        return _sse(chat.observe(queue))
+
     @r.get("/health")
     async def health() -> dict:
         db_ok = await database.check_connection()
@@ -559,17 +565,22 @@ def create_app(session_token: str) -> FastAPI:
     @r.post("/conversations/{cid}/messages")
     async def send_message(cid: str, body: NewMessage) -> StreamingResponse:
         attachments = [a.model_dump() for a in body.attachments]
-        return _sse(chat.stream_reply(cid, body.content, attachments, body.collection_id))
+        return _sse_run(cid, chat.stream_reply(cid, body.content, attachments, body.collection_id))
 
     @r.post("/conversations/{cid}/code-image")
     async def generate_code_image(cid: str, body: NewMessage) -> StreamingResponse:
         if body.attachments:
             raise HTTPException(status_code=400, detail="Code-rendered images do not accept attachments yet")
-        return _sse(chat.stream_code_image(cid, body.content))
+        return _sse_run(cid, chat.stream_code_image(cid, body.content))
 
     @r.post("/conversations/{cid}/regenerate")
     async def regenerate_message(cid: str) -> StreamingResponse:
-        return _sse(chat.regenerate(cid))
+        return _sse_run(cid, chat.regenerate(cid))
+
+    @r.post("/conversations/{cid}/stop")
+    async def stop_generation(cid: str) -> dict:
+        chat.cancel_run(cid)
+        return {"stopped": True}
 
     @r.get("/conversations/{cid}/messages/{mid}/export/{export_format}")
     async def export_reply(cid: str, mid: str, export_format: str) -> Response:

@@ -241,3 +241,6 @@ export const pullLocalModel = (model, onEvent, signal) =>
 
 export const regenerateMessage = (cid, onEvent, signal) =>
   streamSSE(`/api/conversations/${cid}/regenerate`, { signal }, onEvent);
+
+// explicitly cancel backend generation (the Stop button — navigating away does NOT cancel)
+export const stopGeneration = (cid) => apiSend(`/api/conversations/${cid}/stop`, "POST").catch(() => {});

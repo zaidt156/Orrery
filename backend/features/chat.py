@@ -459,6 +459,54 @@ async def _deliver_docspec(cid: uuid.UUID, model: str, request: str, system_prom
     yield {"done": True}
 
 
+# --- detached runs: keep generating + persisting even if the client navigates away ---
+_RUN_DONE = object()
+_run_queues: dict[str, asyncio.Queue] = {}
+_run_tasks: dict[str, asyncio.Task] = {}
+
+
+def start_detached(conv_id: str, source: AsyncIterator[dict]) -> asyncio.Queue:
+    """Drive a generation to completion in a background task (it persists in its own finally),
+    pushing events to a queue the HTTP request observes. Client disconnect stops the observer,
+    not the task — so the reply finishes and is saved regardless."""
+    cancel_run(conv_id)
+    queue: asyncio.Queue = asyncio.Queue()
+    _run_queues[conv_id] = queue
+
+    async def drive() -> None:
+        try:
+            async for event in source:
+                queue.put_nowait(event)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001 — surface a sanitized error
+            queue.put_nowait({"error": str(exc)})
+        finally:
+            queue.put_nowait(_RUN_DONE)
+            if _run_queues.get(conv_id) is queue:
+                _run_queues.pop(conv_id, None)
+            _run_tasks.pop(conv_id, None)
+
+    _run_tasks[conv_id] = asyncio.create_task(drive())
+    return queue
+
+
+async def observe(queue: asyncio.Queue) -> AsyncIterator[dict]:
+    while True:
+        event = await queue.get()
+        if event is _RUN_DONE:
+            return
+        yield event
+
+
+def cancel_run(conv_id: str) -> None:
+    """Explicitly stop a run (the Stop button) — different from a client just navigating away."""
+    task = _run_tasks.pop(conv_id, None)
+    _run_queues.pop(conv_id, None)
+    if task and not task.done():
+        task.cancel()
+
+
 async def stream_reply(
     conv_id: str,
     user_content: str,

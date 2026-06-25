@@ -19,7 +19,7 @@ import {
   getModels, listCollections, listConversations, getConversation, createConversation,
   updateConversation, deleteConversation, streamMessage, regenerateMessage,
   downloadMessageExport, streamCodeImage, createArtifact, previewExport, saveClientFile,
-  downloadGeneratedFile, previewGeneratedFile,
+  downloadGeneratedFile, previewGeneratedFile, stopGeneration,
 } from "../lib/api.js";
 
 const EXPORT_FORMATS = [
@@ -398,6 +398,7 @@ export default function Chat() {
   }
 
   function stop() {
+    if (activeId) stopGeneration(activeId); // cancel on the backend too (it now runs detached)
     abortRef.current?.abort();
   }
 
