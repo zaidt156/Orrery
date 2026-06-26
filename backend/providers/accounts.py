@@ -12,6 +12,7 @@ import time
 from collections.abc import AsyncIterator
 from functools import lru_cache
 
+from backend.providers import manifest
 from backend.security import secrets
 
 CLAUDE_PLAN_MODEL_ID = "claude_plan/default"
@@ -20,18 +21,14 @@ _CLAUDE_CMD_TIMEOUT = 180
 _STATUS_TIMEOUT = 8
 _STATUS_CACHE_TTL = 30.0
 _INSTALL_TIMEOUT = 300
-_CODEX_RECOMMENDED_VERSION = (0, 141, 0)
-_CLAUDE_RECOMMENDED_VERSION = (2, 1, 185)
+# recommended CLI versions + plan variants come from the refreshable model manifest (plan #12)
+_CODEX_RECOMMENDED_VERSION = manifest.recommended_version("chatgpt_plan") or (0, 141, 0)
+_CLAUDE_RECOMMENDED_VERSION = manifest.recommended_version("claude_plan") or (2, 1, 185)
 _install_lock = threading.Lock()
 
 # Selectable models on the Claude plan route. "default" lets Claude Code pick;
 # the others pass --model to the CLI so the user can switch tiers under OAuth.
-CLAUDE_PLAN_VARIANTS = [
-    ("claude_plan/default", "Claude plan - adaptive thinking", None),
-    ("claude_plan/opus", "Claude plan - Opus - adaptive thinking", "claude-opus-4-8"),
-    ("claude_plan/sonnet", "Claude plan - Sonnet - adaptive thinking", "claude-sonnet-4-6"),
-    ("claude_plan/haiku", "Claude plan - Haiku - fast", "claude-haiku-4-5"),
-]
+CLAUDE_PLAN_VARIANTS = manifest.variants("claude_plan")
 _CLAUDE_PLAN_FLAG = {vid: flag for vid, _label, flag in CLAUDE_PLAN_VARIANTS}
 _status_cache_lock = threading.Lock()
 _status_cache: tuple[float, dict] | None = None
@@ -566,6 +563,33 @@ def _limit_text(err: str, plan: str) -> str | None:
     )
 
 
+def _claude_plan_args(
+    cmd: str, model_id: str | None, effort: str | None, system_prompt: str | None, effort_supported: bool,
+) -> list[str]:
+    """Build the Claude Code argv with tools disabled and no session persistence (pure + testable)."""
+    args = [
+        cmd,
+        "--print",
+        "--output-format", "stream-json",  # realtime JSONL so we can stream deltas, not buffer
+        "--include-partial-messages",
+        "--verbose",  # required alongside stream-json
+        "--no-session-persistence",
+        "--tools", "",
+        "--strict-mcp-config",
+        "--disable-slash-commands",
+        "--setting-sources", "user",
+        "--permission-mode", "dontAsk",
+    ]
+    flag = _CLAUDE_PLAN_FLAG.get(model_id) if model_id else None
+    if flag:
+        args += ["--model", flag]
+    if effort and effort in {"low", "medium", "high", "xhigh", "max"} and effort_supported:
+        args += ["--effort", effort]
+    if system_prompt:
+        args += ["--system-prompt", system_prompt]
+    return args
+
+
 async def _stream_claude_plan_impl(
     messages: list[dict],
     system_prompt: str | None = None,
@@ -584,26 +608,7 @@ async def _stream_claude_plan_impl(
     if not prompt:
         raise ClaudePlanUnavailable("There is no text to send to Claude plan.")
 
-    args = [
-        cmd,
-        "--print",
-        "--output-format", "stream-json",  # realtime JSONL so we can stream deltas, not buffer
-        "--include-partial-messages",
-        "--verbose",  # required alongside stream-json
-        "--no-session-persistence",
-        "--tools", "",
-        "--strict-mcp-config",
-        "--disable-slash-commands",
-        "--setting-sources", "user",
-        "--permission-mode", "dontAsk",
-    ]
-    flag = _CLAUDE_PLAN_FLAG.get(model_id) if model_id else None
-    if flag:
-        args += ["--model", flag]
-    if effort and effort in {"low", "medium", "high", "xhigh", "max"} and _claude_effort_supported():
-        args += ["--effort", effort]
-    if system_prompt:
-        args += ["--system-prompt", system_prompt]
+    args = _claude_plan_args(cmd, model_id, effort, system_prompt, _claude_effort_supported())
 
     produced = False
     try:
@@ -648,20 +653,13 @@ async def stream_claude_plan(
 _CHATGPT_PLAN_KEY = "account:openai:chatgpt_plan"
 _GEMINI_PLAN_KEY = "account:google:gemini_plan"
 
-CHATGPT_PLAN_VARIANTS = [
-    ("chatgpt_plan/default", "ChatGPT plan - best available (auto) - reasoning", None),
-    ("chatgpt_plan/gpt-5.5", "ChatGPT plan - GPT-5.5 - reasoning", "gpt-5.5"),
-    # Keep the persisted id for existing users; the old GPT-5.5 mini name was never valid.
-    ("chatgpt_plan/gpt-5.5-mini", "ChatGPT plan - GPT-5.4 mini - fast reasoning", "gpt-5.4-mini"),
-]
-GEMINI_PLAN_VARIANTS = [
-    ("gemini_plan/default", "Google CLI · default", None),
-]
+CHATGPT_PLAN_VARIANTS = manifest.variants("chatgpt_plan")
+GEMINI_PLAN_VARIANTS = manifest.variants("gemini_plan")
 _CHATGPT_PLAN_FLAG = {vid: flag for vid, _l, flag in CHATGPT_PLAN_VARIANTS}
 _GEMINI_PLAN_FLAG = {vid: flag for vid, _l, flag in GEMINI_PLAN_VARIANTS}
 
-_CODEX_LATEST_PINNED_MODEL = "gpt-5.5"
-_CODEX_OLD_FAST_MODEL = "gpt-5.4-mini"
+_CODEX_LATEST_PINNED_MODEL = manifest.value("chatgpt_plan", "codex_latest_pinned_model", "gpt-5.5")
+_CODEX_OLD_FAST_MODEL = manifest.value("chatgpt_plan", "codex_old_fast_model", "gpt-5.4-mini")
 
 _CHATGPT_WARNING = (
     "Runs OpenAI's official Codex CLI in an empty temporary folder with a read-only sandbox, "

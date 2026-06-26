@@ -1,0 +1,27 @@
+{
+  "_comment": "Fast-changing provider model IDs, plan variant labels, and recommended CLI versions. Editable without touching provider logic. Loaded by manifest.py over baked-in defaults; a corrupt/missing file falls back to those defaults.",
+  "claude_plan": {
+    "recommended_cli_version": [2, 1, 185],
+    "variants": [
+      ["claude_plan/default", "Claude plan - adaptive thinking", null],
+      ["claude_plan/opus", "Claude plan - Opus - adaptive thinking", "claude-opus-4-8"],
+      ["claude_plan/sonnet", "Claude plan - Sonnet - adaptive thinking", "claude-sonnet-4-6"],
+      ["claude_plan/haiku", "Claude plan - Haiku - fast", "claude-haiku-4-5"]
+    ]
+  },
+  "chatgpt_plan": {
+    "recommended_cli_version": [0, 141, 0],
+    "codex_latest_pinned_model": "gpt-5.5",
+    "codex_old_fast_model": "gpt-5.4-mini",
+    "variants": [
+      ["chatgpt_plan/default", "ChatGPT plan - best available (auto) - reasoning", null],
+      ["chatgpt_plan/gpt-5.5", "ChatGPT plan - GPT-5.5 - reasoning", "gpt-5.5"],
+      ["chatgpt_plan/gpt-5.5-mini", "ChatGPT plan - GPT-5.4 mini - fast reasoning", "gpt-5.4-mini"]
+    ]
+  },
+  "gemini_plan": {
+    "variants": [
+      ["gemini_plan/default", "Google CLI · default", null]
+    ]
+  }
+}
