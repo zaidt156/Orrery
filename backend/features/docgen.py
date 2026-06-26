@@ -341,24 +341,27 @@ def spec_to_markdown(spec: dict) -> str:
 # --- entry points ----------------------------------------------------------
 
 def render_spec(title: str, model: str, spec: dict, export_format: str) -> ExportResult:
-    slug = exports._slug(title)
+    # Name the document after its OWN title (the model sets it in the spec), not the chat name;
+    # the conversation title is only a last resort if the spec didn't provide one.
+    doc_title = _s(spec.get("title")) or title or "Document"
+    slug = exports._slug(doc_title)
     if export_format == "pptx":
-        return ExportResult(build_pptx(spec, title), _PPTX_MIME, f"{slug}.pptx")
+        return ExportResult(build_pptx(spec, doc_title), _PPTX_MIME, f"{slug}.pptx")
     if export_format == "xlsx":
-        return ExportResult(build_xlsx(spec, title), _XLSX_MIME, f"{slug}.xlsx")
+        return ExportResult(build_xlsx(spec, doc_title), _XLSX_MIME, f"{slug}.xlsx")
     if export_format == "csv":
         return ExportResult(build_csv(spec), "text/csv; charset=utf-8", f"{slug}.csv")
     if export_format == "json":
         return ExportResult((json.dumps(spec, indent=2, ensure_ascii=False) + "\n").encode("utf-8"),
                             "application/json; charset=utf-8", f"{slug}.json")
     if export_format == "pdf":
-        return ExportResult(exports.build_pdf(title, model, _spec_to_blocks(spec)), "application/pdf", f"{slug}.pdf")
+        return ExportResult(exports.build_pdf(doc_title, model, _spec_to_blocks(spec)), "application/pdf", f"{slug}.pdf")
     if export_format == "docx":
-        return ExportResult(exports.build_docx(title, model, _spec_to_blocks(spec)), _DOCX_MIME, f"{slug}.docx")
+        return ExportResult(exports.build_docx(doc_title, model, _spec_to_blocks(spec)), _DOCX_MIME, f"{slug}.docx")
 
     markdown = spec_to_markdown(spec)
     if export_format == "html":
-        return ExportResult(exports.build_html(title, model, markdown), "text/html; charset=utf-8", f"{slug}.html")
+        return ExportResult(exports.build_html(doc_title, model, markdown), "text/html; charset=utf-8", f"{slug}.html")
     if export_format == "md":
         return ExportResult((markdown + "\n").encode("utf-8"), "text/markdown; charset=utf-8", f"{slug}.md")
     if export_format == "txt":

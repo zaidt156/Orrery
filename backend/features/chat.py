@@ -64,10 +64,19 @@ FORMAT_INSTRUCTIONS = (
     '  "sections": [ {"heading": "string", "level": 1, "paragraphs": ["string", ...], "bullets": ["string", ...], "table": {"columns": ["string", ...], "rows": [["string", ...], ...]}} ]\n'
     "}\n"
     "Use 'slides' for presentations/PowerPoint, 'sheets' for spreadsheets/Excel/CSV, and 'sections' for "
-    "documents/PDF/Word/Markdown/text/HTML. Design it like a real artifact: genuine slide titles with concise "
-    "bullets for decks, real column headers and data rows for sheets, proper headings and paragraphs for "
-    "documents. Orrery builds the actual file from this JSON and shows Preview/Download - the JSON is never "
-    "shown to the user. Only write file-generating code if the user explicitly asks for the code itself."
+    "documents/PDF/Word/Markdown/text/HTML.\n\n"
+    "QUALITY BAR — treat this with the SAME effort and depth as writing the file yourself; the spec must be "
+    "comprehensive and ready to hand over, never a skeleton or placeholders:\n"
+    "- Always set a specific, descriptive \"title\" naming the actual document (e.g. \"Q3 2026 Revenue Review\", "
+    "not the chat name or \"Document\").\n"
+    "- Decks: enough slides to cover the topic properly (typically 6–12), each with 3–6 substantive, specific "
+    "bullets (real facts/figures/examples, not one-word stubs) and a 1–2 sentence \"notes\" field.\n"
+    "- Documents: full, well-developed paragraphs under each heading — real explanation and detail, not single "
+    "sentences; use bullets/tables where they help.\n"
+    "- Sheets: real column headers and complete, realistic data rows.\n"
+    "Be accurate; do not invent figures you can't support. Orrery builds the actual file from this JSON and shows "
+    "Preview/Download - the JSON is never shown to the user. Only write file-generating code if the user "
+    "explicitly asks for the code itself."
 )
 CONTEXT_INPUT_SHARE = 0.75
 DEFAULT_CONTEXT_WINDOW = 1_000_000
