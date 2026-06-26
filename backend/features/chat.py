@@ -519,6 +519,24 @@ async def observe(queue: asyncio.Queue) -> AsyncIterator[dict]:
         yield event
 
 
+def is_running(conv_id: str) -> bool:
+    """True if a detached generation for this conversation is still in flight."""
+    return conv_id in _run_tasks
+
+
+async def resume(conv_id: str) -> AsyncIterator[dict]:
+    """Re-attach to an in-flight generation and stream its remaining events. If nothing is
+    running, signal done immediately so the client just reloads the (saved) conversation."""
+    queue = _run_queues.get(conv_id)
+    if queue is None:
+        yield {"done": True}
+        return
+    yield {"resumed": True}
+    async for event in observe(queue):
+        yield event
+    yield {"done": True}
+
+
 def cancel_run(conv_id: str) -> None:
     """Explicitly stop a run (the Stop button) — different from a client just navigating away."""
     task = _run_tasks.pop(conv_id, None)

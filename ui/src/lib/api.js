@@ -201,9 +201,9 @@ export async function previewExport(conversationId, messageId, format) {
 }
 
 // read an SSE stream, calling onEvent per frame; signal aborts (Stop button)
-async function streamSSE(path, { body, signal } = {}, onEvent) {
+async function streamSSE(path, { body, signal, method = "POST" } = {}, onEvent) {
   const res = await fetch(`${API_BASE}${path}`, {
-    method: "POST",
+    method,
     headers: authHeaders(body ? { "Content-Type": "application/json" } : {}),
     body: body ? JSON.stringify(body) : undefined,
     signal,
@@ -243,6 +243,10 @@ export const pullLocalModel = (model, onEvent, signal) =>
 
 export const regenerateMessage = (cid, onEvent, signal) =>
   streamSSE(`/api/conversations/${cid}/regenerate`, { signal }, onEvent);
+
+// re-attach to a generation still running in the background after navigating away
+export const resumeGeneration = (cid, onEvent, signal) =>
+  streamSSE(`/api/conversations/${cid}/resume`, { method: "GET", signal }, onEvent);
 
 // explicitly cancel backend generation (the Stop button — navigating away does NOT cancel)
 export const stopGeneration = (cid) => apiSend(`/api/conversations/${cid}/stop`, "POST").catch(() => {});

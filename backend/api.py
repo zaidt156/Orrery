@@ -562,6 +562,7 @@ def create_app(session_token: str) -> FastAPI:
         conv = await chat.get_conversation(cid)
         if conv is None:
             raise HTTPException(status_code=404, detail="Conversation not found")
+        conv["running"] = chat.is_running(cid)  # so the UI can re-attach to a background run
         return conv
 
     @r.patch("/conversations/{cid}")
@@ -597,6 +598,11 @@ def create_app(session_token: str) -> FastAPI:
     async def stop_generation(cid: str) -> dict:
         chat.cancel_run(cid)
         return {"stopped": True}
+
+    @r.get("/conversations/{cid}/resume")
+    async def resume_generation(cid: str) -> StreamingResponse:
+        # Re-attach to a generation that's still running in the background (client navigated away).
+        return _sse(chat.resume(cid))
 
     @r.get("/conversations/{cid}/messages/{mid}/export/{export_format}")
     async def export_reply(cid: str, mid: str, export_format: str) -> Response:

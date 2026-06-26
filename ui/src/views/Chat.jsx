@@ -19,7 +19,7 @@ import {
   getModels, listCollections, listConversations, getConversation, createConversation,
   updateConversation, deleteConversation, streamMessage, regenerateMessage,
   downloadMessageExport, streamCodeImage, createArtifact, previewExport, saveClientFile,
-  downloadGeneratedFile, previewGeneratedFile, stopGeneration,
+  downloadGeneratedFile, previewGeneratedFile, stopGeneration, resumeGeneration,
 } from "../lib/api.js";
 import {
   EXPORT_FORMATS, requestedFileFormats, precedingUserText,
@@ -65,6 +65,7 @@ export default function Chat() {
   const [banner, setBanner] = useState(null);
   const threadRef = useRef(null);
   const abortRef = useRef(null);
+  const activeIdRef = useRef(null);
   const fileRef = useRef(null);
   const composerRef = useRef(null);
   const [attachments, setAttachments] = useState([]);
@@ -175,6 +176,8 @@ export default function Chat() {
     el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
   }, [input]);
 
+  useEffect(() => { activeIdRef.current = activeId; }, [activeId]);
+
   // Keep the model picker in sync when accounts/models change in Settings (connect/disconnect,
   // key added/removed, model toggled) — refetch and drop a selection that's no longer available.
   useEffect(() => {
@@ -191,6 +194,7 @@ export default function Chat() {
 
   async function open(id) {
     const full = await getConversation(id);
+    activeIdRef.current = id;
     setActiveId(id);
     setMessages(full.messages);
     setModel(full.model);
@@ -198,6 +202,7 @@ export default function Chat() {
     setEffort(full.effort || "");
     setContextWindow(String(full.context_window || 1000000));
     setPromptOpen(false);
+    if (full.running && !sending) resumeRun(id);  // a reply is still being generated — re-attach
   }
 
   async function chooseEffort(v) {
@@ -279,6 +284,7 @@ export default function Chat() {
         else if (ev.sources) setLast({ sources: ev.sources });
         else if (ev.message_id) setLast({ id: ev.message_id });
         else if (ev.message_usage) setLast({ tokens: ev.message_usage });
+        else if (ev.resumed) appendStep(setMessages, "Resuming background generation…");
         else if (ev.error) setLast({ content: ev.error, error: true, streaming: false });
         else if (ev.done) setLast({ streaming: false });
       }, ctrl.signal);
@@ -289,6 +295,16 @@ export default function Chat() {
       setSending(false);
       abortRef.current = null;
     }
+  }
+
+  // Re-attach to a generation that kept running in the background while we were away, then
+  // reload the saved reply (the resume stream only carries the tail it didn't already emit).
+  async function resumeRun(cid) {
+    await runStream(cid, (onEvent, signal) => resumeGeneration(cid, onEvent, signal));
+    try {
+      const full = await getConversation(cid);
+      if (cid === activeIdRef.current) setMessages(full.messages);
+    } catch { /* keep what streamed */ }
   }
 
   async function submitPrompt(rawContent, rawAttachments = [], { clearComposer = false } = {}) {
