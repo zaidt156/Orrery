@@ -400,7 +400,9 @@ _SECRET_RX = re.compile(r"(sk-[A-Za-z0-9_\-]{6,}|AIza[A-Za-z0-9_\-]{6,}|Bearer\s
 
 
 def _scrub_secrets(text: str) -> str:
-    return _SECRET_RX.sub("[redacted]", text)
+    # Centralized scrubber (key shapes, bearer tokens, URL passwords, secret query params),
+    # plus the provider layer's own key-shaped pattern for anything it catches first.
+    return secrets.redact_secrets(_SECRET_RX.sub("[redacted]", text))
 
 
 def _sanitize(exc: Exception) -> str:
@@ -433,6 +435,19 @@ async def stream_chat(
     are exempt (they don't bill per token).
     """
     provider = model_provider(model_id)
+
+    # Privacy boundary: every cloud-bound route (API keys, custom endpoints, CLI plans) passes
+    # user/document text through PII redaction first. Local (Ollama) models are exempt — nothing
+    # leaves the machine. Controlled by the "privacy_mode" setting (off / basic / strict).
+    if provider != "ollama":
+        from backend.core import appconfig
+        from backend.security import privacy
+        try:
+            mode = await appconfig.get_setting("privacy_mode", "basic") or "basic"
+        except Exception:  # noqa: BLE001 — a settings read failure must not break the chat; redact by default
+            mode = "basic"
+        messages = privacy.prepare_messages_for_model(messages, is_local=False, mode=mode)
+
     if provider == "claude_plan":
         try:
             async for delta in accounts.stream_claude_plan(messages, system_prompt, model_id, effort):

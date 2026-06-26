@@ -152,6 +152,10 @@ class DbConnection(BaseModel):
     url: str
 
 
+class PrivacyMode(BaseModel):
+    mode: Literal["off", "basic", "strict"]
+
+
 _MAX_BODY_BYTES = 64 * 1024 * 1024  # generous for multi-image messages; blocks runaway payloads
 _CSP = (
     "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; "
@@ -273,6 +277,18 @@ def create_app(session_token: str) -> FastAPI:
     @r.put("/branding")
     async def put_branding(body: Branding) -> dict:
         return await appconfig.set_setting("branding", body.model_dump())
+
+    @r.get("/privacy")
+    async def get_privacy() -> dict:
+        mode = await appconfig.get_setting("privacy_mode", "basic") or "basic"
+        if mode not in ("off", "basic", "strict"):
+            mode = "basic"
+        return {"mode": mode}
+
+    @r.put("/privacy")
+    async def put_privacy(body: PrivacyMode) -> dict:
+        await appconfig.set_setting("privacy_mode", body.mode)
+        return {"mode": body.mode}
 
     @r.get("/database")
     async def get_database() -> dict:

@@ -23,6 +23,8 @@ import {
   deleteCustomModel,
   disconnectPlan,
   getBranding,
+  getPrivacy,
+  setPrivacy,
   getDatabase,
   testDatabase,
   saveDatabase,
@@ -575,6 +577,61 @@ function BrandingSection() {
   );
 }
 
+const PRIVACY_OPTIONS = [
+  { id: "off", name: "Off", sub: "Send your text to cloud models exactly as written — no redaction." },
+  { id: "basic", name: "Basic (recommended)", sub: "Mask common personal data (emails, phone numbers, card/SSN numbers, IPs) before it reaches a cloud model." },
+  { id: "strict", name: "Strict", sub: "Basic redaction plus a stronger boundary; broader detection coming. Best when sharing sensitive documents." },
+];
+
+function PrivacySection() {
+  const [mode, setMode] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => { getPrivacy().then((r) => setMode(r.mode)).catch(() => setMode("basic")); }, []);
+
+  if (!mode) {
+    return (<><div className="section-label">Privacy</div><div className="s-sub" style={{ padding: "4px 2px" }}>Loading…</div></>);
+  }
+
+  async function choose(id) {
+    const prev = mode;
+    setMode(id);
+    setBusy(true);
+    setSaved(false);
+    try {
+      const r = await setPrivacy(id);
+      setMode(r.mode);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 1500);
+    } catch {
+      setMode(prev);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <div className="section-label">Privacy — what leaves your machine when you use a cloud model</div>
+      <div className="provider-block">
+        {PRIVACY_OPTIONS.map((o) => (
+          <div className="mode-row" key={o.id}>
+            <div className="mode-main">
+              <div className="mode-name">{o.name}</div>
+              <div className="mode-sub">{o.sub}</div>
+            </div>
+            <div className="mode-actions"><CtrlToggle on={mode === o.id} onClick={() => choose(o.id)} /></div>
+          </div>
+        ))}
+        <div className="mode-sub" style={{ marginTop: 8 }}>
+          Local models (Ollama) are never redacted — nothing leaves your machine for them.{saved ? " Saved." : busy ? " Saving…" : ""}
+        </div>
+      </div>
+    </>
+  );
+}
+
 const CAP_PERIODS = ["hour", "day", "month", "all"];
 
 function DatabaseSection() {
@@ -826,6 +883,7 @@ export default function Settings() {
       <>
         <SettingsPanelHeader title="General" description="Company identity and workspace defaults." />
         <BrandingSection />
+        <PrivacySection />
         <DefaultsSection />
       </>
     ),

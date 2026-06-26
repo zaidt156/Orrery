@@ -24,3 +24,30 @@ def redact(text: str) -> str:
 def redact_for_model(text: str, is_local: bool) -> str:
     """Redact before a cloud model; leave untouched for a local model."""
     return text if is_local else redact(text)
+
+
+# Privacy modes for the cloud boundary: "off" sends text as-is; "basic"/"strict" apply
+# the regex redaction above. (Strict is a hook for future, broader detection.)
+PRIVACY_MODES = ("off", "basic", "strict")
+
+
+def prepare_messages_for_model(messages: list[dict], *, is_local: bool, mode: str = "basic") -> list[dict]:
+    """The single privacy boundary every cloud-bound call passes through. Local models and
+    mode 'off' are untouched; otherwise PII is masked in each message's text content."""
+    if is_local or mode not in ("basic", "strict"):
+        return messages
+    prepared: list[dict] = []
+    for message in messages:
+        content = message.get("content")
+        copied = dict(message)
+        if isinstance(content, str):
+            copied["content"] = redact(content)
+        elif isinstance(content, list):
+            blocks = []
+            for block in content:
+                if isinstance(block, dict) and block.get("type") == "text":
+                    block = {**block, "text": redact(block.get("text", ""))}
+                blocks.append(block)
+            copied["content"] = blocks
+        prepared.append(copied)
+    return prepared
