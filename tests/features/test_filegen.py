@@ -46,7 +46,7 @@ async def test_filegen_run_uses_quality_effort_and_production_prompt(monkeypatch
         )
     ]
 
-    assert events[0]["status"] == "Designing a polished file with high reasoning..."
+    assert events[0]["status"] == "Creating the file structure…"
     assert captured["effort"] == "high"
     assert "Quality bar" in captured["system_prompt"]
     assert "PowerPoint" in captured["system_prompt"]

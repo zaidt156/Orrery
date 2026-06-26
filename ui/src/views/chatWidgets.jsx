@@ -209,26 +209,36 @@ export function ThinkingPulse() {
   );
 }
 
-// The "Thinking" indicator: a shimmer before the first token, and a collapsible
-// reasoning trace (auto-open while streaming, collapsed once the answer is done).
-export function ThinkingBlock({ text, streaming }) {
+// Safe reasoning panel: a collapsible "How this was produced" that shows Orrery's own
+// work-trace steps and a closing summary — never the model's raw reasoning. Auto-open
+// while streaming so you can watch the steps; collapsed once the answer is done.
+export function ReasoningPanel({ trace, summary, streaming }) {
   const [open, setOpen] = useState(false);
-  if (!text) {
-    return (
-      <div className="thinking">
-        <span className="think-stars" aria-hidden="true"><i>✦</i><i>✦</i><i>✦</i></span>
-        <span className="thinking-label">Thinking…</span>
-      </div>
-    );
-  }
+  const steps = trace || [];
+  if (!steps.length && !summary) return null;
   const show = open || streaming;
   return (
     <div className={`think-block${streaming ? " live" : ""}`}>
       <button className="think-head" onClick={() => setOpen((v) => !v)}>
-        {streaming ? "Thinking…" : "Thought process"}
+        {streaming ? "Thinking…" : (summary?.title || "How this was produced")}
         <span className="think-caret">{show ? "▾" : "▸"}</span>
       </button>
-      {show && <div className="think-body">{text}</div>}
+      {show && (
+        <div className="think-body">
+          {steps.map((s, i) => (
+            <div key={i} className="trace-step">
+              <span className="trace-check" aria-hidden="true">✓</span>
+              <span className="trace-stage">{s.stage}</span>
+              {s.detail ? <span className="trace-detail"> — {s.detail}</span> : null}
+            </div>
+          ))}
+          {!streaming && summary?.items?.length ? (
+            <ol className="trace-summary">
+              {summary.items.map((it, i) => <li key={i}>{it}</li>)}
+            </ol>
+          ) : null}
+        </div>
+      )}
     </div>
   );
 }

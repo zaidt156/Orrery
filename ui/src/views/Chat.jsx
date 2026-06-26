@@ -26,7 +26,7 @@ import {
   extractHtml, stripDocSpec, specFormats, extractSvgs, splitThink,
 } from "./chatHelpers.jsx";
 import {
-  ReplyFiles, InlineSvg, CodeImageArtifact, GeneratedFileCard, ThinkingPulse, ThinkingBlock,
+  ReplyFiles, InlineSvg, CodeImageArtifact, GeneratedFileCard, ThinkingPulse, ReasoningPanel,
 } from "./chatWidgets.jsx";
 
 const EFFORTS = ["", "low", "medium", "high", "xhigh"];
@@ -256,7 +256,8 @@ export default function Chat() {
     try {
       await start((ev) => {
         if (ev.delta) appendDelta(setMessages, ev.delta);
-        else if (ev.reasoning) appendReasoning(setMessages, ev.reasoning);
+        else if (ev.reasoning_event) appendTrace(setMessages, ev.reasoning_event);
+        else if (ev.reasoning_summary) setLast({ summary: ev.reasoning_summary });
         else if (ev.artifact) setLast({ artifacts: [ev.artifact] });
         else if (ev.files) setLast({ artifacts: ev.files, status: "" });
         else if (ev.status) appendStep(setMessages, ev.status);
@@ -549,15 +550,15 @@ export default function Chat() {
                   {m.sources?.length > 0 && <span className="rag-chip">searched: {m.sources.join(", ")}</span>}
                 </div>
                 {(() => {
-                  const { think, body } = splitThink(stripDocSpec(m.content));
-                  const reasoning = m.reasoning || think; // inline <think> shows as collapsible thinking
+                  const { body } = splitThink(stripDocSpec(m.content)); // strip raw <think>, never shown
                   const { svgs, cleaned } = m.streaming ? { svgs: [], cleaned: body } : extractSvgs(body);
                   const svgTitle = convos.find((c) => c.id === activeId)?.title;
                   return (
                     <>
-                      {reasoning
-                        ? <ThinkingBlock text={reasoning} streaming={m.streaming} />
-                        : (m.streaming && !body && <ThinkingPulse />)}
+                      {m.streaming && !body && <ThinkingPulse />}
+                      {(m.trace?.length || m.summary) && (
+                        <ReasoningPanel trace={m.trace} summary={m.summary} streaming={m.streaming} />
+                      )}
                       <div className="ai-text">
                         {cleaned ? <Markdown>{cleaned}</Markdown> : null}
                         {m.streaming && body && <span className="caret" />}
@@ -737,12 +738,14 @@ function appendStep(setMessages, step) {
   });
 }
 
-// Append a streamed reasoning ("thinking") token to the last assistant message.
-function appendReasoning(setMessages, delta) {
+// Append a safe work-trace step (reasoning_event) to the last assistant message.
+function appendTrace(setMessages, event) {
   setMessages((p) => {
     const a = [...p];
     const last = a[a.length - 1];
-    a[a.length - 1] = { ...last, reasoning: (last.reasoning || "") + delta };
+    const trace = last.trace ? [...last.trace] : [];
+    trace.push(event);
+    a[a.length - 1] = { ...last, trace };
     return a;
   });
 }

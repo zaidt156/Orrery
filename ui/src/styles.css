@@ -290,6 +290,12 @@ body{
 .think-block.live .think-head{color:var(--ice)}
 .think-caret{font-size:9px}
 .think-body{margin-top:6px; white-space:pre-wrap; word-break:break-word; color:var(--muted); font-size:12.5px; line-height:1.55; opacity:.92}
+.trace-step{display:flex; gap:6px; align-items:baseline; margin:3px 0; white-space:normal}
+.trace-check{color:var(--ice); font-size:11px}
+.trace-stage{color:var(--text); font-weight:600}
+.trace-detail{color:var(--muted)}
+.trace-summary{margin:8px 0 2px; padding-left:20px; color:var(--muted)}
+.trace-summary li{margin:2px 0}
 .prompt-text{word-break:break-word; text-align:left}
 .prompt-text > *:first-child{margin-top:0}
 .prompt-text > *:last-child{margin-bottom:0}

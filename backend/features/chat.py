@@ -16,8 +16,19 @@ from backend.core.database import get_sessionmaker
 from backend.core.models import Conversation, Message
 from backend.features import code_images, docgen, filegen, rag, sandbox, skills
 from backend.features import files as file_library
+from backend.features.reasoning_trace import reasoning_event, reasoning_summary
 from backend.providers import ai
 from backend.security import privacy
+
+# Local models (deepseek-r1, qwen3…) emit reasoning inline as <think>…</think>. That is raw
+# reasoning — strip it from the saved/answer text; the panel shows safe trace events instead.
+_THINK_RX = re.compile(r"<think>[\s\S]*?</think>", re.IGNORECASE)
+
+
+def _strip_think(text: str) -> str:
+    text = _THINK_RX.sub("", text)
+    text = re.sub(r"<think>[\s\S]*$", "", text, flags=re.IGNORECASE)  # unclosed (stream cut off)
+    return text.strip()
 
 FORMAT_INSTRUCTIONS = (
     "You are an expert-level assistant: answer with the depth and rigor of a specialist in whatever "
@@ -363,11 +374,11 @@ async def _generate(cid: uuid.UUID, model: str, system_prompt: str | None, messa
     formatted_prompt = f"{base_prompt}\n\n{skill_block}" if skill_block else base_prompt
     # Code/creative work (code, web apps, SVGs, diagrams, building things) always gets high effort.
     gen_effort = filegen.quality_effort(model, effort) if _wants_high_effort(user_text) else effort
+    yield reasoning_event("Understanding the request", "Reading your message and selecting how to respond.")
     try:
         async for delta in ai.stream_chat(model, messages, formatted_prompt, gen_effort, usage_out):
             if isinstance(delta, ai.ReasoningDelta):
-                yield {"reasoning": str(delta)}  # the model's thinking — shown live, not saved
-                continue
+                continue  # raw model reasoning is private — never sent to the browser or saved
             parts.append(delta)
             yield {"delta": delta}
     except ai.MissingKeyError as exc:
@@ -378,8 +389,13 @@ async def _generate(cid: uuid.UUID, model: str, system_prompt: str | None, messa
         return
     finally:
         if parts:  # runs on normal completion AND on client-cancel (GeneratorExit)
-            message_id = await _persist_assistant(cid, "".join(parts), model)
+            message_id = await _persist_assistant(cid, _strip_think("".join(parts)), model)
     if message_id:
+        yield reasoning_summary("How this was produced", [
+            "Read your request and selected the response path.",
+            "Loaded the conversation context and any selected documents.",
+            "Generated the reply and validated its formatting.",
+        ])
         yield {"message_id": message_id}
     if usage_out.get("cost") is not None and (usage_out.get("tokens_out") or usage_out.get("tokens_in")):
         from backend.features import usage as usage_mod
@@ -560,17 +576,19 @@ async def stream_reply(
             )
             gen_system = (f"{system_prompt}\n\n" if system_prompt else "") + preamble + block
             yield {"sources": sources}
+            yield reasoning_event("Preparing context", f"Loaded {len(sources)} document(s) from your collection to answer from.")
 
     # File generation: the model WRITES CODE that the sandbox runs (richer output than the
     # structured builder). Falls through to the structured/markdown reply if the sandbox is
     # unavailable or codegen fails.
     if filegen.wants_file(user_content) and sandbox.image_ready():
+        yield reasoning_event("Selected generation path", "Sandboxed code execution (for charts, images, or computed files).")
         result = None
         async for ev in filegen.run(model, user_content, gen_system, effort):
-            if "status" in ev or "reasoning" in ev:
-                yield ev
-            elif "result" in ev:
+            if "result" in ev:
                 result = ev["result"]
+            else:
+                yield ev  # status / reasoning_event / etc.
         if result and result.get("ok") and result.get("files"):
             produced: list[dict] = []
             for item in result["files"]:

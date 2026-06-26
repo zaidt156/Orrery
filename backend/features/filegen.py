@@ -13,6 +13,7 @@ import re
 from collections.abc import AsyncIterator
 
 from backend.features import sandbox, skills
+from backend.features.reasoning_trace import reasoning_event
 from backend.providers import ai
 
 MAX_ATTEMPTS = 3
@@ -116,14 +117,18 @@ async def run(model: str, request: str, system_prompt: str | None, effort: str |
     last_error = ""
 
     for attempt in range(MAX_ATTEMPTS):
-        yield {"status": "Designing a polished file with high reasoning..." if attempt == 0 else f"Fixing errors and retrying ({attempt + 1}/{MAX_ATTEMPTS})…"}
+        yield {"status": "Creating the file structure…" if attempt == 0 else f"Fixing errors and retrying ({attempt + 1}/{MAX_ATTEMPTS})…"}
+        yield reasoning_event(
+            "Writing the code" if attempt == 0 else "Repairing the code",
+            "Generating Python that builds your file." if attempt == 0
+            else "Adjusting the code after the previous attempt failed.",
+        )
         parts: list[str] = []
         try:
             async for delta in ai.stream_chat(model, convo, instructions, file_effort):
                 if isinstance(delta, ai.ReasoningDelta):
-                    yield {"reasoning": str(delta)}  # show the model's thinking live
-                else:
-                    parts.append(str(delta))
+                    continue  # raw model reasoning is private — never sent to the browser
+                parts.append(str(delta))
         except ai.MissingKeyError as exc:
             yield {"result": {"ok": False, "error": f"No API key for {exc.provider}. Add it in Settings."}}
             return
@@ -140,9 +145,11 @@ async def run(model: str, request: str, system_prompt: str | None, effort: str |
             ]
             continue
 
-        yield {"status": "Running the code in a secure sandbox…"}
+        yield {"status": "Generating the file…"}
+        yield reasoning_event("Running sandbox", "Executing the code in the locked-down offline sandbox and collecting output files.")
         outcome = await asyncio.to_thread(sandbox.run_code, _guard(code))
         if outcome.ok and outcome.files:
+            yield reasoning_event("Validating output", "Checking the generated files are non-empty, within size limits, and safe to store.")
             yield {"result": {"ok": True, "files": outcome.files, "code": code, "summary": _summary(outcome.files)}}
             return
 
