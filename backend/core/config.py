@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     sandbox_timeout_seconds: int = 60   # max wall-clock for model-written code in the sandbox
     rag_top_k: int = 5                  # chunks retrieved per "use my data" query
     max_upload_bytes: int = 64 * 1024 * 1024  # request body cap (multi-image messages)
+    generated_file_ttl_hours: int = 168  # auto-delete generated files older than this (7 days)
 
 
 settings = Settings()

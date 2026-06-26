@@ -95,6 +95,9 @@ async def _boot_and_serve() -> None:
         )
     await run_migrations()
 
+    from backend.features import files as _files
+    _files.cleanup()  # prune generated files past their TTL so tmp/ doesn't grow forever
+
     api = create_app(SESSION_TOKEN)
     config = uvicorn.Config(
         api, host=settings.api_host, port=settings.api_port, log_level="info", access_log=False

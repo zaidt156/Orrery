@@ -8,9 +8,15 @@ the serving route stays self-describing.
 from __future__ import annotations
 
 import json
+import logging
 import re
+import time
 import uuid
 from pathlib import Path
+
+from backend.core.config import settings
+
+log = logging.getLogger("orrery.files")
 
 _DIR = Path(__file__).resolve().parent.parent.parent / "tmp" / "generated"
 _SAFE = re.compile(r"[^A-Za-z0-9._-]+")
@@ -48,3 +54,26 @@ def load(file_id: str) -> tuple[dict, bytes] | None:
     except (OSError, json.JSONDecodeError):
         return None
     return meta, blob.read_bytes()
+
+
+def cleanup(ttl_hours: int | None = None) -> int:
+    """Delete generated files (and their .meta) older than the TTL so the dir can't grow forever.
+    Best-effort: returns the count removed; never raises."""
+    hours = settings.generated_file_ttl_hours if ttl_hours is None else ttl_hours
+    if hours <= 0 or not _DIR.is_dir():
+        return 0
+    cutoff = time.time() - hours * 3600
+    removed = 0
+    try:
+        for path in _DIR.iterdir():
+            try:
+                if path.is_file() and path.stat().st_mtime < cutoff:
+                    path.unlink()
+                    removed += 1
+            except OSError:
+                continue
+    except OSError:
+        return removed
+    if removed:
+        log.info("cleaned %d expired generated file(s)", removed)
+    return removed
