@@ -44,6 +44,10 @@ import {
 
 const PLAN_MODE_IDS = ["claude_plan", "chatgpt_plan", "gemini_plan"];
 
+// Tell the rest of the app (e.g. the chat model picker) that the set of usable models
+// may have changed — connecting/disconnecting a key or plan, or toggling a model.
+const notifyModelsChanged = () => window.dispatchEvent(new Event("orrery-models-changed"));
+
 const ICON = {
   claude_plan: "C", chatgpt_plan: "O", gemini_plan: "G",
   anthropic: "A", openai: "O", google: "G",
@@ -419,7 +423,7 @@ function AddCustomModel({ onAdded }) {
 function ModelsSection() {
   const [catalog, setCatalog] = useState(null);
   const [busy, setBusy] = useState(null);
-  const load = () => getModelCatalog().then((d) => setCatalog(d.models)).catch(() => setCatalog([]));
+  const load = () => getModelCatalog().then((d) => setCatalog(d.models)).catch(() => setCatalog([])).finally(notifyModelsChanged);
   useEffect(() => { load(); }, []);
 
   async function toggle(m) {
@@ -874,7 +878,7 @@ function IntegrationsSection() {
 export default function Settings() {
   const [activeSection, setActiveSection] = useState("accounts");
   const [providers, setProviders] = useState(null);
-  const load = () => getProviders().then(setProviders).catch(() => setProviders({}));
+  const load = () => getProviders().then(setProviders).catch(() => setProviders({})).finally(notifyModelsChanged);
   useEffect(() => { load(); }, []);
 
   const entries = providers ? Object.entries(providers) : [];

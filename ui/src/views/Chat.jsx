@@ -175,6 +175,20 @@ export default function Chat() {
     el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
   }, [input]);
 
+  // Keep the model picker in sync when accounts/models change in Settings (connect/disconnect,
+  // key added/removed, model toggled) — refetch and drop a selection that's no longer available.
+  useEffect(() => {
+    async function refreshModels() {
+      try {
+        const m = await getModels();
+        setModels(m.models);
+        setModel((cur) => (m.models.some((x) => x.id === cur) ? cur : (m.models[0]?.id || "")));
+      } catch { /* keep the current list on a transient failure */ }
+    }
+    window.addEventListener("orrery-models-changed", refreshModels);
+    return () => window.removeEventListener("orrery-models-changed", refreshModels);
+  }, []);
+
   async function open(id) {
     const full = await getConversation(id);
     setActiveId(id);
