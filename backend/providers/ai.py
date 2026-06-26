@@ -456,7 +456,7 @@ async def stream_chat(
         except accounts.UnsupportedClaudePlanInput:
             raise
         except accounts.ClaudePlanUnavailable as exc:
-            raise RuntimeError(str(exc)) from None
+            raise RuntimeError(_scrub_secrets(str(exc))) from None
 
     if provider in ("chatgpt_plan", "gemini_plan"):
         adapter = accounts.stream_chatgpt_plan if provider == "chatgpt_plan" else accounts.stream_gemini_plan
@@ -467,7 +467,7 @@ async def stream_chat(
         except accounts.UnsupportedClaudePlanInput:
             raise
         except accounts.CliRouteUnavailable as exc:
-            raise RuntimeError(str(exc)) from None
+            raise RuntimeError(_scrub_secrets(str(exc))) from None
 
     full = ([{"role": "system", "content": system_prompt}] if system_prompt else []) + messages
     litellm = _load_litellm()
@@ -553,9 +553,14 @@ async def stream_chat(
     if metered and captured is not None:
         tin = int(getattr(captured, "prompt_tokens", 0) or 0)
         tout = int(getattr(captured, "completion_tokens", 0) or 0)
+        pricing_known = True
         try:
             pc, cc = litellm.cost_per_token(model=kwargs["model"], prompt_tokens=tin, completion_tokens=tout)
             cost = float((pc or 0) + (cc or 0))
         except Exception:  # noqa: BLE001 — unknown/custom model pricing → count tokens, cost 0
             cost = 0.0
-        usage_out.update({"provider": provider, "model": model_id, "tokens_in": tin, "tokens_out": tout, "cost": cost})
+            pricing_known = False  # cost is a placeholder, not genuinely free — surface that honestly
+        usage_out.update({
+            "provider": provider, "model": model_id, "tokens_in": tin, "tokens_out": tout,
+            "cost": cost, "pricing_known": pricing_known,
+        })
