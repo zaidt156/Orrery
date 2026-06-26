@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from backend.core import appconfig, database
 from backend.core.config import settings
+from backend.core.observability import new_request_id
 from backend.features import artifacts, chat, data, exports, feedback, filepreview, local_models, rag, usage
 from backend.features import files as file_library
 from backend.providers import accounts, ai, catalog
@@ -203,6 +204,7 @@ def create_app(session_token: str) -> FastAPI:
         # constant-time compare so the token can't be guessed via response timing
         if not x_orrery_token or not hmac.compare_digest(x_orrery_token, session_token):
             raise HTTPException(status_code=401, detail="Invalid session token")
+        new_request_id()  # tag this request so all its log lines share one [id]
 
     r = APIRouter(prefix="/api", dependencies=[Depends(require_token)])
 

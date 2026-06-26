@@ -5,6 +5,7 @@ import base64
 import datetime
 import io
 import json
+import logging
 import mimetypes
 import re
 import uuid
@@ -14,6 +15,7 @@ from sqlalchemy import select
 
 from backend.core.config import settings
 from backend.core.database import get_sessionmaker
+from backend.core.observability import log_event
 from backend.core.models import Conversation, Message
 from backend.features import code_images, docgen, filegen, rag, sandbox, skills
 from backend.features import files as file_library
@@ -21,6 +23,8 @@ from backend.features.prompting import build_system_prompt
 from backend.features.reasoning_trace import reasoning_event, reasoning_summary
 from backend.providers import ai
 from backend.security import privacy
+
+_log = logging.getLogger("orrery.chat")
 
 # Local models (deepseek-r1, qwen3…) emit reasoning inline as <think>…</think>. That is raw
 # reasoning — strip it from the saved/answer text; the panel shows safe trace events instead.
@@ -379,6 +383,7 @@ async def _generate(cid: uuid.UUID, model: str, system_prompt: str | None, messa
     )
     # Code/creative work (code, web apps, SVGs, diagrams, building things) always gets high effort.
     gen_effort = filegen.quality_effort(model, effort) if _wants_high_effort(user_text) else effort
+    log_event(_log, "chat_generate_started", model=model, rag=bool(untrusted_context), effort=gen_effort or "default")
     yield reasoning_event("Understanding the request", "Reading your message and selecting how to respond.")
     try:
         async for delta in ai.stream_chat(model, messages, formatted_prompt, gen_effort, usage_out):
@@ -390,6 +395,7 @@ async def _generate(cid: uuid.UUID, model: str, system_prompt: str | None, messa
         yield {"error": f"No API key for {exc.provider}. Add it in Settings."}
         return
     except Exception as exc:  # noqa: BLE001 — already sanitized by ai.stream_chat
+        log_event(_log, "chat_generate_failed", model=model, error=type(exc).__name__)
         yield {"error": str(exc)}
         return
     finally:

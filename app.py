@@ -19,10 +19,9 @@ from backend.core import database
 from backend.core.config import settings
 from backend.security.secrets import redact_url
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s  %(name)-18s %(levelname)-7s %(message)s",
-)
+from backend.core.observability import install as _install_logging
+
+_install_logging(logging.INFO)  # root logging with per-request [id] field
 log = logging.getLogger("orrery")
 
 # fresh per-session token so other local processes can't drive the API
