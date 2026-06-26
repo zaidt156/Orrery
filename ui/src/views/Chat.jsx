@@ -23,7 +23,7 @@ import {
 } from "../lib/api.js";
 import {
   EXPORT_FORMATS, requestedFileFormats, precedingUserText,
-  extractHtml, stripDocSpec, specFormats, extractSvgs,
+  extractHtml, stripDocSpec, specFormats, extractSvgs, splitThink,
 } from "./chatHelpers.jsx";
 import {
   ReplyFiles, InlineSvg, CodeImageArtifact, GeneratedFileCard, ThinkingPulse, ThinkingBlock,
@@ -548,18 +548,19 @@ export default function Chat() {
                   Orrery
                   {m.sources?.length > 0 && <span className="rag-chip">searched: {m.sources.join(", ")}</span>}
                 </div>
-                {m.reasoning
-                  ? <ThinkingBlock text={m.reasoning} streaming={m.streaming} />
-                  : (m.streaming && !m.content && <ThinkingPulse />)}
                 {(() => {
-                  const base = stripDocSpec(m.content);
-                  const { svgs, cleaned } = m.streaming ? { svgs: [], cleaned: base } : extractSvgs(base);
+                  const { think, body } = splitThink(stripDocSpec(m.content));
+                  const reasoning = m.reasoning || think; // inline <think> shows as collapsible thinking
+                  const { svgs, cleaned } = m.streaming ? { svgs: [], cleaned: body } : extractSvgs(body);
                   const svgTitle = convos.find((c) => c.id === activeId)?.title;
                   return (
                     <>
+                      {reasoning
+                        ? <ThinkingBlock text={reasoning} streaming={m.streaming} />
+                        : (m.streaming && !body && <ThinkingPulse />)}
                       <div className="ai-text">
                         {cleaned ? <Markdown>{cleaned}</Markdown> : null}
-                        {m.streaming && m.content && <span className="caret" />}
+                        {m.streaming && body && <span className="caret" />}
                       </div>
                       {svgs.map((svg, si) => (
                         <InlineSvg

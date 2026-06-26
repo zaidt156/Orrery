@@ -485,6 +485,12 @@ async def stream_chat(
             kwargs["api_key"] = api_key
         if provider == "ollama":
             kwargs["api_base"] = _OLLAMA_BASE
+            from backend.features import local_models
+            if not await local_models.is_running():
+                raise RuntimeError(
+                    "Ollama isn't running, so local models can't respond. Open the Local Models tab "
+                    "and start Ollama (or launch the Ollama app), then try again."
+                )
 
     if effort:
         kwargs["reasoning_effort"] = effort  # litellm maps per provider; drop_params handles the rest

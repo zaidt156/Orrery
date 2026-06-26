@@ -551,8 +551,12 @@ async def stream_reply(
         block, sources = await _rag_context(model, collection_id, user_content)
         if block:
             preamble = (
-                "Use the following context from the user's documents to answer. "
-                "If the answer isn't in the context, say so. Cite sources by their [name].\n\n"
+                "The user is asking about THEIR uploaded documents, whose text is included below. "
+                "You DO have access to these documents — never say you cannot read files or need them "
+                "pasted. Answer using ONLY these excerpts and the user's current question; ignore any "
+                "earlier, unrelated topics in this conversation (e.g. a previous file or slide request). "
+                "If the answer isn't in the excerpts, say so plainly. Cite sources by their [name].\n\n"
+                "DOCUMENTS:\n"
             )
             gen_system = (f"{system_prompt}\n\n" if system_prompt else "") + preamble + block
             yield {"sources": sources}

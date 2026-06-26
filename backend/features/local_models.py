@@ -115,6 +115,12 @@ async def _server_info() -> tuple[bool, str | None, list[dict]]:
         return False, None, []
 
 
+async def is_running() -> bool:
+    """Quick check (≈2.5s) whether the Ollama server is up — used to fail fast in chat."""
+    running, _version, _models = await _server_info()
+    return running
+
+
 def _model_info(raw: dict, active: set[str]) -> dict:
     name = raw.get("name") or raw.get("model") or ""
     return {
