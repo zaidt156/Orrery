@@ -479,23 +479,28 @@ function ModelsSection() {
   );
 }
 
+// Keeps an in-progress branding edit alive across Settings sub-tab switches (the section
+// unmounts when you leave General), so the form no longer "resets to zero".
+let _brandingDraft = null;
+
 function BrandingSection() {
-  const [b, setB] = useState(null);
+  const [b, setB] = useState(_brandingDraft);
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
   const [err, setErr] = useState(null);
 
   useEffect(() => {
-    getBranding().then(setB).catch(() => setB({
-      enabled: false, name: "", tagline: "", details: "", logo: "",
-    }));
+    if (_brandingDraft) return; // a draft from this session takes precedence over a re-fetch
+    getBranding()
+      .then((x) => { _brandingDraft = x; setB(x); })
+      .catch(() => { const f = { enabled: false, name: "", tagline: "", details: "", logo: "" }; _brandingDraft = f; setB(f); });
   }, []);
 
   if (!b) {
     return (<><div className="section-label">Branding</div><div className="s-sub" style={{ padding: "4px 2px" }}>Loading…</div></>);
   }
 
-  const update = (patch) => setB((p) => ({ ...p, ...patch }));
+  const update = (patch) => setB((p) => { const next = { ...p, ...patch }; _brandingDraft = next; return next; });
 
   function pickLogo(e) {
     const f = e.target.files?.[0];
@@ -519,6 +524,7 @@ function BrandingSection() {
     setErr(null);
     try {
       const next = await setBranding(b);
+      _brandingDraft = next;
       setB(next);
       window.dispatchEvent(new CustomEvent("orrery-branding-changed", { detail: next }));
       setSaved(true);

@@ -397,6 +397,10 @@ async def _generate(cid: uuid.UUID, model: str, system_prompt: str | None, messa
             "Generated the reply and validated its formatting.",
         ])
         yield {"message_id": message_id}
+    if usage_out.get("tokens_out") or usage_out.get("tokens_in"):
+        # exact per-message token count (API/custom routes report it); the UI shows a live
+        # estimate during streaming and replaces it with this exact count on completion
+        yield {"message_usage": {"in": usage_out.get("tokens_in") or 0, "out": usage_out.get("tokens_out") or 0}}
     if usage_out.get("cost") is not None and (usage_out.get("tokens_out") or usage_out.get("tokens_in")):
         from backend.features import usage as usage_mod
         await usage_mod.record(usage_out["provider"], usage_out["model"], usage_out["tokens_in"], usage_out["tokens_out"], usage_out["cost"])

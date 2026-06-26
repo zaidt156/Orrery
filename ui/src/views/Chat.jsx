@@ -278,6 +278,7 @@ export default function Chat() {
         else if (ev.title) setConvos((p) => p.map((c) => (c.id === cid ? { ...c, title: ev.title } : c)));
         else if (ev.sources) setLast({ sources: ev.sources });
         else if (ev.message_id) setLast({ id: ev.message_id });
+        else if (ev.message_usage) setLast({ tokens: ev.message_usage });
         else if (ev.error) setLast({ content: ev.error, error: true, streaming: false });
         else if (ev.done) setLast({ streaming: false });
       }, ctrl.signal);
@@ -562,6 +563,7 @@ export default function Chat() {
                 <div className="who">
                   Orrery
                   {m.sources?.length > 0 && <span className="rag-chip">searched: {m.sources.join(", ")}</span>}
+                  {tokenLabel(m) && <span className="token-chip" title="Exact for API models; estimated otherwise">{tokenLabel(m)}</span>}
                 </div>
                 {(() => {
                   const { body } = splitThink(stripDocSpec(m.content)); // strip raw <think>, never shown
@@ -728,6 +730,19 @@ export default function Chat() {
       )}
     </section>
   );
+}
+
+// Token count for an assistant message: exact when the provider reported usage (API/custom),
+// otherwise a live ~estimate from the streamed text (~4 chars/token) so every model shows one.
+function tokenLabel(m) {
+  if (m.tokens) {
+    const ti = m.tokens.in || 0;
+    const to = m.tokens.out || 0;
+    return `${ti + to} tokens · ${ti} in / ${to} out`;
+  }
+  const chars = (m.content || "").length;
+  if (!chars) return null;
+  return `≈${Math.max(1, Math.round(chars / 4))} tokens`;
 }
 
 // Append a streamed delta to the last (assistant) message.
