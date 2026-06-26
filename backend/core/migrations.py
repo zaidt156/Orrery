@@ -16,6 +16,52 @@ async def _queue_schema_present() -> bool:
         return result.scalar() is not None
 
 
+# Versioned migrations (plan #6): each runs once, tracked in schema_migrations. Statements use
+# DROP-IF-EXISTS / IF-NOT-EXISTS guards so a re-run is harmless. DDL that can't apply (e.g. a
+# constraint an old row violates) is logged and skipped, never crashing startup.
+_VERSIONED_MIGRATIONS: list[tuple[str, list[str]]] = [
+    ("0001_check_constraints", [
+        "ALTER TABLE messages DROP CONSTRAINT IF EXISTS ck_messages_role",
+        "ALTER TABLE messages ADD CONSTRAINT ck_messages_role CHECK (role IN ('user','assistant','system'))",
+        "ALTER TABLE conversations DROP CONSTRAINT IF EXISTS ck_conversations_effort",
+        "ALTER TABLE conversations ADD CONSTRAINT ck_conversations_effort "
+        "CHECK (effort IS NULL OR effort IN ('low','medium','high','xhigh','max'))",
+        "ALTER TABLE feedback DROP CONSTRAINT IF EXISTS ck_feedback_category",
+        "ALTER TABLE feedback ADD CONSTRAINT ck_feedback_category "
+        "CHECK (category IN ('bug','idea','praise','general'))",
+    ]),
+    ("0002_chunks_hnsw_index", [
+        # HNSW index for fast semantic search; matches rag.search's cosine (<=>) operator
+        "CREATE INDEX IF NOT EXISTS ix_chunks_embedding_hnsw ON chunks "
+        "USING hnsw (embedding vector_cosine_ops) WITH (m = 16, ef_construction = 64)",
+    ]),
+]
+
+
+async def _apply_versioned(engine) -> None:
+    async with engine.begin() as conn:
+        await conn.execute(text(
+            "CREATE TABLE IF NOT EXISTS schema_migrations "
+            "(version TEXT PRIMARY KEY, applied_at TIMESTAMPTZ DEFAULT now())"
+        ))
+    for version, statements in _VERSIONED_MIGRATIONS:
+        try:
+            async with engine.begin() as conn:
+                done = (await conn.execute(
+                    text("SELECT 1 FROM schema_migrations WHERE version = :v"), {"v": version}
+                )).scalar()
+                if done:
+                    continue
+                for sql in statements:
+                    await conn.execute(text(sql))
+                await conn.execute(
+                    text("INSERT INTO schema_migrations (version) VALUES (:v)"), {"v": version}
+                )
+            log.info("applied migration %s", version)
+        except Exception as exc:  # noqa: BLE001 — one bad optional migration must not block startup
+            log.error("migration %s skipped: %s", version, str(exc)[:200])
+
+
 async def run_migrations() -> None:
     """Enable pgvector and ensure the app + job-queue schema exists. Idempotent."""
     engine = get_engine()
@@ -50,6 +96,8 @@ async def run_migrations() -> None:
             )
         empty = (await conn.execute(text("SELECT COUNT(*) FROM active_models"))).scalar() == 0
     log.info("application tables ensured")
+
+    await _apply_versioned(engine)  # constraints + vector index (idempotent, fail-safe)
 
     # seed the active set once so an existing Claude-plan user keeps a working Chat menu
     if empty:
