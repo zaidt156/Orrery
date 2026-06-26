@@ -282,8 +282,8 @@ def create_app(session_token: str) -> FastAPI:
 
     @r.delete("/database")
     async def clear_database() -> dict:
-        database.clear_database_url()
-        return {"ok": True, "restart_required": True}
+        await database.clear_database_url_and_reset()
+        return {"ok": True, "restart_required": False}
 
     @r.post("/database/test")
     async def test_database(body: DbConnection) -> dict:
@@ -295,8 +295,8 @@ def create_app(session_token: str) -> FastAPI:
         ok, error = await database.test_url(body.url)
         if not ok:
             return {"ok": False, "error": error}
-        database.save_database_url(body.url)
-        return {"ok": True, "restart_required": True}
+        await database.save_database_url_and_reset(body.url)
+        return {"ok": True, "restart_required": False}
 
     @r.get("/usage")
     async def get_usage() -> dict:

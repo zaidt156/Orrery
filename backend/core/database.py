@@ -49,6 +49,37 @@ def clear_database_url() -> None:
     secrets.delete_secret(_CONN_KEY)
 
 
+async def reset_database_engine() -> None:
+    """Dispose the live engine and clear cached session/health state so the next call
+    rebuilds against the current connection — no app restart needed after a URL change."""
+    global _engine, _sessionmaker, _health_cache
+    if _engine is not None:
+        try:
+            await _engine.dispose()
+        except Exception as exc:  # noqa: BLE001 — disposing a dead engine shouldn't block the switch
+            log.warning("Engine dispose failed during reset: %s", secrets.redact_url(str(exc)))
+    _engine = None
+    _sessionmaker = None
+    _health_cache = None
+    try:  # the background queue holds its own connector — drop it too (lazy import avoids a cycle)
+        from backend.core.queue import reset_queue_app
+        reset_queue_app()
+    except Exception:  # noqa: BLE001 — queue reset is best-effort
+        pass
+
+
+async def save_database_url_and_reset(url: str) -> None:
+    """Save a new connection and switch the live engine over to it immediately."""
+    save_database_url(url)
+    await reset_database_engine()
+
+
+async def clear_database_url_and_reset() -> None:
+    """Forget the saved connection and drop the live engine immediately."""
+    clear_database_url()
+    await reset_database_engine()
+
+
 def connection_info() -> dict:
     """Current connection for display — masked (never exposes the password)."""
     url = resolve_database_url()
@@ -85,7 +116,7 @@ def get_engine() -> AsyncEngine:
         url = resolve_database_url()
         if not url:
             raise RuntimeError("No database connection configured.")
-        _engine = create_async_engine(url, pool_pre_ping=True)
+        _engine = create_async_engine(normalize_url(url), pool_pre_ping=True)
     return _engine
 
 

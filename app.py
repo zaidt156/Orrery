@@ -88,7 +88,7 @@ async def _boot_and_serve() -> None:
     """Connect, migrate, then run the API server and queue worker until stopped."""
     from backend.api import create_app
     from backend.core.migrations import run_migrations
-    from backend.core.queue import app as queue_app
+    from backend.core.queue import get_queue_app
 
     if not await database.check_connection(force=True):
         raise RuntimeError(
@@ -102,6 +102,7 @@ async def _boot_and_serve() -> None:
     )
     server = uvicorn.Server(config)
 
+    queue_app = get_queue_app()
     async with queue_app.open_async():
         # off the main thread → can't install OS signal handlers
         worker = asyncio.create_task(

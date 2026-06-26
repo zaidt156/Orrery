@@ -67,8 +67,9 @@ async def run_migrations() -> None:
         return
 
     # Procrastinate's own schema (tables backing the durable queue)
-    from backend.core.queue import app as queue_app
+    from backend.core.queue import get_queue_app
 
+    queue_app = get_queue_app()
     async with queue_app.open_async():
         await queue_app.schema_manager.apply_schema_async()
     log.info("job-queue schema applied")

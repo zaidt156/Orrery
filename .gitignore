@@ -40,6 +40,7 @@ secrets*.json
 # Internal design/security/research docs, prompt skills, + local agent tooling — keep private
 .claude/
 docs/
+architecture_imp/
 skills/
 .codex/
 .agents/
