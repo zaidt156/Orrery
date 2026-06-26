@@ -13,6 +13,7 @@ from collections.abc import AsyncIterator
 
 import httpx
 
+from backend.core import proc
 from backend.providers import ai, catalog
 
 OLLAMA_BASE = "http://127.0.0.1:11434"
@@ -163,7 +164,7 @@ def install(acknowledged: bool = False) -> None:
     if not _install_lock.acquire(blocking=False):
         raise ValueError("An Ollama installation is already running.")
     try:
-        result = subprocess.run(
+        result = proc.run(
             [
                 winget, "install", "--id", OLLAMA_PACKAGE_ID, "--exact", "--source", "winget",
                 "--accept-package-agreements", "--accept-source-agreements",
@@ -196,7 +197,7 @@ async def start() -> dict:
         raise ValueError("Install Ollama before starting the local model service.")
     creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
     try:
-        subprocess.Popen(
+        proc.popen(
             [cmd, "serve"],
             cwd=tempfile.gettempdir(),
             stdin=subprocess.DEVNULL,

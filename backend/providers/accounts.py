@@ -12,6 +12,7 @@ import time
 from collections.abc import AsyncIterator
 from functools import lru_cache
 
+from backend.core import proc
 from backend.providers import manifest
 from backend.security import secrets
 
@@ -108,7 +109,7 @@ def _run_claude_auth_status() -> tuple[bool, dict | None, str | None]:
     if not cmd:
         return False, None, "Claude Code is not installed or is not on PATH."
     try:
-        result = subprocess.run(
+        result = proc.run(
             [cmd, "auth", "status"],
             cwd=tempfile.gettempdir(),
             text=True,
@@ -135,7 +136,7 @@ def _safe_cli_flags_ready() -> tuple[bool, str | None]:
     if not cmd:
         return False, "Claude Code is not installed or is not on PATH."
     try:
-        result = subprocess.run(
+        result = proc.run(
             [cmd, "--help"],
             cwd=tempfile.gettempdir(),
             text=True,
@@ -173,7 +174,7 @@ def _claude_effort_supported() -> bool:
     if not cmd:
         return False
     try:
-        result = subprocess.run(
+        result = proc.run(
             [cmd, "--help"],
             cwd=tempfile.gettempdir(),
             text=True,
@@ -276,7 +277,7 @@ def _verify_claude_ready() -> None:
         "--permission-mode", "dontAsk",
     ]
     try:
-        result = subprocess.run(
+        result = proc.run(
             args,
             input="Reply with exactly: OK",
             cwd=tempfile.gettempdir(),
@@ -455,7 +456,7 @@ async def _stream_cli_json(
     def worker():
         produced = False
         try:
-            proc = subprocess.Popen(
+            process = proc.popen(
                 args,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
@@ -465,11 +466,11 @@ async def _stream_cli_json(
                 cwd=cwd or tempfile.gettempdir(),
                 bufsize=1,
             )
-            holder["proc"] = proc
-            if proc.stdin:
-                proc.stdin.write(prompt)
-                proc.stdin.close()
-            for line in proc.stdout:  # type: ignore[union-attr]
+            holder["proc"] = process
+            if process.stdin:
+                process.stdin.write(prompt)
+                process.stdin.close()
+            for line in process.stdout:  # type: ignore[union-attr]
                 line = line.strip()
                 if not line:
                     continue
@@ -481,8 +482,8 @@ async def _stream_cli_json(
                 if delta:
                     produced = True
                     loop.call_soon_threadsafe(q.put_nowait, delta)
-            err = (proc.stderr.read() if proc.stderr else "") or ""
-            if proc.wait() != 0 and not produced:
+            err = (process.stderr.read() if process.stderr else "") or ""
+            if process.wait() != 0 and not produced:
                 loop.call_soon_threadsafe(q.put_nowait, _CliFailure(err.strip()))
         except OSError as exc:
             loop.call_soon_threadsafe(q.put_nowait, _CliFailure(str(exc)))
@@ -502,10 +503,10 @@ async def _stream_cli_json(
                 raise CliStreamError(item.message)
             yield item
     finally:
-        proc = holder.get("proc")  # kill the CLI if the caller stopped early (Stop button)
-        if proc and proc.poll() is None:
+        process = holder.get("proc")  # kill the CLI if the caller stopped early (Stop button)
+        if process and process.poll() is None:
             try:
-                proc.terminate()
+                process.terminate()
             except OSError:
                 pass
 
@@ -698,7 +699,7 @@ def _gemini_command() -> str | None:
 
 def _run_cli_status(cmd: str, args: list[str]) -> subprocess.CompletedProcess[str] | None:
     try:
-        return subprocess.run(
+        return proc.run(
             [cmd, *args], cwd=tempfile.gettempdir(), text=True,
             capture_output=True, timeout=_STATUS_TIMEOUT, check=False,
         )
@@ -789,7 +790,7 @@ def _plan_command(mode_id: str) -> str | None:
 
 
 def _winget_package_installed(winget: str, package_id: str) -> bool:
-    result = subprocess.run(
+    result = proc.run(
         [
             winget, "list", "--id", package_id, "--exact", "--source", "winget",
             "--accept-source-agreements", "--disable-interactivity",
@@ -823,7 +824,7 @@ def install_plan_cli(mode_id: str, acknowledged: bool = False) -> dict:
     try:
         package_id = config["package_id"]
         action = "upgrade" if _winget_package_installed(winget, package_id) else "install"
-        result = subprocess.run(
+        result = proc.run(
             [
                 winget, action, "--id", package_id, "--exact", "--source", "winget",
                 "--accept-package-agreements", "--accept-source-agreements",
@@ -865,7 +866,7 @@ def launch_plan_login(mode_id: str) -> dict:
         raise ValueError("Install the official CLI before signing in.")
     creationflags = subprocess.CREATE_NEW_CONSOLE if os.name == "nt" else 0
     try:
-        subprocess.Popen(
+        proc.popen(
             [cmd, *config["login_args"]],
             cwd=tempfile.gettempdir(),
             close_fds=True,
@@ -1039,7 +1040,7 @@ def gemini_plan_models() -> list[dict]:
 
 
 def _run_cli_capture(args: list[str], prompt: str, timeout: float = _CLAUDE_CMD_TIMEOUT) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
+    return proc.run(
         args, input=prompt, cwd=tempfile.gettempdir(), text=True,
         encoding="utf-8", capture_output=True, timeout=timeout, check=False,
     )

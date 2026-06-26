@@ -17,6 +17,7 @@ import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from backend.core import proc
 from backend.core.config import settings
 
 IMAGE = "orrery-sandbox:latest"
@@ -59,7 +60,7 @@ class SandboxResult:
 def image_ready() -> bool:
     """True once the sandbox image has been built and is available locally."""
     try:
-        result = subprocess.run(
+        result = proc.run(
             [_docker_bin(), "image", "inspect", IMAGE],
             capture_output=True, timeout=25,
         )
@@ -113,15 +114,15 @@ def run_code(code: str) -> SandboxResult:
     stdout = stderr = ""
     exit_code = -1
     try:
-        proc = subprocess.run(command, capture_output=True, timeout=TIMEOUT_SECONDS)
-        exit_code = proc.returncode
-        stdout = proc.stdout.decode("utf-8", "replace")[:_MAX_LOG_CHARS]
-        stderr = proc.stderr.decode("utf-8", "replace")[:_MAX_LOG_CHARS]
+        completed = proc.run(command, capture_output=True, timeout=TIMEOUT_SECONDS)
+        exit_code = completed.returncode
+        stdout = completed.stdout.decode("utf-8", "replace")[:_MAX_LOG_CHARS]
+        stderr = completed.stderr.decode("utf-8", "replace")[:_MAX_LOG_CHARS]
     except subprocess.TimeoutExpired as exc:
         timed_out = True
         stdout = (exc.stdout or b"").decode("utf-8", "replace")[:_MAX_LOG_CHARS] if exc.stdout else ""
         stderr = f"Execution exceeded the {TIMEOUT_SECONDS}s limit and was stopped."
-        subprocess.run([_docker_bin(), "kill", name], capture_output=True, timeout=25)
+        proc.run([_docker_bin(), "kill", name], capture_output=True, timeout=25)
     except FileNotFoundError as exc:
         shutil.rmtree(workdir, ignore_errors=True)
         raise SandboxError("Docker was not found. Is Docker Desktop installed and running?") from exc
