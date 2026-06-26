@@ -258,9 +258,12 @@ def create_app(session_token: str) -> FastAPI:
     async def custom_add(body: NewCustomModel) -> dict:
         if not body.base_url.strip() or not body.model.strip():
             raise HTTPException(status_code=400, detail="Base URL and model id are required")
-        return await catalog.add_custom_model(
-            body.label.strip() or body.model.strip(), body.base_url.strip(), body.model.strip(), body.key
-        )
+        try:  # validation + SSRF guard raise ValueError/UnsafeUrlError → surface as a clean 400
+            return await catalog.add_custom_model(
+                body.label.strip() or body.model.strip(), body.base_url.strip(), body.model.strip(), body.key
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from None
 
     @r.delete("/custom-models/{cid}")
     async def custom_delete(cid: str) -> dict:

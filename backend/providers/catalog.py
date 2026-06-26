@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import re
 import uuid
 
 from sqlalchemy import select
+
+_MODEL_NAME_RX = re.compile(r"[A-Za-z0-9._:\-/]+")
 
 from backend.core.database import get_sessionmaker
 from backend.core.models import ActiveModel, CustomModel
@@ -53,9 +56,22 @@ async def get_custom_model(custom_id: str) -> dict | None:
 
 
 async def add_custom_model(label: str, base_url: str, model: str, key: str | None) -> dict:
+    label = (label or "").strip()
+    model = (model or "").strip()
+    if not (1 <= len(label) <= 120):
+        raise ValueError("Label must be 1–120 characters.")
+    if not (1 <= len(model) <= 200):
+        raise ValueError("Model name must be 1–200 characters.")
+    if not _MODEL_NAME_RX.fullmatch(model):
+        raise ValueError("Model name may only contain letters, numbers, and . _ : - / characters.")
     base_url = netguard.validate_model_base_url(base_url)  # SSRF guard before we ever store/call it
     cid = uuid.uuid4()
     async with get_sessionmaker()() as s:
+        dup = (await s.execute(
+            select(CustomModel).where(CustomModel.base_url == base_url, CustomModel.model == model)
+        )).scalar_one_or_none()
+        if dup is not None:
+            raise ValueError("A custom model with this URL and model name already exists.")
         s.add(CustomModel(id=cid, label=label, base_url=base_url, model=model))
         await s.commit()
     if key:
