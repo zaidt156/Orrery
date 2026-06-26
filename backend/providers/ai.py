@@ -33,6 +33,13 @@ _PREFIX_TO_PROVIDER = {
 _OLLAMA_BASE = "http://localhost:11434"
 _CACHE_TTL = 120.0
 _cache: dict[str, tuple[float, list[dict]]] = {}
+# per-cache-name freshness: "live" (just fetched), "cache" (TTL hit), "fallback" (fetch failed,
+# serving a stale/empty list). Lets us flag silently-stale model lists instead of hiding the failure.
+_discovery_source: dict[str, str] = {}
+
+
+def discovery_source(name: str) -> str:
+    return _discovery_source.get(name, "live")
 
 _litellm = None
 
@@ -307,11 +314,15 @@ async def _cached(name: str, fn, *args) -> list[dict]:
     now = time.time()
     hit = _cache.get(name)
     if hit and now - hit[0] < _CACHE_TTL:
+        _discovery_source[name] = "cache"
         return hit[1]
     try:
         val = await fn(*args)
+        _discovery_source[name] = "live"
     except Exception as exc:  # noqa: BLE001 — discovery failure shouldn't break the picker
-        log.warning("model discovery failed for %s: %s", name, str(exc)[:120])
+        _discovery_source[name] = "fallback"
+        from backend.core.observability import log_event
+        log_event(log, "model_discovery_fallback", provider=name, error=type(exc).__name__)
         val = hit[1] if hit else []
     _cache[name] = (now, val)
     return val
