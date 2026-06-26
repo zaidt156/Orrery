@@ -16,6 +16,7 @@ from backend.core.database import get_sessionmaker
 from backend.core.models import Conversation, Message
 from backend.features import code_images, docgen, filegen, rag, sandbox, skills
 from backend.features import files as file_library
+from backend.features.prompting import build_system_prompt
 from backend.features.reasoning_trace import reasoning_event, reasoning_summary
 from backend.providers import ai
 from backend.security import privacy
@@ -363,15 +364,18 @@ def _wants_high_effort(text: str) -> bool:
     return bool(text and _HIGH_EFFORT_INTENT.search(text))
 
 
-async def _generate(cid: uuid.UUID, model: str, system_prompt: str | None, messages: list[dict], effort: str | None = None) -> AsyncIterator[dict]:
+async def _generate(cid: uuid.UUID, model: str, system_prompt: str | None, messages: list[dict], effort: str | None = None, untrusted_context: str | None = None) -> AsyncIterator[dict]:
     """Stream the assistant reply and persist it (saved even if the client cancels)."""
     parts: list[str] = []
     message_id: str | None = None
     usage_out: dict = {}
-    base_prompt = f"{FORMAT_INSTRUCTIONS}\n\n{system_prompt}" if system_prompt else FORMAT_INSTRUCTIONS
     user_text = _latest_user_text(messages)
-    skill_block = skills.skills_prompt(user_text)  # inject matching skills for this turn
-    formatted_prompt = f"{base_prompt}\n\n{skill_block}" if skill_block else base_prompt
+    formatted_prompt = build_system_prompt(  # explicit authority layers (app > skills > user > untrusted)
+        app_rules=FORMAT_INSTRUCTIONS,
+        skills_block=skills.skills_prompt(user_text),
+        user_preferences=system_prompt,
+        untrusted_context=untrusted_context,
+    )
     # Code/creative work (code, web apps, SVGs, diagrams, building things) always gets high effort.
     gen_effort = filegen.quality_effort(model, effort) if _wants_high_effort(user_text) else effort
     yield reasoning_event("Understanding the request", "Reading your message and selecting how to respond.")
@@ -444,11 +448,13 @@ async def _conv_title(cid: uuid.UUID) -> str:
         return (conv.title if conv and conv.title else None) or "Orrery file"
 
 
-async def _deliver_docspec(cid: uuid.UUID, model: str, request: str, system_prompt: str | None, effort: str | None) -> AsyncIterator[dict]:
+async def _deliver_docspec(cid: uuid.UUID, model: str, request: str, system_prompt: str | None, effort: str | None, untrusted_context: str | None = None) -> AsyncIterator[dict]:
     """Reliable fallback when code-execution misses: ask for a structured spec, then build the
     file deterministically with docgen and deliver it. Yields nothing if no spec comes back."""
-    yield {"status": "Building it a more reliable way…"}
-    instructions = f"{FORMAT_INSTRUCTIONS}\n\n{system_prompt}" if system_prompt else FORMAT_INSTRUCTIONS
+    yield {"status": "Creating the file structure…"}
+    instructions = build_system_prompt(
+        app_rules=FORMAT_INSTRUCTIONS, user_preferences=system_prompt, untrusted_context=untrusted_context,
+    )
     parts: list[str] = []
     try:
         async for delta in ai.stream_chat(model, [{"role": "user", "content": request}], instructions, filegen.quality_effort(model, effort)):
@@ -584,52 +590,48 @@ async def stream_reply(
 
     yield {"title": new_title}
 
-    gen_system = system_prompt
+    gen_system = system_prompt        # user's standing instructions only
+    rag_context = None                 # retrieved docs — passed separately as UNTRUSTED context
     if collection_id and user_content.strip():
         block, sources = await _rag_context(model, collection_id, user_content)
         if block:
-            preamble = (
-                "The user is asking about THEIR uploaded documents, whose text is included below. "
-                "You DO have access to these documents — never say you cannot read files or need them "
-                "pasted. Answer using ONLY these excerpts and the user's current question; ignore any "
-                "earlier, unrelated topics in this conversation (e.g. a previous file or slide request). "
-                "If the answer isn't in the excerpts, say so plainly. Cite sources by their [name].\n\n"
-                "DOCUMENTS:\n"
-            )
-            gen_system = (f"{system_prompt}\n\n" if system_prompt else "") + preamble + block
+            rag_context = block
             yield {"sources": sources}
             yield reasoning_event("Preparing context", f"Loaded {len(sources)} document(s) from your collection to answer from.")
 
-    # File generation: the model WRITES CODE that the sandbox runs (richer output than the
-    # structured builder). Falls through to the structured/markdown reply if the sandbox is
-    # unavailable or codegen fails.
-    if filegen.wants_file(user_content) and sandbox.image_ready():
-        yield reasoning_event("Selected generation path", "Sandboxed code execution (for charts, images, or computed files).")
-        result = None
-        async for ev in filegen.run(model, user_content, gen_system, effort):
-            if "result" in ev:
-                result = ev["result"]
-            else:
-                yield ev  # status / reasoning_event / etc.
-        if result and result.get("ok") and result.get("files"):
-            produced: list[dict] = []
-            for item in result["files"]:
-                mime = mimetypes.guess_type(item.name)[0] or "application/octet-stream"
-                try:
-                    produced.append({"kind": "file", **file_library.store(item.name, mime, item.data)})
-                except ValueError:
-                    continue
-            if produced:
-                summary = result.get("summary") or "Here is your file."
-                message_id = await _persist_assistant(cid, summary, model, produced)
-                yield {"delta": summary}
-                yield {"files": produced}
-                yield {"message_id": message_id}
-                yield {"done": True}
-                return
-        # Code-exec missed → build the file deterministically with docgen so we never come up empty.
+    # File generation routing: deterministic `docgen` first for normal documents; the sandboxed
+    # code path only when the request genuinely needs computation (charts, images, calculations).
+    if filegen.wants_file(user_content):
+        use_sandbox = filegen.needs_code(user_content) and sandbox.image_ready()
+        if use_sandbox:
+            yield reasoning_event("Selected generation path", "Sandboxed code execution (charts, images, or computed files).")
+            result = None
+            async for ev in filegen.run(model, user_content, gen_system, effort, rag_context):
+                if "result" in ev:
+                    result = ev["result"]
+                else:
+                    yield ev  # status / reasoning_event / etc.
+            if result and result.get("ok") and result.get("files"):
+                produced: list[dict] = []
+                for item in result["files"]:
+                    mime = mimetypes.guess_type(item.name)[0] or "application/octet-stream"
+                    try:
+                        produced.append({"kind": "file", **file_library.store(item.name, mime, item.data)})
+                    except ValueError:
+                        continue
+                if produced:
+                    summary = result.get("summary") or "Here is your file."
+                    message_id = await _persist_assistant(cid, summary, model, produced)
+                    yield {"delta": summary}
+                    yield {"files": produced}
+                    yield {"message_id": message_id}
+                    yield {"done": True}
+                    return
+            # sandbox missed → fall through to the deterministic builder so we never come up empty
+        else:
+            yield reasoning_event("Selected generation path", "Deterministic document builder.")
         delivered = False
-        async for ev in _deliver_docspec(cid, model, user_content, gen_system, effort):
+        async for ev in _deliver_docspec(cid, model, user_content, gen_system, effort, rag_context):
             if "files" in ev:
                 delivered = True
             yield ev
@@ -637,8 +639,9 @@ async def stream_reply(
             return
         yield {"status": ""}  # clear the progress note before the plain fallback reply streams
 
-    messages = _limit_messages(messages, context_window, gen_system)
-    async for event in _generate(cid, model, gen_system, messages, effort):
+    budget_system = gen_system + (f"\n\n{rag_context}" if rag_context else "")  # keep token budget honest
+    messages = _limit_messages(messages, context_window, budget_system)
+    async for event in _generate(cid, model, gen_system, messages, effort, rag_context):
         yield event
 
 

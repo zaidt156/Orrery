@@ -13,6 +13,7 @@ import re
 from collections.abc import AsyncIterator
 
 from backend.features import sandbox, skills
+from backend.features.prompting import build_system_prompt
 from backend.features.reasoning_trace import reasoning_event
 from backend.providers import ai
 
@@ -106,13 +107,15 @@ def _summary(files: list[sandbox.SandboxFile]) -> str:
     return f"Done — created {len(files)} files: {names}."
 
 
-async def run(model: str, request: str, system_prompt: str | None, effort: str | None) -> AsyncIterator[dict]:
+async def run(model: str, request: str, system_prompt: str | None, effort: str | None, untrusted_context: str | None = None) -> AsyncIterator[dict]:
     """Yield {'status': ...} progress and a final {'result': {...}} with files or an error."""
     file_effort = quality_effort(model, effort)
-    skill_block = skills.skills_prompt(request)
-    instructions = _SYSTEM + (f"\n\n{skill_block}" if skill_block else "")
-    if system_prompt:
-        instructions += f"\n\nUser's standing instructions:\n{system_prompt.strip()[:2000]}"
+    instructions = build_system_prompt(
+        app_rules=_SYSTEM,
+        skills_block=skills.skills_prompt(request),
+        user_preferences=system_prompt,
+        untrusted_context=untrusted_context,
+    )
     convo: list[dict] = [{"role": "user", "content": request}]
     last_error = ""
 
