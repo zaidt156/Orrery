@@ -2,7 +2,24 @@
 
 import pytest
 
-from backend.security import privacy, secrets
+from backend.security import netguard, privacy, secrets
+
+
+def test_netguard_rejects_credentials_fragment_and_oversize():
+    with pytest.raises(netguard.UnsafeUrlError):
+        netguard.validate_model_base_url("https://user:pass@api.example.com/v1")
+    with pytest.raises(netguard.UnsafeUrlError):
+        netguard.validate_model_base_url("https://api.example.com/v1#frag")
+    with pytest.raises(netguard.UnsafeUrlError):
+        netguard.validate_model_base_url("https://api.example.com/" + "a" * 600)
+    with pytest.raises(netguard.UnsafeUrlError):
+        netguard.validate_model_base_url("ftp://api.example.com/v1")
+
+
+def test_netguard_blocks_metadata_ip_allows_loopback():
+    with pytest.raises(netguard.UnsafeUrlError):
+        netguard.validate_model_base_url("http://169.254.169.254/latest/meta-data")  # link-local metadata
+    assert netguard.validate_model_base_url("http://127.0.0.1:11434/v1")  # local model server is fine
 
 
 def test_mask_key_does_not_expose_full_value():

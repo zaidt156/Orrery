@@ -17,8 +17,10 @@ import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from backend.core.config import settings
+
 IMAGE = "orrery-sandbox:latest"
-TIMEOUT_SECONDS = 60
+TIMEOUT_SECONDS = settings.sandbox_timeout_seconds
 _MEMORY = "640m"
 _CPUS = "1.0"
 _PIDS = "256"

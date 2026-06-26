@@ -156,7 +156,7 @@ class PrivacyMode(BaseModel):
     mode: Literal["off", "basic", "strict"]
 
 
-_MAX_BODY_BYTES = 64 * 1024 * 1024  # generous for multi-image messages; blocks runaway payloads
+_MAX_BODY_BYTES = settings.max_upload_bytes  # request body cap (configurable; blocks runaway payloads)
 _CSP = (
     "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; "
     "script-src 'self'; connect-src 'self'; font-src 'self'; object-src 'none'; "

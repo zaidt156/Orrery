@@ -21,5 +21,10 @@ class Settings(BaseSettings):
     orrery_dev: bool = False  # True = Vite dev server; False = serve built ui/dist
     vite_url: str = "http://localhost:5173"
 
+    # production-tunable limits (override via .env) — plan P3 #24
+    sandbox_timeout_seconds: int = 60   # max wall-clock for model-written code in the sandbox
+    rag_top_k: int = 5                  # chunks retrieved per "use my data" query
+    max_upload_bytes: int = 64 * 1024 * 1024  # request body cap (multi-image messages)
+
 
 settings = Settings()

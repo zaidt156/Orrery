@@ -12,6 +12,7 @@ from collections.abc import AsyncIterator
 
 from sqlalchemy import select
 
+from backend.core.config import settings
 from backend.core.database import get_sessionmaker
 from backend.core.models import Conversation, Message
 from backend.features import code_images, docgen, filegen, rag, sandbox, skills
@@ -415,7 +416,7 @@ async def _generate(cid: uuid.UUID, model: str, system_prompt: str | None, messa
 async def _rag_context(model: str, collection_id: str, query: str) -> tuple[str | None, list[str]]:
     """Retrieve top chunks, redact for cloud models, return (context_block, sources)."""
     try:
-        results = await rag.search(collection_id, query, k=5)
+        results = await rag.search(collection_id, query, k=settings.rag_top_k)
     except Exception:  # noqa: BLE001 — a retrieval failure shouldn't break the chat
         return None, []
     if not results:

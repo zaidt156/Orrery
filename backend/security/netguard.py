@@ -33,9 +33,15 @@ def validate_model_base_url(url: str) -> str:
     hosts (local self-hosted models), https is allowed for private or public hosts.
     """
     cleaned = (url or "").strip()
+    if len(cleaned) > 500:
+        raise UnsafeUrlError("Model URL is too long.")
     parsed = urlparse(cleaned)
     if parsed.scheme not in _ALLOWED_SCHEMES:
         raise UnsafeUrlError("Model URL must start with http:// or https://.")
+    if parsed.username or parsed.password:
+        raise UnsafeUrlError("Model URL must not contain credentials.")
+    if parsed.fragment:
+        raise UnsafeUrlError("Model URL must not contain a fragment.")
     if not parsed.hostname:
         raise UnsafeUrlError("Model URL is missing a host.")
 
