@@ -76,6 +76,73 @@ class ReasoningCondenser:
         return []
 
 
+_THINK_OPEN = "<think>"
+_THINK_CLOSE = "</think>"
+_MAX_TAG = max(len(_THINK_OPEN), len(_THINK_CLOSE))
+
+
+class ThinkStream:
+    """Splits a streaming CONTENT feed into answer text vs. inline <think>…</think> reasoning.
+
+    Local reasoning models (deepseek-r1, qwen3…) put their chain-of-thought inline in the answer as
+    <think>…</think>. This routes that reasoning into a ReasoningCondenser (shown as condensed steps,
+    same as API reasoning) and returns only the real answer text to display — so the thinking panel
+    reflects the model's ACTUAL thinking for every model, not just ones with a separate channel.
+    """
+
+    def __init__(self, max_steps: int = 8):
+        self._c = ReasoningCondenser(max_steps=max_steps)
+        self._buf = ""
+        self._in_think = False
+
+    def feed_reasoning(self, text: str) -> list[dict]:
+        """Reasoning that arrived on a SEPARATE channel (API reasoning_content / Claude thinking)."""
+        return self._c.feed(text)
+
+    def feed(self, delta: str) -> tuple[str, list[dict]]:
+        """Returns (answer_text_to_emit, reasoning_events)."""
+        self._buf += delta or ""
+        answer: list[str] = []
+        events: list[dict] = []
+        while self._buf:
+            if self._in_think:
+                end = self._buf.find(_THINK_CLOSE)
+                if end == -1:
+                    cut = len(self._buf) - (_MAX_TAG - 1)  # hold back a possible partial closing tag
+                    if cut > 0:
+                        events += self._c.feed(self._buf[:cut])
+                        self._buf = self._buf[cut:]
+                    break
+                events += self._c.feed(self._buf[:end])
+                self._buf = self._buf[end + len(_THINK_CLOSE):]
+                self._in_think = False
+            else:
+                start = self._buf.find(_THINK_OPEN)
+                if start == -1:
+                    cut = len(self._buf) - (_MAX_TAG - 1)  # hold back a possible partial opening tag
+                    if cut > 0:
+                        answer.append(self._buf[:cut])
+                        self._buf = self._buf[cut:]
+                    break
+                if start:
+                    answer.append(self._buf[:start])
+                self._buf = self._buf[start + len(_THINK_OPEN):]
+                self._in_think = True
+        return "".join(answer), events
+
+    def finish(self) -> tuple[str, list[dict]]:
+        """Flush whatever's left: unterminated think → reasoning; otherwise trailing answer text."""
+        events: list[dict] = []
+        answer = ""
+        if self._in_think:
+            events += self._c.feed(self._buf)
+        else:
+            answer = self._buf
+        self._buf = ""
+        events += self._c.finish()
+        return answer, events
+
+
 def reasoning_event(stage: str, detail: str = "") -> dict:
     """One live work-trace step, e.g. ('Preparing context', 'Loaded your documents')."""
     return {

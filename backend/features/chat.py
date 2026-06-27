@@ -20,7 +20,7 @@ from backend.core.models import Conversation, Message
 from backend.features import code_images, docgen, filegen, rag, sandbox, skills, taskbrain
 from backend.features import files as file_library
 from backend.features.prompting import build_system_prompt
-from backend.features.reasoning_trace import ReasoningCondenser, reasoning_event
+from backend.features.reasoning_trace import ReasoningCondenser, ThinkStream, reasoning_event
 from backend.providers import ai
 from backend.security import privacy
 
@@ -393,17 +393,25 @@ async def _generate(cid: uuid.UUID, model: str, system_prompt: str | None, messa
     # Code/creative work (code, web apps, SVGs, diagrams, building things) always gets high effort.
     gen_effort = filegen.quality_effort(model, effort) if _wants_high_effort(user_text) else effort
     log_event(_log, "chat_generate_started", model=model, rag=bool(untrusted_context), effort=gen_effort or "default")
-    condenser = ReasoningCondenser()  # turn the model's real reasoning into short step lines
+    think = ThinkStream()  # condense the model's real reasoning (separate channel OR inline <think>)
     try:
         async for delta in ai.stream_chat(model, messages, formatted_prompt, gen_effort, usage_out):
             if isinstance(delta, ai.ReasoningDelta):
-                for ev in condenser.feed(str(delta)):  # condensed summary, not raw chain-of-thought
+                for ev in think.feed_reasoning(str(delta)):
                     yield ev
                 continue
-            parts.append(delta)
-            yield {"delta": delta}
-        for ev in condenser.finish():
+            answer, events = think.feed(delta)  # strip inline <think> → reasoning steps; keep the answer
+            for ev in events:
+                yield ev
+            if answer:
+                parts.append(answer)
+                yield {"delta": answer}
+        tail, events = think.finish()
+        for ev in events:
             yield ev
+        if tail:
+            parts.append(tail)
+            yield {"delta": tail}
     except ai.MissingKeyError as exc:
         yield {"error": f"No API key for {exc.provider}. Add it in Settings."}
         return
