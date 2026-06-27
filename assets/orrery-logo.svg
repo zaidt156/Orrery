@@ -1,64 +1,37 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 200" fill="none" role="img" aria-label="Orrery">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 180" fill="none" role="img" aria-label="Orrery">
+  <title>Orrery</title>
   <defs>
-    <linearGradient id="panel" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#111831"/>
-      <stop offset="0.54" stop-color="#0B1020"/>
-      <stop offset="1" stop-color="#070B16"/>
+    <linearGradient id="panel" x1="0" y1="0" x2="720" y2="180" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#152349"/>
+      <stop offset="1" stop-color="#071022"/>
     </linearGradient>
-    <radialGradient id="sun" cx="46%" cy="38%" r="66%">
-      <stop offset="0" stop-color="#FFF3C7"/>
-      <stop offset="0.42" stop-color="#F2B14E"/>
-      <stop offset="1" stop-color="#A86B18"/>
+    <radialGradient id="sun" cx="34%" cy="30%" r="72%">
+      <stop offset="0" stop-color="#FFF2BF"/>
+      <stop offset="0.48" stop-color="#F2B14E"/>
+      <stop offset="1" stop-color="#A96A18"/>
     </radialGradient>
-    <linearGradient id="orbitIce" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#E8F4FF"/>
-      <stop offset="1" stop-color="#78A9E6"/>
+    <linearGradient id="ice" x1="42" y1="48" x2="150" y2="122" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#EAF5FF"/>
+      <stop offset="1" stop-color="#82ADE8"/>
     </linearGradient>
-    <linearGradient id="orbitGold" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#FFE2A0"/>
-      <stop offset="1" stop-color="#F2B14E"/>
-    </linearGradient>
-    <filter id="softGlow" x="-40%" y="-40%" width="180%" height="180%" color-interpolation-filters="sRGB">
-      <feGaussianBlur stdDeviation="5"/>
-    </filter>
   </defs>
 
-  <rect width="720" height="200" rx="30" fill="url(#panel)"/>
-  <rect x="1.25" y="1.25" width="717.5" height="197.5" rx="28.75" stroke="#26314F" stroke-width="2.5"/>
+  <rect width="720" height="180" rx="30" fill="url(#panel)"/>
+  <rect x="1.25" y="1.25" width="717.5" height="177.5" rx="28.75" stroke="#2B395E" stroke-width="2.5"/>
 
-  <g opacity="0.9">
-    <circle cx="620" cy="45" r="1.6" fill="#E8ECF8" opacity="0.55"/>
-    <circle cx="674" cy="94" r="1.8" fill="#9DB9F0" opacity="0.62"/>
-    <circle cx="655" cy="151" r="1.2" fill="#F2B14E" opacity="0.6"/>
-    <circle cx="548" cy="160" r="1.1" fill="#E8ECF8" opacity="0.38"/>
-    <circle cx="490" cy="37" r="1" fill="#9DB9F0" opacity="0.45"/>
+  <g transform="translate(42 28)">
+    <circle cx="62" cy="62" r="44" stroke="#E8ECF8" stroke-width="12"/>
+    <path d="M21 82C47 106 96 102 116 70" stroke="url(#ice)" stroke-width="8" stroke-linecap="round"/>
+    <path d="M19 62C19 37 37 19 62 19" stroke="#071022" stroke-width="15" stroke-linecap="round"/>
+    <circle cx="62" cy="62" r="17" fill="url(#sun)"/>
+    <circle cx="103" cy="32" r="8" fill="#F2B14E" stroke="#071022" stroke-width="4"/>
+    <circle cx="24" cy="89" r="7" fill="#9DB9F0" stroke="#071022" stroke-width="3"/>
   </g>
 
-  <g transform="translate(110 100)">
-    <circle r="73" fill="#111831" opacity="0.88"/>
-    <circle r="71" stroke="#26314F" stroke-width="1.5"/>
-    <circle r="23" fill="#F2B14E" opacity="0.2" filter="url(#softGlow)"/>
-
-    <ellipse rx="72" ry="27" transform="rotate(-23)" stroke="url(#orbitIce)" stroke-width="3.4"/>
-    <ellipse rx="54" ry="19.5" transform="rotate(16)" stroke="url(#orbitGold)" stroke-width="2.6" opacity="0.9"/>
-    <ellipse rx="39" ry="13.5" transform="rotate(-57)" stroke="#E8ECF8" stroke-width="1.7" opacity="0.46"/>
-
-    <circle r="17.5" fill="url(#sun)"/>
-    <circle cx="-6" cy="-7" r="5.4" fill="#FFFFFF" opacity="0.22"/>
-    <circle r="18.4" stroke="#FFE6B0" stroke-width="1.1" opacity="0.55"/>
-
-    <circle cx="66" cy="-29" r="6.4" fill="#9DB9F0" stroke="#0B1020" stroke-width="2.2"/>
-    <circle cx="-61" cy="31" r="4.4" fill="#E8ECF8" stroke="#0B1020" stroke-width="1.8"/>
-    <circle cx="36" cy="41" r="4.8" fill="#F2B14E" stroke="#0B1020" stroke-width="1.9"/>
-    <circle cx="-26" cy="-58" r="2.5" fill="#78A9E6"/>
-
-    <path d="M-78 28C-42 59 20 65 78 35" stroke="#9DB9F0" stroke-width="2.2" stroke-linecap="round" opacity="0.34"/>
-  </g>
-
-  <g transform="translate(215 72)">
-    <text x="0" y="47" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="66" font-weight="760" fill="#F3F6FD">Orrery</text>
-    <text x="4" y="82" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="15.5" font-weight="600" fill="#9DB9F0" letter-spacing="3.4">LOCAL-FIRST AI WORKSPACE</text>
-    <path d="M5 100H343" stroke="#26314F" stroke-width="1.5" stroke-linecap="round"/>
-    <path d="M5 100H132" stroke="#F2B14E" stroke-width="1.5" stroke-linecap="round"/>
+  <g transform="translate(190 52)">
+    <text x="0" y="62" font-family="'Bricolage Grotesque', 'Segoe UI', Arial, sans-serif" font-size="76" font-weight="760" fill="#F4F7FF">Orrery</text>
+    <path d="M6 86H136" stroke="#F2B14E" stroke-width="5" stroke-linecap="round"/>
+    <path d="M156 86H334" stroke="#9DB9F0" stroke-width="5" stroke-linecap="round" opacity="0.88"/>
+    <circle cx="146" cy="86" r="7" fill="#F4F7FF"/>
   </g>
 </svg>

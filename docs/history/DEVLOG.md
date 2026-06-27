@@ -703,3 +703,14 @@ citations**. Photorealistic image/video adapters and the reusable media library 
 - **Privacy boundary preserved.** Route telemetry records only capability metadata and sanitized outcome details;
   it does not store prompts, attachments, generated code, document text, or secrets.
 - **API surface.** Added an authenticated `/api/task-routes` summary endpoint for future Settings/debug views.
+
+## Step 58 - Simplified Orrery app logo refresh (June 28, 2026)
+
+- **Simpler visual direction.** Used the user's orrery reference as inspiration, then reduced it to a product mark:
+  an orbital O, central amber sun, two small orbit nodes, and a plain Orrery wordmark.
+- **Logo changed across app surfaces.** Updated the README/full logo SVG, web favicon SVG, in-app rail logo component,
+  native desktop PNG, and multi-size Windows ICO used by pywebview.
+- **Fallback page aligned.** The backend-only placeholder now renders the current Orrery mark when the production UI
+  build is missing.
+- **No feature behavior changed.** This was a visual asset pass only; auth, chat, routing, sandboxing, and storage paths
+  were left untouched.

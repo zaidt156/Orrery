@@ -5,49 +5,28 @@ export function Logo() {
   return (
     <svg className="orrery-mark" viewBox="0 0 64 64" fill="none" aria-hidden="true">
       <defs>
-        <linearGradient id="markBg" x1="4" y1="4" x2="60" y2="60" gradientUnits="userSpaceOnUse">
-          <stop offset="0" stopColor="#151F3E" />
-          <stop offset="0.58" stopColor="#0B1020" />
-          <stop offset="1" stopColor="#070A14" />
+        <radialGradient id="markSun" cx="34%" cy="30%" r="72%">
+          <stop offset="0" stopColor="#FFF2BF" />
+          <stop offset="0.48" stopColor="#F2B14E" />
+          <stop offset="1" stopColor="#A96A18" />
+        </radialGradient>
+        <linearGradient id="markTile" x1="6" y1="5" x2="58" y2="60" gradientUnits="userSpaceOnUse">
+          <stop offset="0" stopColor="#152349" />
+          <stop offset="1" stopColor="#071022" />
         </linearGradient>
-        <radialGradient id="markSun" cx="38%" cy="28%" r="72%">
-          <stop offset="0" stopColor="#FFF7D7" />
-          <stop offset="0.32" stopColor="#FFD783" />
-          <stop offset="0.7" stopColor="#F0A638" />
-          <stop offset="1" stopColor="#9B5E12" />
-        </radialGradient>
-        <radialGradient id="markBlue" cx="34%" cy="25%" r="72%">
-          <stop offset="0" stopColor="#E1F5FF" />
-          <stop offset="0.38" stopColor="#89BDED" />
-          <stop offset="1" stopColor="#163C71" />
-        </radialGradient>
-        <filter id="markShadow" x="-25%" y="-25%" width="150%" height="160%" colorInterpolationFilters="sRGB">
-          <feDropShadow dx="0" dy="5" stdDeviation="5" floodColor="#020511" floodOpacity="0.6" />
-        </filter>
+        <linearGradient id="markIce" x1="13" y1="17" x2="52" y2="47" gradientUnits="userSpaceOnUse">
+          <stop offset="0" stopColor="#EAF5FF" />
+          <stop offset="1" stopColor="#82ADE8" />
+        </linearGradient>
       </defs>
-      <rect x="3.5" y="3.5" width="57" height="57" rx="17" fill="url(#markBg)" />
-      <rect x="4.75" y="4.75" width="54.5" height="54.5" rx="15.75" stroke="#2B395E" strokeWidth="1.8" />
-      <g filter="url(#markShadow)">
-        <path d="M10.6 22.8C20.5 9.8 40 7.6 52.4 17.1" stroke="#E8F4FF" strokeWidth="2.1" strokeLinecap="round" opacity="0.65" />
-        <path d="M13.7 48.1C25.5 57.4 47.4 53.6 54.1 38.7" stroke="#78A9E6" strokeWidth="1.8" strokeLinecap="round" opacity="0.55" />
-        <ellipse cx="32" cy="34.2" rx="24.6" ry="8.9" transform="rotate(-12 32 34.2)" stroke="#9DB9F0" strokeWidth="2.8" />
-        <ellipse cx="32" cy="33.3" rx="18.6" ry="6.2" transform="rotate(9 32 33.3)" stroke="#F2B14E" strokeWidth="2.05" opacity="0.95" />
-        <ellipse cx="32" cy="31.2" rx="13.4" ry="4.3" transform="rotate(-39 32 31.2)" stroke="#E8F4FF" strokeWidth="1.25" opacity="0.5" />
-        <ellipse cx="32" cy="46" rx="17.8" ry="5.9" fill="#091023" stroke="#6F98C8" strokeWidth="1.6" />
-        <ellipse cx="32" cy="48.6" rx="13.4" ry="3.8" fill="#071022" stroke="#233354" strokeWidth="1.2" />
-        <path d="M32 29.3v16.5" stroke="#B9D7FF" strokeWidth="1.4" strokeLinecap="round" opacity="0.74" />
-        <path d="M32 29.3v16.5" stroke="#071022" strokeWidth="3.8" strokeLinecap="round" opacity="0.48" />
-        <circle cx="32" cy="26.6" r="9.6" fill="url(#markSun)" />
-        <path d="M27 22.7C29 19.6 32.5 18.5 36.3 19.8" stroke="#FFFFFF" strokeWidth="1.3" strokeLinecap="round" opacity="0.55" />
-        <circle cx="40.7" cy="26.1" r="1.2" fill="#FFF1C7" opacity="0.78" />
-        <path d="M18.4 31.5v13.2" stroke="#7DA9D8" strokeWidth="1.35" strokeLinecap="round" />
-        <circle cx="18.4" cy="28" r="4.7" fill="url(#markBlue)" stroke="#CBE8FF" strokeWidth="1" />
-        <path d="M47.5 30v13.8" stroke="#7DA9D8" strokeWidth="1.35" strokeLinecap="round" />
-        <circle cx="47.5" cy="26.5" r="5.1" fill="url(#markSun)" stroke="#FFE4A6" strokeWidth="1" />
-        <ellipse cx="47.5" cy="26.5" rx="8" ry="2.5" transform="rotate(-24 47.5 26.5)" stroke="#F7C76A" strokeWidth="1.85" />
-        <circle cx="11.9" cy="35.4" r="2.6" stroke="#E8F4FF" strokeWidth="1.6" />
-        <circle cx="52.7" cy="17.7" r="2.3" stroke="#F2B14E" strokeWidth="1.5" />
-      </g>
+      <rect x="4" y="4" width="56" height="56" rx="15" fill="url(#markTile)" />
+      <rect x="5.25" y="5.25" width="53.5" height="53.5" rx="13.75" stroke="#2B395E" strokeWidth="1.5" />
+      <circle cx="32" cy="32" r="19.5" stroke="#E8ECF8" strokeWidth="5.5" opacity="0.96" />
+      <path d="M13.7 40.6C25.3 51.8 47 49.4 55.3 35.3" stroke="url(#markIce)" strokeWidth="4.2" strokeLinecap="round" />
+      <path d="M13.1 31.8C13.1 20.9 21.1 12.4 31.4 12.4" stroke="#071022" strokeWidth="7.2" strokeLinecap="round" />
+      <circle cx="32" cy="32" r="8.1" fill="url(#markSun)" />
+      <circle cx="50.2" cy="19.8" r="4.3" fill="#F2B14E" stroke="#071022" strokeWidth="2" />
+      <circle cx="15.6" cy="43.5" r="3.4" fill="#9DB9F0" stroke="#071022" strokeWidth="1.7" />
     </svg>
   );
 }

@@ -41,6 +41,27 @@ color:#e8ecf5;display:grid;place-items:center;height:100vh;margin:0">
 or set <code>ORRERY_DEV=1</code> for the dev server.</p></div>
 </body></html>"""
 
+# Keep the fallback backend page aligned with the current app mark. This only appears
+# when the production UI has not been built yet.
+_PLACEHOLDER = """<!doctype html><html><head><meta charset="utf-8">
+<title>Orrery</title></head><body style="font-family:sans-serif;background:#0b1020;
+color:#e8ecf5;display:grid;place-items:center;height:100vh;margin:0">
+<div style="text-align:center;max-width:520px;padding:24px">
+<svg width="72" height="72" viewBox="0 0 64 64" fill="none" aria-hidden="true" style="filter:drop-shadow(0 10px 20px #02051199)">
+<rect x="4" y="4" width="56" height="56" rx="15" fill="#071022"/>
+<rect x="5.25" y="5.25" width="53.5" height="53.5" rx="13.75" stroke="#2B395E" stroke-width="1.5"/>
+<circle cx="32" cy="32" r="19.5" stroke="#E8ECF8" stroke-width="5.5"/>
+<path d="M13.7 40.6C25.3 51.8 47 49.4 55.3 35.3" stroke="#82ADE8" stroke-width="4.2" stroke-linecap="round"/>
+<path d="M13.1 31.8C13.1 20.9 21.1 12.4 31.4 12.4" stroke="#071022" stroke-width="7.2" stroke-linecap="round"/>
+<circle cx="32" cy="32" r="8.1" fill="#F2B14E"/>
+<circle cx="50.2" cy="19.8" r="4.3" fill="#F2B14E" stroke="#071022" stroke-width="2"/>
+<circle cx="15.6" cy="43.5" r="3.4" fill="#9DB9F0" stroke="#071022" stroke-width="1.7"/>
+</svg>
+<h1 style="font-size:28px;margin:14px 0 8px">Orrery</h1>
+<p>Backend is running. Build the UI (<code>cd ui &amp;&amp; npm run build</code>)
+or set <code>ORRERY_DEV=1</code> for the dev server.</p></div>
+</body></html>"""
+
 
 class NewConversation(BaseModel):
     model: str
