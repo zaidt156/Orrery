@@ -126,15 +126,27 @@ export default function Chat() {
       const collectionsReq = listCollections();
       const projectsReq = listProjects();
       let hasConversations = false;
+      let startBlankProject = false;
 
       try {
         const c = await listConversations();
         if (!alive) return;
         setConvos(c.conversations);
         hasConversations = c.conversations.length > 0;
+        const newProjectId = sessionStorage.getItem("orrery_new_project_chat");
         const pending = sessionStorage.getItem("orrery_open_conversation");
         const target = pending && c.conversations.find((item) => item.id === pending);
-        if (target) {
+        if (newProjectId) {
+          sessionStorage.removeItem("orrery_new_project_chat");
+          startBlankProject = true;
+          activeIdRef.current = null;
+          setActiveId(null);
+          setMessages([]);
+          setProjectId(newProjectId);
+          setSystemPrompt("");
+          setEffort("");
+          setContextWindow("1000000");
+        } else if (target) {
           sessionStorage.removeItem("orrery_open_conversation");
           await open(target.id);
         } else if (hasConversations) {
@@ -158,7 +170,7 @@ export default function Chat() {
           setEffort("");
           setContextWindow("1000000");
           sessionStorage.removeItem("orrery_preferred_model");
-        } else if (!hasConversations) {
+        } else if (!hasConversations || startBlankProject) {
           setModel(m.value.models[0] ? m.value.models[0].id : "");
         }
       } else {

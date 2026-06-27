@@ -66,9 +66,8 @@ export default function Projects({ onNavigate }) {
     setErr("");
     try {
       const saved = await updateProject(activeId, draft);
-      setProjects((items) => items.map((p) => (p.id === saved.id ? saved : p)));
       window.dispatchEvent(new CustomEvent("orrery-projects-changed"));
-      await openProject(saved.id);
+      await load(saved.id);
     } catch (e) {
       setErr(String(e.message || e));
     } finally {
@@ -97,6 +96,11 @@ export default function Projects({ onNavigate }) {
     onNavigate?.("chat");
   }
 
+  function startProjectChat(id) {
+    sessionStorage.setItem("orrery_new_project_chat", id);
+    onNavigate?.("chat");
+  }
+
   const active = projects.find((p) => p.id === activeId);
 
   return (
@@ -105,20 +109,32 @@ export default function Projects({ onNavigate }) {
         <button className="btn primary project-new" onClick={addProject} disabled={busy}>
           <Plus /> New project
         </button>
-        <div className="project-list">
+        <div className="project-list project-tree">
           {projects.length === 0 && <div className="convo-empty">No projects yet</div>}
           {projects.map((p) => (
-            <button
-              key={p.id}
-              className={`project-item${p.id === activeId ? " active" : ""}`}
-              onClick={() => openProject(p.id).catch((e) => setErr(String(e.message || e)))}
-            >
-              <FolderKanban />
-              <span>
-                <b>{p.name}</b>
-                <small>{p.conversation_count || 0} chats</small>
-              </span>
-            </button>
+            <div key={p.id} className={`project-node${p.id === activeId ? " active" : ""}`}>
+              <button
+                className="project-item"
+                onClick={() => openProject(p.id).catch((e) => setErr(String(e.message || e)))}
+              >
+                <FolderKanban />
+                <span>
+                  <b>{p.name}</b>
+                  <small>{p.conversation_count || 0} chats</small>
+                </span>
+              </button>
+              <div className="project-children">
+                <button className="project-child new" onClick={() => startProjectChat(p.id)}>
+                  <Plus /> New chat
+                </button>
+                {(p.conversations || []).map((c) => (
+                  <button key={c.id} className="project-child" onClick={() => openChat(c.id)}>
+                    <MessageSquare />
+                    <span>{c.title}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
           ))}
         </div>
       </aside>
@@ -129,6 +145,9 @@ export default function Projects({ onNavigate }) {
           <div className="grow" />
           {activeId && (
             <>
+              <button className="btn primary" onClick={() => startProjectChat(activeId)} disabled={busy}>
+                <MessageSquare /> New chat
+              </button>
               <button className="btn" onClick={saveProject} disabled={busy}><Save /> Save</button>
               <button className="btn ghost" onClick={removeProject} disabled={busy}><Trash2 /> Delete</button>
             </>
@@ -174,7 +193,11 @@ export default function Projects({ onNavigate }) {
 
             <div className="project-chats">
               <div className="section-label">Project chats</div>
-              {conversations.length === 0 && <div className="project-muted">No chats attached to this project yet.</div>}
+              {conversations.length === 0 && (
+                <div className="project-muted">
+                  No chats attached yet. Start a new chat inside this project to keep its instructions and context.
+                </div>
+              )}
               {conversations.map((c) => (
                 <button key={c.id} className="project-chat" onClick={() => openChat(c.id)}>
                   <MessageSquare />

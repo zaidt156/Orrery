@@ -1,45 +1,64 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 660 180" fill="none" role="img" aria-label="Orrery">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 200" fill="none" role="img" aria-label="Orrery">
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#0C1226"/>
-      <stop offset="1" stop-color="#0A0F20"/>
+    <linearGradient id="panel" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#111831"/>
+      <stop offset="0.54" stop-color="#0B1020"/>
+      <stop offset="1" stop-color="#070B16"/>
     </linearGradient>
-    <radialGradient id="sun" cx="50%" cy="42%" r="60%">
-      <stop offset="0" stop-color="#FFD98A"/>
-      <stop offset="0.5" stop-color="#F2B14E"/>
-      <stop offset="1" stop-color="#C8862A"/>
+    <radialGradient id="sun" cx="46%" cy="38%" r="66%">
+      <stop offset="0" stop-color="#FFF3C7"/>
+      <stop offset="0.42" stop-color="#F2B14E"/>
+      <stop offset="1" stop-color="#A86B18"/>
     </radialGradient>
-    <linearGradient id="ice" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#EAF2FF"/>
-      <stop offset="1" stop-color="#9DB9F0"/>
+    <linearGradient id="orbitIce" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#E8F4FF"/>
+      <stop offset="1" stop-color="#78A9E6"/>
     </linearGradient>
+    <linearGradient id="orbitGold" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FFE2A0"/>
+      <stop offset="1" stop-color="#F2B14E"/>
+    </linearGradient>
+    <filter id="softGlow" x="-40%" y="-40%" width="180%" height="180%" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="5"/>
+    </filter>
   </defs>
 
-  <rect width="660" height="180" rx="26" fill="url(#bg)"/>
-  <rect x="1" y="1" width="658" height="178" rx="25" stroke="#222D4A" stroke-width="1.5"/>
+  <rect width="720" height="200" rx="30" fill="url(#panel)"/>
+  <rect x="1.25" y="1.25" width="717.5" height="197.5" rx="28.75" stroke="#26314F" stroke-width="2.5"/>
 
-  <!-- starfield -->
-  <circle cx="556" cy="40" r="1.4" fill="#fff" opacity=".5"/>
-  <circle cx="612" cy="92" r="1.6" fill="#9DB9F0" opacity=".55"/>
-  <circle cx="588" cy="140" r="1.1" fill="#F2B14E" opacity=".5"/>
-  <circle cx="516" cy="150" r="1" fill="#fff" opacity=".35"/>
-
-  <!-- orbital mark -->
-  <g transform="translate(98 90)">
-    <circle r="64" stroke="#1E2945" stroke-width="1.5"/>
-    <g stroke="url(#ice)" stroke-width="2.4" opacity=".95">
-      <ellipse rx="60" ry="23" transform="rotate(-24)"/>
-      <ellipse rx="42" ry="16" transform="rotate(-24)" opacity=".8"/>
-    </g>
-    <circle r="15" fill="url(#sun)"/>
-    <circle r="15" fill="none" stroke="#FFE6B0" stroke-width="0.8" opacity=".5"/>
-    <!-- planets sit exactly on the orbit lines (theta=0/180 of each rotated ellipse) -->
-    <circle cx="54.8" cy="-24.4" r="5.2" fill="#9DB9F0"/>
-    <circle cx="-54.8" cy="24.4" r="3.4" fill="#E8EEFB"/>
-    <circle cx="38.4" cy="-17.1" r="3" fill="#F2B14E"/>
+  <g opacity="0.9">
+    <circle cx="620" cy="45" r="1.6" fill="#E8ECF8" opacity="0.55"/>
+    <circle cx="674" cy="94" r="1.8" fill="#9DB9F0" opacity="0.62"/>
+    <circle cx="655" cy="151" r="1.2" fill="#F2B14E" opacity="0.6"/>
+    <circle cx="548" cy="160" r="1.1" fill="#E8ECF8" opacity="0.38"/>
+    <circle cx="490" cy="37" r="1" fill="#9DB9F0" opacity="0.45"/>
   </g>
 
-  <!-- wordmark -->
-  <text x="196" y="100" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="62" font-weight="700" fill="#F3F6FD" letter-spacing="-1.5">Orrery</text>
-  <text x="199" y="130" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="16.5" font-weight="500" fill="#8CA0C8" letter-spacing="3.2">LOCAL-FIRST AI WORKSPACE</text>
+  <g transform="translate(110 100)">
+    <circle r="73" fill="#111831" opacity="0.88"/>
+    <circle r="71" stroke="#26314F" stroke-width="1.5"/>
+    <circle r="23" fill="#F2B14E" opacity="0.2" filter="url(#softGlow)"/>
+
+    <ellipse rx="72" ry="27" transform="rotate(-23)" stroke="url(#orbitIce)" stroke-width="3.4"/>
+    <ellipse rx="54" ry="19.5" transform="rotate(16)" stroke="url(#orbitGold)" stroke-width="2.6" opacity="0.9"/>
+    <ellipse rx="39" ry="13.5" transform="rotate(-57)" stroke="#E8ECF8" stroke-width="1.7" opacity="0.46"/>
+
+    <circle r="17.5" fill="url(#sun)"/>
+    <circle cx="-6" cy="-7" r="5.4" fill="#FFFFFF" opacity="0.22"/>
+    <circle r="18.4" stroke="#FFE6B0" stroke-width="1.1" opacity="0.55"/>
+
+    <circle cx="66" cy="-29" r="6.4" fill="#9DB9F0" stroke="#0B1020" stroke-width="2.2"/>
+    <circle cx="-61" cy="31" r="4.4" fill="#E8ECF8" stroke="#0B1020" stroke-width="1.8"/>
+    <circle cx="36" cy="41" r="4.8" fill="#F2B14E" stroke="#0B1020" stroke-width="1.9"/>
+    <circle cx="-26" cy="-58" r="2.5" fill="#78A9E6"/>
+
+    <path d="M-78 28C-42 59 20 65 78 35" stroke="#9DB9F0" stroke-width="2.2" stroke-linecap="round" opacity="0.34"/>
+  </g>
+
+  <g transform="translate(215 72)">
+    <text x="0" y="47" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="66" font-weight="760" fill="#F3F6FD">Orrery</text>
+    <text x="4" y="82" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="15.5" font-weight="600" fill="#9DB9F0" letter-spacing="3.4">LOCAL-FIRST AI WORKSPACE</text>
+    <path d="M5 100H343" stroke="#26314F" stroke-width="1.5" stroke-linecap="round"/>
+    <path d="M5 100H132" stroke="#F2B14E" stroke-width="1.5" stroke-linecap="round"/>
+  </g>
 </svg>

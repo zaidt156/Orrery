@@ -85,7 +85,7 @@ and validation. These are safe operational summaries, not raw chain-of-thought.
 - Expanded file generation to recognize WAV/MP3/audio-file requests.
 - Added WAV and MP3 validation.
 - Added image/audio/sandbox/project skill playbooks.
-- Added project workspaces with database storage, API endpoints, a UI tab, chat assignment, and trusted project context in prompts.
+- Added project workspaces with database storage, API endpoints, a UI tab, hierarchical chat listing, scoped chat start, chat assignment, and trusted project context in prompts.
 
 ## Next Architecture Work
 

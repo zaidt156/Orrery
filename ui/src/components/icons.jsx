@@ -3,27 +3,54 @@
 export function Logo() {
   return (
     <svg className="orrery-mark" viewBox="0 0 64 64" fill="none" aria-hidden="true">
-      <rect x="4" y="4" width="56" height="56" rx="17" fill="#111831" />
-      <rect x="5" y="5" width="54" height="54" rx="16" stroke="#2B3658" strokeWidth="2" />
+      <defs>
+        <radialGradient id="logoSun" cx="42%" cy="36%" r="68%">
+          <stop offset="0" stopColor="#FFF3C7" />
+          <stop offset="0.45" stopColor="#F2B14E" />
+          <stop offset="1" stopColor="#A86B18" />
+        </radialGradient>
+        <linearGradient id="logoIce" x1="12" y1="11" x2="52" y2="53">
+          <stop offset="0" stopColor="#E8F4FF" />
+          <stop offset="1" stopColor="#78A9E6" />
+        </linearGradient>
+      </defs>
+      <rect x="4" y="4" width="56" height="56" rx="16" fill="#111831" />
+      <rect x="5.2" y="5.2" width="53.6" height="53.6" rx="14.8" stroke="#2B3658" strokeWidth="1.9" />
       <ellipse
         cx="32"
         cy="32"
-        rx="24"
-        ry="10"
-        transform="rotate(-22 32 32)"
-        stroke="#9DB9F0"
-        strokeWidth="3"
+        rx="25.5"
+        ry="9.8"
+        transform="rotate(-24 32 32)"
+        stroke="url(#logoIce)"
+        strokeWidth="2.7"
       />
-      <circle cx="32" cy="32" r="12" fill="#F2B14E" />
-      <circle cx="32" cy="32" r="5.5" fill="#111831" />
-      <path
-        d="M14.4 39.2C20.4 44.7 32.5 46.2 43.6 42.7"
+      <ellipse
+        cx="32"
+        cy="32"
+        rx="19"
+        ry="7.2"
+        transform="rotate(15 32 32)"
+        stroke="#F2B14E"
+        strokeWidth="2"
+        opacity="0.92"
+      />
+      <ellipse
+        cx="32"
+        cy="32"
+        rx="14"
+        ry="5.1"
+        transform="rotate(-58 32 32)"
         stroke="#E8ECF8"
-        strokeWidth="3"
-        strokeLinecap="round"
+        strokeWidth="1.35"
+        opacity="0.5"
       />
-      <circle cx="50.2" cy="19.2" r="4.2" fill="#9DB9F0" stroke="#111831" strokeWidth="2" />
-      <circle cx="13.3" cy="18.2" r="2" fill="#F2B14E" />
+      <circle cx="32" cy="32" r="9.3" fill="url(#logoSun)" />
+      <circle cx="29.4" cy="28.7" r="2.4" fill="#fff" opacity="0.25" />
+      <circle cx="53.3" cy="22.6" r="3.9" fill="#9DB9F0" stroke="#111831" strokeWidth="1.8" />
+      <circle cx="13.4" cy="40.5" r="2.8" fill="#E8ECF8" stroke="#111831" strokeWidth="1.3" />
+      <circle cx="43.4" cy="46.5" r="2.4" fill="#F2B14E" />
+      <path d="M10.5 39.8C20.8 48.4 39.3 50.2 52.7 41.5" stroke="#9DB9F0" strokeWidth="1.5" strokeLinecap="round" opacity="0.35" />
     </svg>
   );
 }

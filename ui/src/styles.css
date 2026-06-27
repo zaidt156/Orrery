@@ -702,17 +702,28 @@ body{
 }
 .project-new{display:flex;align-items:center;justify-content:center;gap:7px;width:100%}
 .project-new svg,.project-toolbar .btn svg{width:14px;height:14px}
-.project-list{display:flex;flex-direction:column;gap:4px;overflow-y:auto}
+.project-list{display:flex;flex-direction:column;gap:6px;overflow-y:auto}
+.project-node{border:1px solid transparent;border-radius:9px;padding:3px}
+.project-node.active{border-color:var(--line);background:#18213F66}
 .project-item{
   display:flex;align-items:center;gap:9px;width:100%;text-align:left;border:1px solid transparent;
   border-radius:8px;background:transparent;color:var(--muted);padding:9px 10px;cursor:pointer;
 }
 .project-item:hover{background:var(--bg2);color:var(--text)}
-.project-item.active{background:var(--bg2);border-color:var(--line);color:var(--amber)}
+.project-node.active .project-item{color:var(--amber)}
 .project-item svg{width:17px;height:17px;flex:none}
 .project-item span{min-width:0;display:flex;flex-direction:column;gap:2px}
 .project-item b{font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:inherit}
 .project-item small{font-family:var(--font-mono);font-size:10px;color:var(--faint)}
+.project-children{display:flex;flex-direction:column;gap:2px;margin:1px 0 4px 23px;padding-left:8px;border-left:1px solid var(--line-soft)}
+.project-child{
+  min-width:0;display:flex;align-items:center;gap:7px;text-align:left;border:none;background:transparent;
+  color:var(--muted);border-radius:6px;padding:5px 6px;font-size:11.5px;cursor:pointer;
+}
+.project-child:hover{background:var(--bg2);color:var(--text)}
+.project-child svg{width:13px;height:13px;flex:none;color:var(--faint)}
+.project-child.new{font-family:var(--font-mono);font-size:10.5px;color:var(--ice)}
+.project-child span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .project-main{flex:1;min-width:0;display:flex;flex-direction:column}
 .project-toolbar{display:flex;align-items:center;gap:10px;padding:13px 18px;border-bottom:1px solid var(--line-soft)}
 .project-toolbar .grow{flex:1}
@@ -743,6 +754,7 @@ body{
   .projects-view{flex-direction:column}
   .project-side{width:100%;max-height:210px;border-right:none;border-bottom:1px solid var(--line-soft)}
   .project-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));overflow-y:auto}
+  .project-children{max-height:92px;overflow:auto}
 }
 @media (max-width:560px){
   .project-list{grid-template-columns:1fr}

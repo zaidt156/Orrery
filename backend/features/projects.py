@@ -83,6 +83,16 @@ async def list_projects() -> list[dict]:
         projects = (
             await s.execute(select(Project).order_by(Project.updated_at.desc(), Project.created_at.desc()))
         ).scalars().all()
+        conversations = (
+            await s.execute(
+                select(Conversation)
+                .where(Conversation.project_id.is_not(None))
+                .order_by(Conversation.project_id, Conversation.updated_at.desc())
+            )
+        ).scalars().all()
+        grouped: dict[str, list[dict]] = {}
+        for conv in conversations:
+            grouped.setdefault(str(conv.project_id), []).append(_conversation_dict(conv))
         counts = {
             str(project_id): count
             for project_id, count in (
@@ -93,7 +103,12 @@ async def list_projects() -> list[dict]:
                 )
             ).all()
         }
-        return [_project_dict(project, counts.get(str(project.id), 0)) for project in projects]
+        out = []
+        for project in projects:
+            item = _project_dict(project, counts.get(str(project.id), 0))
+            item["conversations"] = grouped.get(str(project.id), [])
+            out.append(item)
+        return out
 
 
 async def create_project(name: str, description: str = "", instructions: str = "") -> dict:

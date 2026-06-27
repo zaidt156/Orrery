@@ -682,3 +682,14 @@ citations**. Photorealistic image/video adapters and the reusable media library 
   and attach the current chat automatically through the backend router.
 - **Safety boundary preserved.** Project text is user-owned preference/context only; it does not grant tools,
   bypass sandbox limits, or override app rules.
+
+## Step 56 - Project hierarchy and refreshed logo (June 27, 2026)
+
+- **Project hierarchy.** Project listing now returns nested chat summaries, and the Projects tab shows each
+  project with its chats underneath instead of a flat editor-only view.
+- **Scoped project chat start.** Projects now has "New chat" actions that open Chat with the selected project
+  already attached, so the first user message creates the conversation inside that project.
+- **Chat handoff.** Chat understands project-scoped startup from the Projects tab and does not auto-open the
+  most recent global chat in that case.
+- **Logo refresh.** Updated the full `assets/orrery-logo.svg` and the in-app rail mark with a sharper orbital
+  identity, better depth, and cleaner planet/orbit geometry.
