@@ -57,10 +57,56 @@ def _pdf_text(data_url: str) -> str:
         return ""
 
 
+def _office_text(name: str, data_url: str) -> str:
+    """Extract text from Office files (docx/xlsx/pptx) so any file type can become RAG context."""
+    try:
+        b64 = data_url.split(",", 1)[1] if "," in data_url else data_url
+        raw = io.BytesIO(base64.b64decode(b64))
+        low = name.lower()
+        if low.endswith(".docx"):
+            from docx import Document
+            doc = Document(raw)
+            parts = [p.text for p in doc.paragraphs if p.text.strip()]
+            for table in doc.tables:
+                for row in table.rows:
+                    parts.append("\t".join(c.text for c in row.cells))
+            return "\n".join(parts).strip()
+        if low.endswith((".xlsx", ".xls", ".xlsm")):
+            from openpyxl import load_workbook
+            wb = load_workbook(raw, read_only=True, data_only=True)
+            out: list[str] = []
+            for ws in wb.worksheets:
+                out.append(f"# {ws.title}")
+                for row in ws.iter_rows(values_only=True):
+                    cells = [str(c) for c in row if c is not None]
+                    if cells:
+                        out.append("\t".join(cells))
+            wb.close()
+            return "\n".join(out).strip()
+        if low.endswith(".pptx"):
+            from pptx import Presentation
+            prs = Presentation(raw)
+            parts = []
+            for slide in prs.slides:
+                for shape in slide.shapes:
+                    if getattr(shape, "has_text_frame", False) and shape.text.strip():
+                        parts.append(shape.text.strip())
+            return "\n".join(parts).strip()
+    except Exception:  # noqa: BLE001 — unreadable file → no text, skip rather than break upload
+        return ""
+    return ""
+
+
 def _extract(f: dict) -> str:
-    if f.get("kind") == "pdf":
-        return _pdf_text(f.get("content") or "")
-    return f.get("content") or ""  # text file: content is the raw text
+    name = (f.get("name") or "").lower()
+    content = f.get("content") or ""
+    if f.get("kind") == "pdf" or name.endswith(".pdf"):
+        return _pdf_text(content)
+    if name.endswith((".docx", ".xlsx", ".xls", ".xlsm", ".pptx")):
+        return _office_text(name, content)
+    if f.get("kind") == "text":
+        return content  # text file: content is the raw text
+    return ""  # unknown binary (image, zip, …): no extractable text, skip rather than embed base64
 
 
 def chunk_text(body: str, size: int = 900, overlap: int = 150) -> list[str]:
@@ -116,6 +162,29 @@ async def add_documents(cid: str, files: list[dict]) -> int:
             s.add(Chunk(collection_id=uuid.UUID(cid), source=src, ordinal=ordn, content=content, embedding=v))
         await s.commit()
     return len(items)
+
+
+async def documents(cid: str) -> list[dict]:
+    """Distinct source files in a collection, with their chunk counts."""
+    async with get_sessionmaker()() as s:
+        rows = (await s.execute(
+            select(Chunk.source, func.count())
+            .where(Chunk.collection_id == uuid.UUID(cid))
+            .group_by(Chunk.source)
+            .order_by(Chunk.source)
+        )).all()
+        return [{"source": src, "chunks": int(n or 0)} for src, n in rows]
+
+
+async def delete_source(cid: str, source: str) -> int:
+    """Remove all chunks for one source file from a collection."""
+    from sqlalchemy import delete
+    async with get_sessionmaker()() as s:
+        result = await s.execute(
+            delete(Chunk).where(Chunk.collection_id == uuid.UUID(cid), Chunk.source == source)
+        )
+        await s.commit()
+        return result.rowcount or 0
 
 
 async def search(cid: str, query: str, k: int = 5) -> list[dict]:

@@ -476,13 +476,15 @@ async def stream_reply(
     trusted_context = await project_store.trusted_context(project_id)
     if trusted_context:
         yield reasoning_event("Preparing project context", "Loaded the current project's standing context and instructions.")
+    if not collection_id and project_id:  # project chats answer from the project's uploaded files
+        collection_id = await project_store.collection_id_for(project_id)
     rag_context = None                 # retrieved docs — passed separately as UNTRUSTED context
     if collection_id and user_content.strip():
         block, sources = await _rag_context(model, collection_id, user_content)
         if block:
             rag_context = block
             yield {"sources": sources}
-            yield reasoning_event("Preparing context", f"Loaded {len(sources)} document(s) from your collection to answer from.")
+            yield reasoning_event("Preparing context", f"Loaded {len(sources)} document(s) from project/collection files to answer from.")
 
     plan = taskrouter.plan(user_content, has_attachments=bool(attachments))
     route_event_id = await route_telemetry.record_plan(str(cid), plan, has_attachments=bool(attachments))

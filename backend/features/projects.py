@@ -8,6 +8,7 @@ from sqlalchemy import func, select
 
 from backend.core.database import get_sessionmaker
 from backend.core.models import Conversation, Project
+from backend.features import rag
 
 MAX_NAME = 160
 MAX_DESCRIPTION = 2_000
@@ -141,7 +142,9 @@ async def get_project(project_id: str) -> dict | None:
         ).scalars().all()
         data = _project_dict(project, len(conversations))
         data["conversations"] = [_conversation_dict(conv) for conv in conversations]
-        return data
+        cid = str(project.collection_id) if project.collection_id else None
+    data["files"] = await rag.documents(cid) if cid else []
+    return data
 
 
 async def update_project(
@@ -202,6 +205,54 @@ async def set_conversation_project(conversation_id: str, project_id: str | None)
         await s.commit()
         await s.refresh(conv)
         return _conversation_dict(conv)
+
+
+async def ensure_collection(project_id: str) -> str | None:
+    """Return the project's RAG collection id, creating one on first file upload."""
+    async with get_sessionmaker()() as s:
+        project = await s.get(Project, _uuid(project_id))
+        if project is None:
+            return None
+        if project.collection_id:
+            return str(project.collection_id)
+        name = project.name or "project"
+    col = await rag.create_collection(f"Project · {name[:80]}")
+    async with get_sessionmaker()() as s:
+        project = await s.get(Project, _uuid(project_id))
+        if project is None:
+            return col["id"]
+        project.collection_id = _uuid(col["id"])
+        await s.commit()
+    return col["id"]
+
+
+async def collection_id_for(project_id: uuid.UUID | str | None) -> str | None:
+    if not project_id:
+        return None
+    async with get_sessionmaker()() as s:
+        project = await s.get(Project, _uuid(str(project_id)))
+        return str(project.collection_id) if project and project.collection_id else None
+
+
+async def add_files(project_id: str, files: list[dict]) -> dict:
+    """Ingest project files (any type) into the project's collection for chat context."""
+    cid = await ensure_collection(project_id)
+    if cid is None:
+        return {"added": 0, "files": []}
+    added = await rag.add_documents(cid, files)
+    return {"added": added, "files": await rag.documents(cid)}
+
+
+async def list_files(project_id: str) -> list[dict]:
+    cid = await collection_id_for(project_id)
+    return await rag.documents(cid) if cid else []
+
+
+async def delete_file(project_id: str, source: str) -> bool:
+    cid = await collection_id_for(project_id)
+    if not cid:
+        return False
+    return (await rag.delete_source(cid, source)) > 0
 
 
 async def trusted_context(project_id: uuid.UUID | str | None) -> str | None:

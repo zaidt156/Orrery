@@ -160,6 +160,33 @@ export const attachConversationToProject = (projectId, conversationId) =>
 export const removeConversationFromProject = (conversationId) =>
   apiSend(`/api/conversations/${conversationId}/project`, "DELETE");
 
+export const listProjectFiles = (id) => apiGet(`/api/projects/${id}/files`);
+export const addProjectFiles = (id, files) => apiSend(`/api/projects/${id}/files`, "POST", { files });
+export const deleteProjectFile = (id, source) =>
+  apiSend(`/api/projects/${id}/files?source=${encodeURIComponent(source)}`, "DELETE");
+
+// Read a browser File into the {name, mime, kind, content} shape the backend expects.
+// Text-like files are sent as raw text; everything else (pdf/office/…) as a base64 data URL.
+const TEXT_EXT = /\.(txt|md|markdown|csv|tsv|json|ya?ml|xml|html?|css|js|jsx|ts|tsx|py|java|c|cpp|cs|go|rs|rb|php|sh|sql|ini|toml|log)$/i;
+export function readFileAsAttachment(file) {
+  const name = file.name || "file";
+  const isText = TEXT_EXT.test(name) || (file.type || "").startsWith("text/");
+  const isPdf = /\.pdf$/i.test(name) || file.type === "application/pdf";
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = reject;
+    reader.onload = () =>
+      resolve({
+        name,
+        mime: file.type || "",
+        kind: isPdf ? "pdf" : isText ? "text" : "file",
+        content: String(reader.result || ""),
+      });
+    if (isText) reader.readAsText(file);
+    else reader.readAsDataURL(file);
+  });
+}
+
 export const listConversations = () => apiGet("/api/conversations");
 export const createConversation = (model, system_prompt, effort, context_window, project_id = null) =>
   apiSend("/api/conversations", "POST", { model, system_prompt, effort, context_window, project_id });

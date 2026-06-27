@@ -624,6 +624,30 @@ def create_app(session_token: str) -> FastAPI:
             raise HTTPException(status_code=404, detail="Project not found")
         return {"deleted": True}
 
+    @r.get("/projects/{pid}/files")
+    async def projects_files_list(pid: str) -> dict:
+        try:
+            return {"files": await projects.list_files(pid)}
+        except ValueError:
+            raise HTTPException(status_code=404, detail="Project not found") from None
+
+    @r.post("/projects/{pid}/files")
+    async def projects_files_add(pid: str, body: UploadDocs) -> dict:
+        files = [a.model_dump() for a in body.files]
+        if not files:
+            raise HTTPException(status_code=400, detail="No files provided")
+        try:
+            return await projects.add_files(pid, files)
+        except ValueError:
+            raise HTTPException(status_code=404, detail="Project not found") from None
+
+    @r.delete("/projects/{pid}/files")
+    async def projects_files_delete(pid: str, source: str) -> dict:
+        try:
+            return {"deleted": await projects.delete_file(pid, source)}
+        except ValueError:
+            raise HTTPException(status_code=404, detail="Project not found") from None
+
     @r.post("/projects/{pid}/conversations/{cid}")
     async def projects_attach_conversation(pid: str, cid: str) -> dict:
         try:

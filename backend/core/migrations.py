@@ -115,6 +115,7 @@ async def run_migrations() -> None:
             END $$;
             """
         ))
+        await conn.execute(text("ALTER TABLE projects ADD COLUMN IF NOT EXISTS collection_id UUID"))
         await conn.execute(text("ALTER TABLE conversations ADD COLUMN IF NOT EXISTS effort VARCHAR(10)"))
         await conn.execute(text("ALTER TABLE conversations ADD COLUMN IF NOT EXISTS context_window INTEGER"))
         await conn.execute(text("UPDATE conversations SET context_window = 1000000 WHERE context_window IS NULL"))

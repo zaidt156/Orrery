@@ -138,6 +138,8 @@ export default function Chat() {
         const target = pending && c.conversations.find((item) => item.id === pending);
         if (newProjectId) {
           sessionStorage.removeItem("orrery_new_project_chat");
+          const firstMessage = sessionStorage.getItem("orrery_project_first_message");
+          sessionStorage.removeItem("orrery_project_first_message");
           startBlankProject = true;
           activeIdRef.current = null;
           setActiveId(null);
@@ -146,6 +148,7 @@ export default function Chat() {
           setSystemPrompt("");
           setEffort("");
           setContextWindow("1000000");
+          if (firstMessage) setInput(firstMessage);  // composer pre-filled; user reviews and sends
         } else if (target) {
           sessionStorage.removeItem("orrery_open_conversation");
           await open(target.id);
