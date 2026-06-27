@@ -195,6 +195,9 @@ async def _generate(
     message_id: str | None = None
     usage_out: dict = {}
     user_text = _latest_user_text(messages)
+    matched_skills = skills.select(user_text)  # which skill playbooks apply to this turn
+    if matched_skills:
+        yield reasoning_event("Loaded skills", ", ".join(s.name for s in matched_skills))
     formatted_prompt = build_system_prompt(  # explicit authority layers (app > skills > user > untrusted)
         app_rules=FORMAT_INSTRUCTIONS,
         skills_block=skills.skills_prompt(user_text),
