@@ -52,6 +52,19 @@ skills/
 *.userosscache
 *.sln.docstates
 
+# Tracked project docs and runtime prompt skills
+!docs/
+docs/*
+!docs/history/
+docs/history/*
+!docs/history/DEVLOG.md
+!docs/planning/
+docs/planning/*
+!docs/planning/TASK_ROUTING_ARCHITECTURE.md
+!skills/
+skills/*
+!skills/*.md
+
 # Node and frontend build output
 node_modules/
 ui/node_modules/

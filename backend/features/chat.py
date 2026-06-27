@@ -17,10 +17,10 @@ from backend.core.config import settings
 from backend.core.database import get_sessionmaker
 from backend.core.observability import log_event
 from backend.core.models import Conversation, Message
-from backend.features import code_images, docgen, filegen, rag, sandbox, skills, taskbrain
+from backend.features import code_images, docgen, filegen, rag, sandbox, skills, taskbrain, taskrouter
 from backend.features import files as file_library
 from backend.features.prompting import build_system_prompt
-from backend.features.reasoning_trace import ReasoningCondenser, ThinkStream, reasoning_event
+from backend.features.reasoning_trace import ThinkStream, reasoning_event
 from backend.providers import ai
 from backend.security import privacy
 
@@ -483,16 +483,23 @@ async def _deliver_docspec(cid: uuid.UUID, model: str, request: str, system_prom
         app_rules=FORMAT_INSTRUCTIONS, user_preferences=system_prompt, untrusted_context=untrusted_context,
     )
     parts: list[str] = []
-    condenser = ReasoningCondenser()
+    think = ThinkStream()  # universal: separate reasoning channel OR inline <think>
     try:
         async for delta in ai.stream_chat(model, [{"role": "user", "content": request}], instructions, filegen.quality_effort(model, effort)):
             if isinstance(delta, ai.ReasoningDelta):
-                for ev in condenser.feed(str(delta)):
+                for ev in think.feed_reasoning(str(delta)):
                     yield ev
                 continue
-            parts.append(str(delta))
-        for ev in condenser.finish():
+            answer, events = think.feed(str(delta))
+            for ev in events:
+                yield ev
+            if answer:
+                parts.append(answer)
+        tail, events = think.finish()
+        for ev in events:
             yield ev
+        if tail:
+            parts.append(tail)
     except Exception:  # noqa: BLE001 — fall through to a normal reply
         return
     content = "".join(parts)
@@ -647,10 +654,37 @@ async def stream_reply(
             yield {"sources": sources}
             yield reasoning_event("Preparing context", f"Loaded {len(sources)} document(s) from your collection to answer from.")
 
+    plan = taskrouter.plan(user_content, has_attachments=bool(attachments))
+    if plan.route != "chat" or attachments:
+        yield reasoning_event("Planning task", f"{plan.label}: {plan.detail}")
+
+    if plan.route == "image" and not attachments:
+        async for ev in _deliver_code_image(cid, model, user_content, gen_system, effort):
+            yield ev
+        return
+
+    if plan.route == "audio" and plan.unavailable_reason:
+        message = plan.unavailable_reason
+        message_id = await _persist_assistant(cid, message, model)
+        yield {"delta": message}
+        if message_id:
+            yield {"message_id": message_id}
+        yield {"done": True}
+        return
+
+    if plan.route == "project" and plan.unavailable_reason:
+        message = plan.unavailable_reason
+        message_id = await _persist_assistant(cid, message, model)
+        yield {"delta": message}
+        if message_id:
+            yield {"message_id": message_id}
+        yield {"done": True}
+        return
+
     # File generation routing: deterministic `docgen` first for normal documents; the sandboxed
-    # code path only when the request genuinely needs computation (charts, images, calculations).
-    if filegen.wants_file(user_content):
-        use_sandbox = filegen.needs_code(user_content) and sandbox.image_ready()
+    # code path only when the router selects artifacts that need computation, visuals, or audio.
+    if plan.route == "file":
+        use_sandbox = plan.uses_sandbox and sandbox.image_ready()
         if use_sandbox:
             yield reasoning_event("Selected generation path", "Sandboxed code execution (charts, images, or computed files).")
             result = None
@@ -693,6 +727,39 @@ async def stream_reply(
         yield event
 
 
+async def _deliver_code_image(
+    cid: uuid.UUID,
+    model: str,
+    user_content: str,
+    system_prompt: str | None,
+    effort: str | None,
+) -> AsyncIterator[dict]:
+    """Generate, persist, and stream a sanitized SVG artifact."""
+    yield {"status": "Rendering a safe SVG image..."}
+    yield reasoning_event("Selected generation path", "Sanitized code-rendered SVG image.")
+    try:
+        svg = await code_images.generate_svg(model, user_content, system_prompt, filegen.quality_effort(model, effort))
+    except ai.MissingKeyError as exc:
+        yield {"error": f"No API key for {exc.provider}. Add it in Settings."}
+        return
+    except Exception as exc:  # noqa: BLE001 - provider errors are sanitized upstream
+        yield {"error": str(exc)}
+        return
+
+    artifact = {
+        "kind": "svg",
+        "name": "orrery-generated-image.svg",
+        "mime": "image/svg+xml",
+        "content": svg,
+    }
+    message = "Created a code-rendered SVG image from your prompt."
+    message_id = await _persist_assistant(cid, message, model, [artifact])
+    yield {"artifact": artifact}
+    yield {"delta": message}
+    yield {"message_id": message_id}
+    yield {"done": True}
+
+
 async def stream_code_image(conv_id: str, user_content: str) -> AsyncIterator[dict]:
     """Generate a sanitized SVG artifact through the selected text model."""
     cid = uuid.UUID(conv_id)
@@ -719,28 +786,8 @@ async def stream_code_image(conv_id: str, user_content: str) -> AsyncIterator[di
         await s.commit()
 
     yield {"title": new_title}
-    yield {"status": "Rendering a safe SVG image..."}
-    try:
-        svg = await code_images.generate_svg(model, user_content, system_prompt, filegen.quality_effort(model, effort))
-    except ai.MissingKeyError as exc:
-        yield {"error": f"No API key for {exc.provider}. Add it in Settings."}
-        return
-    except Exception as exc:  # noqa: BLE001 - provider errors are sanitized upstream
-        yield {"error": str(exc)}
-        return
-
-    artifact = {
-        "kind": "svg",
-        "name": "orrery-generated-image.svg",
-        "mime": "image/svg+xml",
-        "content": svg,
-    }
-    message = "Created a code-rendered SVG image from your prompt."
-    message_id = await _persist_assistant(cid, message, model, [artifact])
-    yield {"artifact": artifact}
-    yield {"delta": message}
-    yield {"message_id": message_id}
-    yield {"done": True}
+    async for ev in _deliver_code_image(cid, model, user_content, system_prompt, effort):
+        yield ev
 
 
 async def regenerate(conv_id: str) -> AsyncIterator[dict]:

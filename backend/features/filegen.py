@@ -16,6 +16,7 @@ import asyncio
 import csv
 import io
 import re
+import wave
 import zipfile
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
@@ -23,7 +24,7 @@ from pathlib import PurePosixPath
 
 from backend.features import sandbox, skills
 from backend.features.prompting import build_system_prompt
-from backend.features.reasoning_trace import ReasoningCondenser, reasoning_event
+from backend.features.reasoning_trace import ThinkStream, reasoning_event
 from backend.providers import ai
 
 MAX_ATTEMPTS = 3
@@ -35,7 +36,8 @@ _CODE_FENCE = re.compile(r"```(?:python|py)?\s*\n([\s\S]*?)```", re.IGNORECASE)
 _FILE_INTENT = re.compile(
     r"\b(pdf|docx|word\s+doc(?:ument)?|excel|xlsx|spreadsheet|workbook|powerpoint|pptx|"
     r"presentation|slide\s*deck|slides?|deck|csv|chart|graph|plot|diagram|infographic|"
-    r"invoice|resume|cv|brochure|flyer|certificate|\.(?:pdf|docx?|xlsx?|pptx?|csv|png|jpe?g|gif|svg|zip))\b",
+    r"invoice|resume|cv|brochure|flyer|certificate|audio file|sound file|sound effect|"
+    r"\.(?:pdf|docx?|xlsx?|pptx?|csv|png|jpe?g|gif|svg|zip|wav|mp3))\b",
     re.IGNORECASE,
 )
 _CREATE_VERB = re.compile(
@@ -50,6 +52,7 @@ _CREATE_VERB = re.compile(
 _NEEDS_CODE = re.compile(
     r"\b(powerpoint|pptx|presentation|slide\s*deck|slides?|deck|"
     r"chart|graph|plot|diagram|figure|visuali[sz]|infographic|image|picture|photo|logo|icon|"
+    r"audio|sound|soundtrack|sound effect|sfx|tone|beep|voiceover|voice-over|narration|wav|mp3|"
     r"calculat|comput|analy[sz]|statistic|regression|simulat|forecast|matplotlib|seaborn|"
     r"\.(png|jpe?g|gif|svg|zip|tar))\b",
     re.IGNORECASE,
@@ -65,6 +68,8 @@ _FORMAT_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("jpg", re.compile(r"\bjpe?g\b|\.jpe?g\b", re.I)),
     ("gif", re.compile(r"\bgif\b|\.gif\b", re.I)),
     ("svg", re.compile(r"\bsvg\b|\.svg\b", re.I)),
+    ("wav", re.compile(r"\b(wav|sound effect|sfx|tone|beep)\b|\.wav\b", re.I)),
+    ("mp3", re.compile(r"\bmp3\b|\.mp3\b", re.I)),
     ("zip", re.compile(r"\bzip\b|\.zip\b", re.I)),
 )
 
@@ -83,6 +88,8 @@ _EXTENSION_TO_FORMAT = {
     "jpeg": "jpg",
     "gif": "gif",
     "svg": "svg",
+    "wav": "wav",
+    "mp3": "mp3",
     "zip": "zip",
     "md": "md",
     "txt": "txt",
@@ -130,6 +137,7 @@ _SYSTEM = (
     "- For PowerPoint: use a real 16:9 widescreen deck with a designed cover, and VARY the layouts across slides (section dividers, two-column comparisons, a metric/stat callout, an image or shape-based visual slide) — do NOT make every slide an identical title+bullets list. Use a consistent color theme, concise titles, a relevant drawn/generated visual or accent on most content slides, speaker notes where useful, generous spacing, and no overcrowded bullet dumps.\n"
     "- For PDF/Word: use headings, sections, tables where useful, page numbers or document metadata when appropriate, readable margins, and professional typography.\n"
     "- For Excel/CSV: create clean headers, typed rows, formatting, widths, freeze panes, filters, formulas only when useful, and neutralize formula-like user text when it should remain text.\n"
+    "- For WAV/audio files: use the Python standard library wave/math/struct modules to synthesize a real playable WAV when no audio library is available. Keep levels controlled to avoid clipping.\n"
     "Safety requirements:\n"
     "- Do not create, alter, imitate, backdate, or forge official, medical, academic, legal, banking, employment, immigration, or identity documents in a way that could deceive.\n"
     "- If the user asks for an official-document template or sample, make it clearly fictional/sample/watermarked and not usable as a real document.\n"
@@ -137,7 +145,7 @@ _SYSTEM = (
     "- Save every deliverable into the ./out directory (it already exists), with clear filenames and correct extensions.\n"
     "- Build real, complete, polished files that fully satisfy the request - never placeholders, stubs, or 'TODO' content.\n"
     "- Reopen or validate each generated file in code before finishing when the library supports it. If validation fails, fix the file before printing success.\n"
-    "- Available libraries: python-docx, openpyxl, XlsxWriter, python-pptx, reportlab, fpdf2, pandas, numpy, matplotlib (use matplotlib.use('Agg')), Pillow, markdown, beautifulsoup4, lxml, odfpy, plus the Python standard library.\n"
+    "- Available libraries: python-docx, openpyxl, XlsxWriter, python-pptx, reportlab, fpdf2, pandas, numpy, matplotlib (use matplotlib.use('Agg')), Pillow, markdown, beautifulsoup4, lxml, odfpy, plus the Python standard library including wave/math/struct for audio.\n"
     "- No network access of any kind; everything must work fully offline.\n"
     "- Images/visuals: the sandbox is OFFLINE — NEVER download images or fetch URLs (it will fail and "
     "waste the attempt). Create visuals in code instead: matplotlib charts, Pillow-drawn graphics/"
@@ -378,6 +386,34 @@ def _validate_svg(data: bytes) -> tuple[str, list[str]]:
     return text, ["parses_as_svg"]
 
 
+def _validate_wav(data: bytes) -> tuple[str, list[str]]:
+    with wave.open(io.BytesIO(data), "rb") as wav:
+        channels = wav.getnchannels()
+        sample_rate = wav.getframerate()
+        frames = wav.getnframes()
+        sample_width = wav.getsampwidth()
+
+    if channels < 1 or sample_rate < 8_000 or frames < 1 or sample_width < 1:
+        raise ValueError("WAV file has invalid or empty audio metadata.")
+
+    duration = frames / float(sample_rate)
+    if duration < 0.2:
+        raise ValueError("WAV file is too short to be useful.")
+
+    return "", [
+        "opens_as_wav",
+        f"channels:{channels}",
+        f"sample_rate:{sample_rate}",
+        f"duration_seconds:{duration:.2f}",
+    ]
+
+
+def _validate_mp3(data: bytes) -> tuple[str, list[str]]:
+    if not (data.startswith(b"ID3") or data[:2] in {b"\xff\xfb", b"\xff\xf3", b"\xff\xf2"}):
+        raise ValueError("MP3 file does not have a recognizable MP3 header.")
+    return "", ["has_mp3_header"]
+
+
 def _validate_zip(data: bytes) -> tuple[str, list[str]]:
     with zipfile.ZipFile(io.BytesIO(data)) as zf:
         names = zf.namelist()
@@ -431,6 +467,12 @@ def _extract_and_validate(file: sandbox.SandboxFile, request: str) -> FileCheck:
             text, checks = _validate_svg(file.data)
             check.checks.extend(checks)
             _check_text_quality(check, text, request, minimum_chars=20, require_text=False)
+        elif fmt == "wav":
+            _text, checks = _validate_wav(file.data)
+            check.checks.extend(checks)
+        elif fmt == "mp3":
+            _text, checks = _validate_mp3(file.data)
+            check.checks.extend(checks)
         elif fmt == "zip":
             text, checks = _validate_zip(file.data)
             check.checks.extend(checks)
@@ -549,16 +591,23 @@ async def run(
         )
 
         parts: list[str] = []
-        condenser = ReasoningCondenser()
+        think = ThinkStream()  # universal: separate reasoning channel OR inline <think>
         try:
             async for delta in ai.stream_chat(model, convo, instructions, file_effort):
                 if isinstance(delta, ai.ReasoningDelta):
-                    for ev in condenser.feed(str(delta)):  # condensed thinking, not raw CoT
+                    for ev in think.feed_reasoning(str(delta)):
                         yield ev
                     continue
-                parts.append(str(delta))
-            for ev in condenser.finish():
+                answer, events = think.feed(str(delta))
+                for ev in events:
+                    yield ev
+                if answer:
+                    parts.append(answer)
+            tail, events = think.finish()
+            for ev in events:
                 yield ev
+            if tail:
+                parts.append(tail)
         except ai.MissingKeyError as exc:
             yield {"result": {"ok": False, "error": f"No API key for {exc.provider}. Add it in Settings."}}
             return

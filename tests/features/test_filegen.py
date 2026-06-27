@@ -1,4 +1,7 @@
 import io
+import math
+import struct
+import wave
 
 import pytest
 
@@ -23,6 +26,21 @@ def _make_pptx(n_slides: int = 5) -> bytes:
     return buf.getvalue()
 
 
+def _make_wav() -> bytes:
+    buf = io.BytesIO()
+    sample_rate = 16_000
+    with wave.open(buf, "wb") as wav:
+        wav.setnchannels(1)
+        wav.setsampwidth(2)
+        wav.setframerate(sample_rate)
+        frames = []
+        for i in range(sample_rate):
+            sample = int(10_000 * math.sin(2 * math.pi * 440 * i / sample_rate))
+            frames.append(struct.pack("<h", sample))
+        wav.writeframes(b"".join(frames))
+    return buf.getvalue()
+
+
 def test_quality_effort_promotes_file_jobs():
     assert filegen.quality_effort("openai/gpt-test", None) == "high"
     assert filegen.quality_effort("openai/gpt-test", "low") == "high"
@@ -34,6 +52,9 @@ def test_needs_code_and_requested_formats():
     assert filegen.needs_code("Create a PNG chart from this data")
     assert not filegen.needs_code("Write a Word document about onboarding")
     assert filegen.requested_formats("make me a pdf and a pptx") == ["pdf", "pptx"]
+    assert filegen.wants_file("Create a WAV audio file for a notification sound")
+    assert filegen.needs_code("Create a WAV audio file for a notification sound")
+    assert filegen.requested_formats("Create a WAV audio file") == ["wav"]
 
 
 def test_official_document_safety():
@@ -65,6 +86,13 @@ def test_approve_accepts_real_pptx():
     approval = filegen._approve_files([deck], "Create a polished PowerPoint about Planet Earth")
     assert approval.ok
     assert approval.files and approval.files[0].name == "earth.pptx"
+
+
+def test_approve_accepts_real_wav():
+    audio = sandbox.SandboxFile("notification.wav", _make_wav())
+    approval = filegen._approve_files([audio], "Create a WAV audio file for a notification sound")
+    assert approval.ok
+    assert approval.files and approval.files[0].name == "notification.wav"
 
 
 @pytest.mark.anyio

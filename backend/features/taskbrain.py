@@ -1,4 +1,4 @@
-"""Task Brain — one observable ledger for all background work (OpenClaw-style).
+"""Task Brain — one observable ledger for all background work.
 
 Detached chat generations, queued jobs, and automations each get a row here so the UI can show
 what's running, resume it, or cancel it — instead of background work being invisible. The live

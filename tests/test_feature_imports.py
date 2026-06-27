@@ -21,4 +21,5 @@ def test_feature_modules_import():
     import backend.features.rag  # noqa: F401
     import backend.features.sandbox  # noqa: F401
     import backend.features.skills  # noqa: F401
+    import backend.features.taskrouter  # noqa: F401
     import backend.features.usage  # noqa: F401
