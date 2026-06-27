@@ -679,7 +679,7 @@ async def stream_reply(
             return
         yield {"status": ""}  # clear the progress note before the plain fallback reply streams
 
-    budget_system = gen_system + (f"\n\n{rag_context}" if rag_context else "")  # keep token budget honest
+    budget_system = (gen_system or "") + (f"\n\n{rag_context}" if rag_context else "")  # keep token budget honest
     messages = _limit_messages(messages, context_window, budget_system)
     async for event in _generate(cid, model, gen_system, messages, effort, rag_context):
         yield event
