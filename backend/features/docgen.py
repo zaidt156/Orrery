@@ -1240,10 +1240,8 @@ def _slide_card(title: str, bullets: list[str], number: int, cover: bool = False
 
 
 def build_pptx_preview_html(title: str, spec: dict) -> bytes:
-    """A preview that actually looks like a deck: each slide as a 16:9 card."""
+    """A preview that actually looks like a deck: each slide as a 16:9 card. Best-effort (no gate)."""
     spec = normalize_spec(spec)
-    validate_spec(spec, "pptx")
-
     deck_title = _s(spec.get("title")) or title
     subtitle = _s(spec.get("subtitle"))
     cards = [_slide_card(deck_title, [subtitle] if subtitle else [], 1, cover=True)]
@@ -1301,13 +1299,18 @@ def build_pptx_preview_html(title: str, spec: dict) -> bytes:
 
 
 def render_spec_preview(title: str, model: str, spec: dict, export_format: str) -> ExportResult:
+    # Preview is BEST-EFFORT: normalize for safety/bounds, but do NOT run the strict quality gates
+    # (placeholder/thin-content/reopen checks). Those guard final downloads; a preview must always
+    # render what's there rather than 500 on a borderline spec.
     spec = normalize_spec(deepcopy(spec))
-    validate_spec(spec, export_format)
-
     doc_title = _s(spec.get("title")) or title or "Document"
 
     if export_format == "pdf":
-        return render_spec(title, model, spec, "pdf")
+        return ExportResult(
+            exports.build_pdf(doc_title, model, _spec_to_blocks(spec)),
+            "application/pdf",
+            f"{exports._slug(doc_title)}.pdf",
+        )
 
     if export_format == "pptx":
         return ExportResult(
@@ -1317,11 +1320,8 @@ def render_spec_preview(title: str, model: str, spec: dict, export_format: str) 
         )
 
     markdown = spec_to_markdown(spec)
-    result = ExportResult(
+    return ExportResult(
         exports.build_preview_html(doc_title, model, markdown, export_format),
         "text/html; charset=utf-8",
         f"{exports._slug(doc_title)}-preview.html",
     )
-
-    validate_rendered_output(result, "html")
-    return result

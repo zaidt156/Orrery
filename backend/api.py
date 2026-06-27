@@ -648,6 +648,8 @@ def create_app(session_token: str) -> FastAPI:
             raise HTTPException(status_code=404, detail=str(exc)) from None
         except exports.ExportTooLarge as exc:
             raise HTTPException(status_code=413, detail=str(exc)) from None
+        except ValueError as exc:  # malformed/borderline spec — don't 500 the preview
+            raise HTTPException(status_code=422, detail=str(exc)[:200]) from None
         artifact_id = artifacts.register(result.content, result.media_type)
         return {"url": f"/artifacts/{artifact_id}", "kind": export_format}
 
