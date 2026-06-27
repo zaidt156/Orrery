@@ -264,3 +264,39 @@ sandboxed `filegen` when code/visuals/audio/computation; project → workspace).
 5. **Voice/TTS/STT**, sandbox security tests, DB read-only role guidance, and the long-term
    **Ollama-free local inference engine**.
 6. **Speed:** only *perceived* speed can improve at high effort (never cut effort).
+
+---
+
+# 12. Production-Hardening Plan — Task-Routing Core
+
+> "Fragile" here is specific and grounded, not a vibe. The *pieces* are well-tested
+> (`taskrouter`, `filegen`, `docgen`, `prompting`, `route_telemetry`, `_generate` — ~36 tests). The
+> risk is concentrated in **`chat.stream_reply`** (~158 lines): it does DB I/O *inline*, then planning,
+> then five route branches, detached-run wiring, and telemetry — all in one async generator, with **no
+> integration tests on the orchestration itself**. So the executors are safe, but changing the *glue*
+> can't be verified. The fix is seams + tests + decomposition, each phase shippable and green.
+
+### Phase A — Seams (make it testable)
+1. Extract `_prepare_turn(conv_id, content, attachments) -> TurnContext` (load conversation + history +
+   persist the user message). One mockable DB seam instead of inline I/O in the orchestrator.
+2. Add a `fake_db` pytest fixture (in-memory async session) so DB-touching code is testable without Postgres.
+
+### Phase B — Decompose the orchestrator
+3. Split `stream_reply` into a thin dispatcher + one handler per route — `_route_chat`, `_route_file`,
+   `_route_image`, `_route_audio`, `_route_project` — each a small single-responsibility async generator.
+   Verbatim move, no logic change; the full suite stays green.
+4. Centralize SSE event shapes (a typed `events` helper) so the stream protocol is explicit and consistent.
+
+### Phase C — Lock it down
+5. Integration tests for the dispatcher: each route → correct executor + events; fallback chain
+   (sandbox miss → docgen → plain reply); error, cancellation, and resume paths. Cheap once seams exist.
+6. Audit every external `await` (DB / ai / sandbox) for graceful degradation (most already guarded).
+7. CI gate: `compileall` + import smoke tests + full suite on every change.
+
+### Phase D — Resilience polish
+8. Bound all retry loops + add timeouts at every boundary (filegen already caps at 3; ledger is
+   timeout-isolated) and confirm cancellation can't orphan a run.
+9. `UserSafeError` with codes → consistent, actionable error events in the UI.
+
+**Outcome:** a small readable dispatcher, every route independently tested, regressions caught by CI,
+no inline DB I/O in the orchestrator. That is "production-ready, not fragile."
