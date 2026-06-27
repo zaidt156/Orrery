@@ -23,7 +23,7 @@ from pathlib import PurePosixPath
 
 from backend.features import sandbox, skills
 from backend.features.prompting import build_system_prompt
-from backend.features.reasoning_trace import reasoning_event
+from backend.features.reasoning_trace import ReasoningCondenser, reasoning_event
 from backend.providers import ai
 
 MAX_ATTEMPTS = 3
@@ -542,11 +542,16 @@ async def run(
         )
 
         parts: list[str] = []
+        condenser = ReasoningCondenser()
         try:
             async for delta in ai.stream_chat(model, convo, instructions, file_effort):
                 if isinstance(delta, ai.ReasoningDelta):
-                    continue  # raw model reasoning is private — never sent to the browser
+                    for ev in condenser.feed(str(delta)):  # condensed thinking, not raw CoT
+                        yield ev
+                    continue
                 parts.append(str(delta))
+            for ev in condenser.finish():
+                yield ev
         except ai.MissingKeyError as exc:
             yield {"result": {"ok": False, "error": f"No API key for {exc.provider}. Add it in Settings."}}
             return

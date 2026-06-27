@@ -20,7 +20,7 @@ from backend.core.models import Conversation, Message
 from backend.features import code_images, docgen, filegen, rag, sandbox, skills
 from backend.features import files as file_library
 from backend.features.prompting import build_system_prompt
-from backend.features.reasoning_trace import reasoning_event, reasoning_summary
+from backend.features.reasoning_trace import ReasoningCondenser, reasoning_event
 from backend.providers import ai
 from backend.security import privacy
 
@@ -393,13 +393,17 @@ async def _generate(cid: uuid.UUID, model: str, system_prompt: str | None, messa
     # Code/creative work (code, web apps, SVGs, diagrams, building things) always gets high effort.
     gen_effort = filegen.quality_effort(model, effort) if _wants_high_effort(user_text) else effort
     log_event(_log, "chat_generate_started", model=model, rag=bool(untrusted_context), effort=gen_effort or "default")
-    yield reasoning_event("Understanding the request", "Reading your message and selecting how to respond.")
+    condenser = ReasoningCondenser()  # turn the model's real reasoning into short step lines
     try:
         async for delta in ai.stream_chat(model, messages, formatted_prompt, gen_effort, usage_out):
             if isinstance(delta, ai.ReasoningDelta):
-                continue  # raw model reasoning is private — never sent to the browser or saved
+                for ev in condenser.feed(str(delta)):  # condensed summary, not raw chain-of-thought
+                    yield ev
+                continue
             parts.append(delta)
             yield {"delta": delta}
+        for ev in condenser.finish():
+            yield ev
     except ai.MissingKeyError as exc:
         yield {"error": f"No API key for {exc.provider}. Add it in Settings."}
         return
@@ -411,11 +415,6 @@ async def _generate(cid: uuid.UUID, model: str, system_prompt: str | None, messa
         if parts:  # runs on normal completion AND on client-cancel (GeneratorExit)
             message_id = await _persist_assistant(cid, _strip_think("".join(parts)), model)
     if message_id:
-        yield reasoning_summary("How this was produced", [
-            "Read your request and selected the response path.",
-            "Loaded the conversation context and any selected documents.",
-            "Generated the reply and validated its formatting.",
-        ])
         yield {"message_id": message_id}
     if usage_out.get("tokens_out") or usage_out.get("tokens_in"):
         # exact per-message token count (API/custom routes report it); the UI shows a live
@@ -476,10 +475,16 @@ async def _deliver_docspec(cid: uuid.UUID, model: str, request: str, system_prom
         app_rules=FORMAT_INSTRUCTIONS, user_preferences=system_prompt, untrusted_context=untrusted_context,
     )
     parts: list[str] = []
+    condenser = ReasoningCondenser()
     try:
         async for delta in ai.stream_chat(model, [{"role": "user", "content": request}], instructions, filegen.quality_effort(model, effort)):
-            if not isinstance(delta, ai.ReasoningDelta):
-                parts.append(str(delta))
+            if isinstance(delta, ai.ReasoningDelta):
+                for ev in condenser.feed(str(delta)):
+                    yield ev
+                continue
+            parts.append(str(delta))
+        for ev in condenser.finish():
+            yield ev
     except Exception:  # noqa: BLE001 — fall through to a normal reply
         return
     content = "".join(parts)

@@ -116,8 +116,8 @@ async def test_generate_adds_markdown_format_instructions(monkeypatch):
     assert "fenced code blocks" in seen["system_prompt"]
     assert "Be concise." in seen["system_prompt"]
     assert seen["effort"] == "high"
-    # a safe reasoning_event precedes the answer; raw model reasoning is never streamed
-    assert "reasoning_event" in events[0]
+    # the answer streams as deltas; raw model reasoning is never streamed verbatim (only condensed
+    # reasoning_event steps are allowed, and this fake stream emits none)
     assert {"delta": "ok"} in events
     assert not any("reasoning" in e and "reasoning_event" not in e and "reasoning_summary" not in e for e in events)
     assert events[-1] == {"done": True}
