@@ -19,7 +19,7 @@ import {
   getModels, listCollections, listConversations, getConversation, createConversation,
   updateConversation, deleteConversation, streamMessage, regenerateMessage,
   downloadMessageExport, streamCodeImage, createArtifact, previewExport, saveClientFile,
-  downloadGeneratedFile, previewGeneratedFile, stopGeneration, resumeGeneration,
+  downloadGeneratedFile, previewGeneratedFile, stopGeneration, resumeGeneration, listProjects,
 } from "../lib/api.js";
 import {
   EXPORT_FORMATS, requestedFileFormats, precedingUserText,
@@ -73,6 +73,8 @@ export default function Chat() {
   const [useData, setUseData] = useState(false);
   const [collections, setCollections] = useState([]);
   const [dataColl, setDataColl] = useState("");
+  const [projects, setProjects] = useState([]);
+  const [projectId, setProjectId] = useState("");
   const [effort, setEffort] = useState("");
   const [artifact, setArtifact] = useState(null); // { url, title, sandbox } for the preview sidebar
 
@@ -122,6 +124,7 @@ export default function Chat() {
     (async () => {
       const modelsReq = getModels();
       const collectionsReq = listCollections();
+      const projectsReq = listProjects();
       let hasConversations = false;
 
       try {
@@ -129,12 +132,19 @@ export default function Chat() {
         if (!alive) return;
         setConvos(c.conversations);
         hasConversations = c.conversations.length > 0;
-        if (hasConversations) await open(c.conversations[0].id);
+        const pending = sessionStorage.getItem("orrery_open_conversation");
+        const target = pending && c.conversations.find((item) => item.id === pending);
+        if (target) {
+          sessionStorage.removeItem("orrery_open_conversation");
+          await open(target.id);
+        } else if (hasConversations) {
+          await open(c.conversations[0].id);
+        }
       } catch (e) {
         if (alive) setBanner(String(e.message || e));
       }
 
-      const [m, cols] = await Promise.allSettled([modelsReq, collectionsReq]);
+      const [m, cols, projs] = await Promise.allSettled([modelsReq, collectionsReq, projectsReq]);
       if (!alive) return;
       if (m.status === "fulfilled") {
         setModels(m.value.models);
@@ -157,6 +167,9 @@ export default function Chat() {
       if (cols.status === "fulfilled") {
         setCollections(cols.value.collections);
         if (cols.value.collections[0]) setDataColl(cols.value.collections[0].id);
+      }
+      if (projs.status === "fulfilled") {
+        setProjects(projs.value.projects);
       }
     })();
     return () => { alive = false; };
@@ -193,12 +206,24 @@ export default function Chat() {
     return () => window.removeEventListener("orrery-models-changed", refreshModels);
   }, []);
 
+  useEffect(() => {
+    async function refreshProjects() {
+      try {
+        const data = await listProjects();
+        setProjects(data.projects);
+      } catch { /* keep current project list on transient failures */ }
+    }
+    window.addEventListener("orrery-projects-changed", refreshProjects);
+    return () => window.removeEventListener("orrery-projects-changed", refreshProjects);
+  }, []);
+
   async function open(id) {
     const full = await getConversation(id);
     activeIdRef.current = id;
     setActiveId(id);
     setMessages(full.messages);
     setModel(full.model);
+    setProjectId(full.project_id || "");
     setSystemPrompt(full.system_prompt || "");
     setEffort(full.effort || "");
     setContextWindow(String(full.context_window || 1000000));
@@ -218,15 +243,24 @@ export default function Chat() {
     }
   }
 
+  async function chooseProject(v) {
+    setProjectId(v);
+    if (activeId) {
+      const patch = await updateConversation(activeId, { project_id: v || null });
+      setConvos((p) => p.map((c) => (c.id === activeId ? { ...c, project_id: patch.project_id || null } : c)));
+    }
+  }
+
   async function newChat() {
     if (!model) { setBanner("Connect an account or add an API key in Settings to pick a model."); return; }
     const conv = await createConversation(
       model,
       systemPrompt || null,
       effort || null,
-      Number(contextWindow)
+      Number(contextWindow),
+      projectId || null
     );
-    setConvos((p) => [{ id: conv.id, title: conv.title, model: conv.model }, ...p]);
+    setConvos((p) => [{ id: conv.id, title: conv.title, model: conv.model, project_id: conv.project_id || null }, ...p]);
     setActiveId(conv.id);
     setMessages([]);
   }
@@ -280,6 +314,12 @@ export default function Chat() {
         else if (ev.reasoning_summary) setLast({ summary: ev.reasoning_summary });
         else if (ev.artifact) setLast({ artifacts: [ev.artifact] });
         else if (ev.files) setLast({ artifacts: ev.files, status: "" });
+        else if (ev.project) {
+          setProjects((p) => [ev.project, ...p.filter((item) => item.id !== ev.project.id)]);
+          setProjectId(ev.project.id);
+          setConvos((p) => p.map((c) => (c.id === cid ? { ...c, project_id: ev.project.id } : c)));
+          window.dispatchEvent(new CustomEvent("orrery-projects-changed"));
+        }
         else if (ev.status) appendStep(setMessages, ev.status);
         else if (ev.title) setConvos((p) => p.map((c) => (c.id === cid ? { ...c, title: ev.title } : c)));
         else if (ev.sources) setLast({ sources: ev.sources });
@@ -319,11 +359,12 @@ export default function Chat() {
         model,
         systemPrompt || null,
         effort || null,
-        Number(contextWindow)
+        Number(contextWindow),
+        projectId || null
       );
       cid = conv.id;
       setActiveId(cid);
-      setConvos((p) => [{ id: conv.id, title: conv.title, model: conv.model }, ...p]);
+      setConvos((p) => [{ id: conv.id, title: conv.title, model: conv.model, project_id: conv.project_id || null }, ...p]);
     }
     const atts = rawAttachments;
     const collectionId = useData && dataColl ? dataColl : null;
@@ -410,6 +451,7 @@ export default function Chat() {
   const fileIcon = (kind) => (kind === "image" ? "🖼" : kind === "pdf" ? "📕" : "📄");
 
   const title = convos.find((c) => c.id === activeId)?.title || "New chat";
+  const projectName = (id) => projects.find((p) => p.id === id)?.name || "";
   const current = models.find((m) => m.id === model);
   const modelLabel = current?.label || model || "pick a model";
   const noKey = !!model && !current;
@@ -432,7 +474,7 @@ export default function Chat() {
             >
               <div className="c-main">
                 <div className="c-title">{c.title}</div>
-                <div className="c-meta">{c.model}</div>
+                <div className="c-meta">{projectName(c.project_id) ? `${projectName(c.project_id)} · ` : ""}{c.model}</div>
               </div>
               <button className="convo-del" title="Delete chat" onClick={(e) => removeChat(c.id, e)}>×</button>
             </div>
@@ -470,6 +512,15 @@ export default function Chat() {
           <span className="pill" title="Edit system prompt" onClick={() => setPromptOpen((v) => !v)}>
             System prompt
           </span>
+          <select
+            className="effort-pick context-pick project-pick"
+            value={projectId}
+            onChange={(e) => chooseProject(e.target.value)}
+            title="Attach this chat to a project. Project instructions are used as trusted context."
+          >
+            <option value="">No project</option>
+            {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
           <select
             className="effort-pick context-pick"
             value={contextWindow}

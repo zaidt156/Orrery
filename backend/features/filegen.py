@@ -556,6 +556,7 @@ async def run(
     system_prompt: str | None,
     effort: str | None,
     untrusted_context: str | None = None,
+    trusted_context: str | None = None,
 ) -> AsyncIterator[dict]:
     """Yield progress events and a final {'result': {...}} with approved files or an error."""
     safety_error = _official_document_error(request)
@@ -568,6 +569,7 @@ async def run(
         app_rules=_SYSTEM,
         skills_block=skills.skills_prompt(request),
         user_preferences=system_prompt,
+        trusted_context=trusted_context,
         untrusted_context=untrusted_context,
     )
     convo: list[dict] = [{"role": "user", "content": request}]

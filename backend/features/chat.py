@@ -16,8 +16,9 @@ from sqlalchemy import select
 from backend.core.config import settings
 from backend.core.database import get_sessionmaker
 from backend.core.observability import log_event
-from backend.core.models import Conversation, Message
+from backend.core.models import Conversation, Message, Project
 from backend.features import code_images, docgen, filegen, rag, sandbox, skills, taskbrain, taskrouter
+from backend.features import projects as project_store
 from backend.features import files as file_library
 from backend.features.prompting import build_system_prompt
 from backend.features.reasoning_trace import ThinkStream, reasoning_event
@@ -232,7 +233,13 @@ async def list_conversations() -> list[dict]:
             await s.execute(select(Conversation).order_by(Conversation.updated_at.desc()))
         ).scalars().all()
         return [
-            {"id": str(c.id), "title": c.title, "model": c.model, "updated_at": c.updated_at.isoformat()}
+            {
+                "id": str(c.id),
+                "project_id": str(c.project_id) if c.project_id else None,
+                "title": c.title,
+                "model": c.model,
+                "updated_at": c.updated_at.isoformat(),
+            }
             for c in rows
         ]
 
@@ -242,9 +249,17 @@ async def create_conversation(
     system_prompt: str | None,
     effort: str | None = None,
     context_window: int = DEFAULT_CONTEXT_WINDOW,
+    project_id: str | None = None,
 ) -> dict:
     async with get_sessionmaker()() as s:
+        project_uuid = None
+        if project_id:
+            project = await s.get(Project, uuid.UUID(project_id))
+            if project is None:
+                raise ValueError("Project not found")
+            project_uuid = project.id
         conv = Conversation(
+            project_id=project_uuid,
             model=model,
             system_prompt=system_prompt or None,
             effort=effort or None,
@@ -253,7 +268,8 @@ async def create_conversation(
         s.add(conv)
         await s.commit()
         await s.refresh(conv)
-        return {"id": str(conv.id), "title": conv.title, "model": conv.model,
+        return {"id": str(conv.id), "project_id": str(conv.project_id) if conv.project_id else None,
+                "title": conv.title, "model": conv.model,
                 "system_prompt": conv.system_prompt, "effort": conv.effort,
                 "context_window": _effective_context_window(conv.context_window), "messages": []}
 
@@ -270,6 +286,7 @@ async def get_conversation(conv_id: str) -> dict | None:
         ).scalars().all()
         return {
             "id": str(conv.id), "title": conv.title, "model": conv.model,
+            "project_id": str(conv.project_id) if conv.project_id else None,
             "system_prompt": conv.system_prompt, "effort": conv.effort,
             "context_window": _effective_context_window(conv.context_window),
             "messages": [
@@ -295,6 +312,7 @@ async def update_conversation(
     system_prompt=_UNSET,
     effort=_UNSET,
     context_window=_UNSET,
+    project_id=_UNSET,
 ) -> dict | None:
     async with get_sessionmaker()() as s:
         conv = await s.get(Conversation, uuid.UUID(conv_id))
@@ -308,9 +326,18 @@ async def update_conversation(
             conv.effort = (effort or None)
         if context_window is not _UNSET:
             conv.context_window = context_window
+        if project_id is not _UNSET:
+            if project_id:
+                project = await s.get(Project, uuid.UUID(project_id))
+                if project is None:
+                    return None
+                conv.project_id = project.id
+            else:
+                conv.project_id = None
         await s.commit()
         await s.refresh(conv)
-        return {"id": str(conv.id), "title": conv.title, "model": conv.model,
+        return {"id": str(conv.id), "project_id": str(conv.project_id) if conv.project_id else None,
+                "title": conv.title, "model": conv.model,
                 "system_prompt": conv.system_prompt, "effort": conv.effort,
                 "context_window": _effective_context_window(conv.context_window)}
 
@@ -378,7 +405,15 @@ def _wants_high_effort(text: str) -> bool:
     return bool(text and _HIGH_EFFORT_INTENT.search(text))
 
 
-async def _generate(cid: uuid.UUID, model: str, system_prompt: str | None, messages: list[dict], effort: str | None = None, untrusted_context: str | None = None) -> AsyncIterator[dict]:
+async def _generate(
+    cid: uuid.UUID,
+    model: str,
+    system_prompt: str | None,
+    messages: list[dict],
+    effort: str | None = None,
+    untrusted_context: str | None = None,
+    trusted_context: str | None = None,
+) -> AsyncIterator[dict]:
     """Stream the assistant reply and persist it (saved even if the client cancels)."""
     parts: list[str] = []
     message_id: str | None = None
@@ -388,6 +423,7 @@ async def _generate(cid: uuid.UUID, model: str, system_prompt: str | None, messa
         app_rules=FORMAT_INSTRUCTIONS,
         skills_block=skills.skills_prompt(user_text),
         user_preferences=system_prompt,
+        trusted_context=trusted_context,
         untrusted_context=untrusted_context,
     )
     # Code/creative work (code, web apps, SVGs, diagrams, building things) always gets high effort.
@@ -475,12 +511,23 @@ async def _conv_title(cid: uuid.UUID) -> str:
         return (conv.title if conv and conv.title else None) or "Orrery file"
 
 
-async def _deliver_docspec(cid: uuid.UUID, model: str, request: str, system_prompt: str | None, effort: str | None, untrusted_context: str | None = None) -> AsyncIterator[dict]:
+async def _deliver_docspec(
+    cid: uuid.UUID,
+    model: str,
+    request: str,
+    system_prompt: str | None,
+    effort: str | None,
+    untrusted_context: str | None = None,
+    trusted_context: str | None = None,
+) -> AsyncIterator[dict]:
     """Reliable fallback when code-execution misses: ask for a structured spec, then build the
     file deterministically with docgen and deliver it. Yields nothing if no spec comes back."""
     yield {"status": "Creating the file structure…"}
     instructions = build_system_prompt(
-        app_rules=FORMAT_INSTRUCTIONS, user_preferences=system_prompt, untrusted_context=untrusted_context,
+        app_rules=FORMAT_INSTRUCTIONS,
+        user_preferences=system_prompt,
+        trusted_context=trusted_context,
+        untrusted_context=untrusted_context,
     )
     parts: list[str] = []
     think = ThinkStream()  # universal: separate reasoning channel OR inline <think>
@@ -622,6 +669,7 @@ async def stream_reply(
             yield {"error": "Conversation not found."}
             return
         model, system_prompt, effort = conv.model, conv.system_prompt, conv.effort
+        project_id = conv.project_id
         context_window = _effective_context_window(conv.context_window)
 
         history = (
@@ -646,6 +694,9 @@ async def stream_reply(
     yield {"title": new_title}
 
     gen_system = system_prompt        # user's standing instructions only
+    trusted_context = await project_store.trusted_context(project_id)
+    if trusted_context:
+        yield reasoning_event("Preparing project context", "Loaded the current project's standing context and instructions.")
     rag_context = None                 # retrieved docs — passed separately as UNTRUSTED context
     if collection_id and user_content.strip():
         block, sources = await _rag_context(model, collection_id, user_content)
@@ -662,6 +713,20 @@ async def stream_reply(
         async for ev in _deliver_code_image(cid, model, user_content, gen_system, effort):
             yield ev
         return
+
+    if plan.route == "project":
+        project_name = project_store.name_from_prompt(user_content)
+        if project_name:
+            project = await project_store.create_project(project_name)
+            await project_store.set_conversation_project(str(cid), project["id"])
+            message = f"Created project **{project['name']}** and attached this chat to it."
+            message_id = await _persist_assistant(cid, message, model)
+            yield {"project": project}
+            yield {"delta": message}
+            if message_id:
+                yield {"message_id": message_id}
+            yield {"done": True}
+            return
 
     if plan.route == "audio" and plan.unavailable_reason:
         message = plan.unavailable_reason
@@ -688,7 +753,7 @@ async def stream_reply(
         if use_sandbox:
             yield reasoning_event("Selected generation path", "Sandboxed code execution (charts, images, or computed files).")
             result = None
-            async for ev in filegen.run(model, user_content, gen_system, effort, rag_context):
+            async for ev in filegen.run(model, user_content, gen_system, effort, rag_context, trusted_context):
                 if "result" in ev:
                     result = ev["result"]
                 else:
@@ -713,7 +778,7 @@ async def stream_reply(
         else:
             yield reasoning_event("Selected generation path", "Deterministic document builder.")
         delivered = False
-        async for ev in _deliver_docspec(cid, model, user_content, gen_system, effort, rag_context):
+        async for ev in _deliver_docspec(cid, model, user_content, gen_system, effort, rag_context, trusted_context):
             if "files" in ev:
                 delivered = True
             yield ev
@@ -721,9 +786,9 @@ async def stream_reply(
             return
         yield {"status": ""}  # clear the progress note before the plain fallback reply streams
 
-    budget_system = (gen_system or "") + (f"\n\n{rag_context}" if rag_context else "")  # keep token budget honest
+    budget_system = "\n\n".join(part for part in (gen_system, trusted_context, rag_context) if part)
     messages = _limit_messages(messages, context_window, budget_system)
-    async for event in _generate(cid, model, gen_system, messages, effort, rag_context):
+    async for event in _generate(cid, model, gen_system, messages, effort, rag_context, trusted_context):
         yield event
 
 
@@ -800,6 +865,7 @@ async def regenerate(conv_id: str) -> AsyncIterator[dict]:
             yield {"error": "Conversation not found."}
             return
         model, system_prompt, effort = conv.model, conv.system_prompt, conv.effort
+        project_id = conv.project_id
         context_window = _effective_context_window(conv.context_window)
 
         history = (
@@ -818,6 +884,8 @@ async def regenerate(conv_id: str) -> AsyncIterator[dict]:
             return
         messages = [{"role": m.role, "content": m.context or m.content} for m in history]
 
-    messages = _limit_messages(messages, context_window, system_prompt)
-    async for event in _generate(cid, model, system_prompt, messages, effort):
+    trusted_context = await project_store.trusted_context(project_id)
+    budget_system = "\n\n".join(part for part in (system_prompt, trusted_context) if part)
+    messages = _limit_messages(messages, context_window, budget_system)
+    async for event in _generate(cid, model, system_prompt, messages, effort, trusted_context=trusted_context):
         yield event

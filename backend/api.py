@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field, field_validator
 from backend.core import appconfig, database
 from backend.core.config import settings
 from backend.core.observability import new_request_id
-from backend.features import artifacts, chat, data, exports, feedback, filepreview, local_models, rag, usage
+from backend.features import artifacts, chat, data, exports, feedback, filepreview, local_models, projects, rag, usage
 from backend.features import files as file_library
 from backend.providers import accounts, ai, catalog
 from backend.security import secrets
@@ -47,6 +47,7 @@ class NewConversation(BaseModel):
     system_prompt: str | None = None
     effort: str | None = None
     context_window: Literal[131072, 262144, 1000000] = 1000000
+    project_id: str | None = None
 
 
 class UpdateConversation(BaseModel):
@@ -54,6 +55,7 @@ class UpdateConversation(BaseModel):
     system_prompt: str | None = None
     effort: str | None = None
     context_window: Literal[131072, 262144, 1000000] | None = None
+    project_id: str | None = None
 
 
 class Attachment(BaseModel):
@@ -130,6 +132,12 @@ class NewFeedback(BaseModel):
     message: str
     contact: str = ""
     context: str = ""
+
+
+class ProjectBody(BaseModel):
+    name: str = Field(default="", max_length=160)
+    description: str = Field(default="", max_length=2000)
+    instructions: str = Field(default="", max_length=8000)
 
 
 class NewConnection(BaseModel):
@@ -551,6 +559,70 @@ def create_app(session_token: str) -> FastAPI:
     async def collection_search(cid: str, q: str, k: int = 5) -> dict:
         return {"results": await rag.search(cid, q, k)}
 
+    # --- projects ---
+    @r.get("/projects")
+    async def projects_list() -> dict:
+        return {"projects": await projects.list_projects()}
+
+    @r.post("/projects")
+    async def projects_create(body: ProjectBody) -> dict:
+        return await projects.create_project(body.name, body.description, body.instructions)
+
+    @r.get("/projects/{pid}")
+    async def projects_get(pid: str) -> dict:
+        try:
+            project = await projects.get_project(pid)
+        except ValueError:
+            raise HTTPException(status_code=404, detail="Project not found") from None
+        if project is None:
+            raise HTTPException(status_code=404, detail="Project not found")
+        return project
+
+    @r.patch("/projects/{pid}")
+    async def projects_update(pid: str, body: ProjectBody) -> dict:
+        try:
+            project = await projects.update_project(
+                pid,
+                name=body.name,
+                description=body.description,
+                instructions=body.instructions,
+            )
+        except ValueError:
+            raise HTTPException(status_code=404, detail="Project not found") from None
+        if project is None:
+            raise HTTPException(status_code=404, detail="Project not found")
+        return project
+
+    @r.delete("/projects/{pid}")
+    async def projects_delete(pid: str) -> dict:
+        try:
+            deleted = await projects.delete_project(pid)
+        except ValueError:
+            deleted = False
+        if not deleted:
+            raise HTTPException(status_code=404, detail="Project not found")
+        return {"deleted": True}
+
+    @r.post("/projects/{pid}/conversations/{cid}")
+    async def projects_attach_conversation(pid: str, cid: str) -> dict:
+        try:
+            conv = await projects.set_conversation_project(cid, pid)
+        except ValueError:
+            raise HTTPException(status_code=404, detail="Project or conversation not found") from None
+        if conv is None:
+            raise HTTPException(status_code=404, detail="Project or conversation not found")
+        return conv
+
+    @r.delete("/conversations/{cid}/project")
+    async def conversation_clear_project(cid: str) -> dict:
+        try:
+            conv = await projects.set_conversation_project(cid, None)
+        except ValueError:
+            raise HTTPException(status_code=404, detail="Conversation not found") from None
+        if conv is None:
+            raise HTTPException(status_code=404, detail="Conversation not found")
+        return conv
+
     # --- conversations ---
     @r.get("/conversations")
     async def conversations() -> dict:
@@ -558,9 +630,12 @@ def create_app(session_token: str) -> FastAPI:
 
     @r.post("/conversations")
     async def new_conversation(body: NewConversation) -> dict:
-        return await chat.create_conversation(
-            body.model, body.system_prompt, body.effort, body.context_window
-        )
+        try:
+            return await chat.create_conversation(
+                body.model, body.system_prompt, body.effort, body.context_window, body.project_id
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from None
 
     @r.get("/conversations/{cid}")
     async def conversation(cid: str) -> dict:
@@ -573,7 +648,10 @@ def create_app(session_token: str) -> FastAPI:
     @r.patch("/conversations/{cid}")
     async def patch_conversation(cid: str, body: UpdateConversation) -> dict:
         provided = body.model_dump(exclude_unset=True)
-        conv = await chat.update_conversation(cid, **provided)
+        try:
+            conv = await chat.update_conversation(cid, **provided)
+        except ValueError:
+            raise HTTPException(status_code=404, detail="Conversation or project not found") from None
         if conv is None:
             raise HTTPException(status_code=404, detail="Conversation not found")
         return conv

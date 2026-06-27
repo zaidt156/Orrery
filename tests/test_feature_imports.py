@@ -18,6 +18,7 @@ def test_feature_modules_import():
     import backend.features.filepreview  # noqa: F401
     import backend.features.files  # noqa: F401
     import backend.features.local_models  # noqa: F401
+    import backend.features.projects  # noqa: F401
     import backend.features.rag  # noqa: F401
     import backend.features.sandbox  # noqa: F401
     import backend.features.skills  # noqa: F401

@@ -150,9 +150,19 @@ export const createCollection = (name) => apiSend("/api/collections", "POST", { 
 export const deleteCollection = (id) => apiSend(`/api/collections/${id}`, "DELETE");
 export const uploadDocuments = (id, files) => apiSend(`/api/collections/${id}/documents`, "POST", { files });
 
+export const listProjects = () => apiGet("/api/projects");
+export const createProject = (project) => apiSend("/api/projects", "POST", project);
+export const getProject = (id) => apiGet(`/api/projects/${id}`);
+export const updateProject = (id, project) => apiSend(`/api/projects/${id}`, "PATCH", project);
+export const deleteProject = (id) => apiSend(`/api/projects/${id}`, "DELETE");
+export const attachConversationToProject = (projectId, conversationId) =>
+  apiSend(`/api/projects/${projectId}/conversations/${conversationId}`, "POST");
+export const removeConversationFromProject = (conversationId) =>
+  apiSend(`/api/conversations/${conversationId}/project`, "DELETE");
+
 export const listConversations = () => apiGet("/api/conversations");
-export const createConversation = (model, system_prompt, effort, context_window) =>
-  apiSend("/api/conversations", "POST", { model, system_prompt, effort, context_window });
+export const createConversation = (model, system_prompt, effort, context_window, project_id = null) =>
+  apiSend("/api/conversations", "POST", { model, system_prompt, effort, context_window, project_id });
 export const getConversation = (id) => apiGet(`/api/conversations/${id}`);
 export const updateConversation = (id, patch) => apiSend(`/api/conversations/${id}`, "PATCH", patch);
 export const deleteConversation = (id) => apiSend(`/api/conversations/${id}`, "DELETE");

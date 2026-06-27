@@ -668,3 +668,17 @@ citations**. Photorealistic image/video adapters and the reusable media library 
   sandbox to synthesize WAV with standard-library audio tools, and validates WAV/MP3 outputs before delivery.
 - **More skills.** Added image, audio, sandbox, and project skill playbooks so models get the right procedure
   automatically instead of making the user specify every mode.
+
+## Step 55 - Project workspaces wired into chat (June 27, 2026)
+
+- **Projects are real data now.** Added a `projects` table plus nullable `conversations.project_id`, with
+  additive migrations so existing chats remain untouched.
+- **Project API.** Added list/create/get/update/delete project endpoints and conversation assignment endpoints.
+- **Trusted project context.** Chats attached to a project now load that project's description/instructions as
+  trusted context in the prompt builder, separate from untrusted RAG/uploaded document text.
+- **Projects UI.** Added a Projects tab for creating/editing project metadata, viewing project chats, and jumping
+  back into Chat. Chat also has a project selector in the header so new and existing chats can be grouped.
+- **Project intent routing.** Clear prompts like "create a project workspace for Acme" now create the project
+  and attach the current chat automatically through the backend router.
+- **Safety boundary preserved.** Project text is user-owned preference/context only; it does not grant tools,
+  bypass sandbox limits, or override app rules.

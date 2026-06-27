@@ -133,7 +133,6 @@ def plan(user_text: str, *, has_attachments: bool = False) -> TaskPlan:
             confidence=0.72,
             skills=("project",),
             output_mode="chat",
-            unavailable_reason="Project workspaces are planned, but the database/API/UI layer is not enabled yet.",
         )
 
     return TaskPlan(

@@ -57,7 +57,7 @@ Routes map to existing safe executors:
 - `image`: sanitized SVG generation through `backend/features/code_images.py`
 - `file`: deterministic `docgen` first, sandboxed `filegen` when visuals, computation, audio, or complex artifacts are needed
 - `audio`: explicit audio files route through file generation; live voice/TTS/STT remains unavailable until providers are configured
-- `project`: currently reports planned status; the database/API/UI layer is next
+- `project`: project workspaces group chats and provide trusted standing instructions
 
 ### 4. Sandbox Boundary
 
@@ -85,10 +85,11 @@ and validation. These are safe operational summaries, not raw chain-of-thought.
 - Expanded file generation to recognize WAV/MP3/audio-file requests.
 - Added WAV and MP3 validation.
 - Added image/audio/sandbox/project skill playbooks.
+- Added project workspaces with database storage, API endpoints, a UI tab, chat assignment, and trusted project context in prompts.
 
 ## Next Architecture Work
 
-1. Project workspaces: database model, API, UI tab, project-scoped instructions, and artifact links.
+1. Project artifacts: link generated files, collections, and future automations to projects.
 2. Voice settings: provider registry for TTS, STT, microphone input, playback, and voice safety policy.
 3. Skill memory: record which skill stack worked for each completed task and reuse it in project context.
 4. Media adapters: image/video providers behind the same capability planner.

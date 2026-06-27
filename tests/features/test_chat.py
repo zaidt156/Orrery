@@ -109,12 +109,15 @@ async def test_generate_adds_markdown_format_instructions(monkeypatch):
         "Be concise.",
         [{"role": "user", "content": "show code"}],
         "high",
+        trusted_context="Project: Acme rollout\n\nStanding project instructions:\nUse the Acme terminology.",
     ):
         events.append(event)
 
     assert "GitHub-flavored Markdown" in seen["system_prompt"]
     assert "fenced code blocks" in seen["system_prompt"]
     assert "Be concise." in seen["system_prompt"]
+    assert "Project: Acme rollout" in seen["system_prompt"]
+    assert "TRUSTED CONTEXT" in seen["system_prompt"]
     assert seen["effort"] == "high"
     # the answer streams as deltas; raw model reasoning is never streamed verbatim (only condensed
     # reasoning_event steps are allowed, and this fake stream emits none)

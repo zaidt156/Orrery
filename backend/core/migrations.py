@@ -75,6 +75,20 @@ async def run_migrations() -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         # additive column migrations (create_all only creates missing tables, not columns)
+        await conn.execute(text("ALTER TABLE conversations ADD COLUMN IF NOT EXISTS project_id UUID"))
+        await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_conversations_project_id ON conversations (project_id)"))
+        await conn.execute(text(
+            """
+            DO $$
+            BEGIN
+                ALTER TABLE conversations
+                ADD CONSTRAINT fk_conversations_project_id
+                FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE SET NULL;
+            EXCEPTION WHEN duplicate_object THEN
+                NULL;
+            END $$;
+            """
+        ))
         await conn.execute(text("ALTER TABLE conversations ADD COLUMN IF NOT EXISTS effort VARCHAR(10)"))
         await conn.execute(text("ALTER TABLE conversations ADD COLUMN IF NOT EXISTS context_window INTEGER"))
         await conn.execute(text("UPDATE conversations SET context_window = 1000000 WHERE context_window IS NULL"))
