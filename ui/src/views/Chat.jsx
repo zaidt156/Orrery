@@ -45,6 +45,7 @@ const PROVIDER_NAME = {
   anthropic: "Anthropic",
   openai: "OpenAI",
   gemini: "Google",
+  openrouter: "OpenRouter",
   ollama: "Ollama",
   claude_plan: "Claude plan",
   chatgpt_plan: "Codex / ChatGPT plan",

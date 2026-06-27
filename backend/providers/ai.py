@@ -21,13 +21,14 @@ PROVIDERS: dict[str, dict] = {
     "google": {"label": "Google", "needs_key": True},
     "mistral": {"label": "Mistral (EU)", "needs_key": True},
     "deepseek": {"label": "DeepSeek", "needs_key": True},
+    "openrouter": {"label": "OpenRouter", "needs_key": True},
     "ollama": {"label": "Ollama (local)", "needs_key": False},
 }
 
 # litellm routing prefix → our canonical provider name
 _PREFIX_TO_PROVIDER = {
     "anthropic": "anthropic", "openai": "openai", "gemini": "google",
-    "mistral": "mistral", "deepseek": "deepseek", "ollama": "ollama",
+    "mistral": "mistral", "deepseek": "deepseek", "openrouter": "openrouter", "ollama": "ollama",
 }
 
 _OLLAMA_BASE = "http://localhost:11434"
@@ -310,6 +311,47 @@ def _curate_passthrough(items: list[dict]) -> list[dict]:
     return items[:4]
 
 
+# OpenRouter aggregates hundreds of models; keep popular providers' chat models and cap the list so
+# the picker/catalog stays usable. litellm routes "openrouter/<id>" natively with the OpenRouter key.
+_OPENROUTER_KEEP = ("anthropic/", "openai/", "google/", "meta-llama/", "mistralai/", "deepseek/", "qwen/", "x-ai/", "cohere/")
+
+
+async def _fetch_openrouter(key: str) -> list[dict]:
+    async with httpx.AsyncClient(timeout=15) as c:
+        r = await c.get("https://openrouter.ai/api/v1/models", headers={"Authorization": f"Bearer {key}"})
+        r.raise_for_status()
+        data = r.json().get("data", [])
+    out: list[dict] = []
+    for m in data:
+        mid = m.get("id") or ""
+        low = mid.lower()
+        if not mid.startswith(_OPENROUTER_KEEP):
+            continue
+        if any(x in low for x in (":free", "-free", "preview", "deprecated", "-vision", "embed")):
+            continue
+        out.append({"id": f"openrouter/{mid}", "label": m.get("name") or mid, "provider": "openrouter"})
+    out.sort(key=lambda it: it["label"].lower())
+    return out[:60]
+
+
+def _curate_openrouter(items: list[dict]) -> list[dict]:
+    """Pick a few flagships across families for auto-activation when the key is first added."""
+    picked: list[dict] = []
+    for kw in ("claude", "gpt", "gemini", "llama", "deepseek"):
+        for it in items:
+            if kw in it["label"].lower() and it not in picked:
+                picked.append(it)
+                break
+        if len(picked) >= 4:
+            break
+    for it in items:
+        if len(picked) >= 4:
+            break
+        if it not in picked:
+            picked.append(it)
+    return picked[:4]
+
+
 async def _cached(name: str, fn, *args) -> list[dict]:
     now = time.time()
     hit = _cache.get(name)
@@ -340,8 +382,9 @@ _DISCOVERY: dict[str, tuple] = {
     "google": (_fetch_google, _curate_google),
     "mistral": (_fetch_mistral, _curate_mistral),
     "deepseek": (_fetch_deepseek, _curate_passthrough),
+    "openrouter": (_fetch_openrouter, _curate_openrouter),
 }
-_KEYED = ("anthropic", "openai", "google", "mistral", "deepseek")
+_KEYED = ("anthropic", "openai", "google", "mistral", "deepseek", "openrouter")
 
 
 async def provider_models(provider: str) -> list[dict]:

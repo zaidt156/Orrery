@@ -51,14 +51,14 @@ const notifyModelsChanged = () => window.dispatchEvent(new Event("orrery-models-
 const ICON = {
   claude_plan: "C", chatgpt_plan: "O", gemini_plan: "G",
   anthropic: "A", openai: "O", google: "G",
-  mistral: "M", deepseek: "D", ollama: "L", custom: "+",
+  mistral: "M", deepseek: "D", openrouter: "R", ollama: "L", custom: "+",
 };
 
 const PROVIDER_LABEL = {
   claude_plan: "Claude plan (Claude Code)", chatgpt_plan: "ChatGPT plan (Codex CLI)",
   gemini_plan: "Google account (Gemini CLI)", anthropic: "Anthropic", openai: "OpenAI",
   google: "Google", mistral: "Mistral (EU)", deepseek: "DeepSeek",
-  ollama: "Ollama (local)", custom: "Custom models",
+  openrouter: "OpenRouter", ollama: "Ollama (local)", custom: "Custom models",
 };
 
 const SETTINGS_SECTIONS = [
