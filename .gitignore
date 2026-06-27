@@ -61,6 +61,7 @@ docs/history/*
 !docs/planning/
 docs/planning/*
 !docs/planning/TASK_ROUTING_ARCHITECTURE.md
+!docs/planning/ORRERY_PLAN.md
 !skills/
 skills/*
 !skills/*.md
