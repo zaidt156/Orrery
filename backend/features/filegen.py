@@ -44,10 +44,12 @@ _CREATE_VERB = re.compile(
     re.IGNORECASE,
 )
 
-# File requests that genuinely need code execution (charts, images, computation). Plain
-# documents/decks/spreadsheets should be routed by chat.py to the deterministic docgen builder.
+# File requests that benefit from the richer code-execution path. PRESENTATIONS go here too:
+# the model designs the deck freely (varied layouts, visuals) instead of the fixed docgen template —
+# docgen remains the fast fallback. Plain Word/Excel/PDF docs still route to docgen first.
 _NEEDS_CODE = re.compile(
-    r"\b(chart|graph|plot|diagram|figure|visuali[sz]|infographic|image|picture|photo|logo|icon|"
+    r"\b(powerpoint|pptx|presentation|slide\s*deck|slides?|deck|"
+    r"chart|graph|plot|diagram|figure|visuali[sz]|infographic|image|picture|photo|logo|icon|"
     r"calculat|comput|analy[sz]|statistic|regression|simulat|forecast|matplotlib|seaborn|"
     r"\.(png|jpe?g|gif|svg|zip|tar))\b",
     re.IGNORECASE,
@@ -125,7 +127,7 @@ _SYSTEM = (
     "- Think like a senior document designer and production engineer before writing code. The file must be complete, polished, useful, and directly tailored to the user's request.\n"
     "- Never create placeholder, stub, filler, lorem ipsum, TODO, empty, single-slide, or generic template files unless the user explicitly requested a template.\n"
     "- Use the strongest suitable library for the format: python-pptx for PPTX, reportlab/fpdf2 for PDF, python-docx for Word, openpyxl/XlsxWriter for Excel, pandas only when it helps.\n"
-    "- For PowerPoint: use a real widescreen deck, a designed cover slide, clear slide hierarchy, concise slide titles, useful speaker notes when appropriate, balanced spacing, readable type sizes, restrained colors, and no overcrowded bullet dumps.\n"
+    "- For PowerPoint: use a real 16:9 widescreen deck with a designed cover, and VARY the layouts across slides (section dividers, two-column comparisons, a metric/stat callout, an image or shape-based visual slide) — do NOT make every slide an identical title+bullets list. Use a consistent color theme, concise titles, a relevant drawn/generated visual or accent on most content slides, speaker notes where useful, generous spacing, and no overcrowded bullet dumps.\n"
     "- For PDF/Word: use headings, sections, tables where useful, page numbers or document metadata when appropriate, readable margins, and professional typography.\n"
     "- For Excel/CSV: create clean headers, typed rows, formatting, widths, freeze panes, filters, formulas only when useful, and neutralize formula-like user text when it should remain text.\n"
     "Safety requirements:\n"
@@ -137,6 +139,11 @@ _SYSTEM = (
     "- Reopen or validate each generated file in code before finishing when the library supports it. If validation fails, fix the file before printing success.\n"
     "- Available libraries: python-docx, openpyxl, XlsxWriter, python-pptx, reportlab, fpdf2, pandas, numpy, matplotlib (use matplotlib.use('Agg')), Pillow, markdown, beautifulsoup4, lxml, odfpy, plus the Python standard library.\n"
     "- No network access of any kind; everything must work fully offline.\n"
+    "- Images/visuals: the sandbox is OFFLINE — NEVER download images or fetch URLs (it will fail and "
+    "waste the attempt). Create visuals in code instead: matplotlib charts, Pillow-drawn graphics/"
+    "diagrams/icons, or python-pptx shapes and color blocks. If the user asks for photos you cannot "
+    "draw, use tasteful shape/gradient graphics or clearly labeled placeholders and PROCEED — never let "
+    "missing images block the file.\n"
     "- Do not read or write outside ./out. print() the name of each file you create.\n"
     "- Create only the file types the user asked for, unless they explicitly request companion exports."
 )
