@@ -609,6 +609,16 @@ def create_app(session_token: str) -> FastAPI:
         # Re-attach to a generation that's still running in the background (client navigated away).
         return _sse(chat.resume(cid))
 
+    @r.get("/tasks")
+    async def list_tasks() -> dict:
+        from backend.features import taskbrain
+        return {"tasks": await taskbrain.recent(50)}
+
+    @r.post("/tasks/{task_id}/cancel")
+    async def cancel_task(task_id: str) -> dict:
+        from backend.features import taskbrain
+        return {"canceled": await taskbrain.cancel(task_id)}
+
     @r.get("/conversations/{cid}/messages/{mid}/export/{export_format}")
     async def export_reply(cid: str, mid: str, export_format: str) -> Response:
         if export_format not in exports.SUPPORTED_FORMATS:

@@ -17,7 +17,7 @@ from backend.core.config import settings
 from backend.core.database import get_sessionmaker
 from backend.core.observability import log_event
 from backend.core.models import Conversation, Message
-from backend.features import code_images, docgen, filegen, rag, sandbox, skills
+from backend.features import code_images, docgen, filegen, rag, sandbox, skills, taskbrain
 from backend.features import files as file_library
 from backend.features.prompting import build_system_prompt
 from backend.features.reasoning_trace import ReasoningCondenser, reasoning_event
@@ -519,24 +519,39 @@ _run_tasks: dict[str, asyncio.Task] = {}
 def start_detached(conv_id: str, source: AsyncIterator[dict]) -> asyncio.Queue:
     """Drive a generation to completion in a background task (it persists in its own finally),
     pushing events to a queue the HTTP request observes. Client disconnect stops the observer,
-    not the task — so the reply finishes and is saved regardless."""
+    not the task — so the reply finishes and is saved regardless. Recorded in the Task Brain."""
     cancel_run(conv_id)
     queue: asyncio.Queue = asyncio.Queue()
     _run_queues[conv_id] = queue
 
     async def drive() -> None:
+        task_id: str | None = None
+        status = "done"
         try:
+            try:  # the Task Brain ledger is best-effort and must NEVER hang or fail the generation
+                title = await asyncio.wait_for(_conv_title(uuid.UUID(conv_id)), timeout=5)
+                task_id = await asyncio.wait_for(taskbrain.start("chat", title, conv_id), timeout=5)
+            except Exception:  # noqa: BLE001 — ledger down/slow → just skip recording
+                task_id = None
             async for event in source:
+                if "error" in event:
+                    status = "failed"
                 queue.put_nowait(event)
         except asyncio.CancelledError:
+            status = "canceled"
             raise
         except Exception as exc:  # noqa: BLE001 — surface a sanitized error
+            status = "failed"
             queue.put_nowait({"error": str(exc)})
         finally:
             queue.put_nowait(_RUN_DONE)
             if _run_queues.get(conv_id) is queue:
                 _run_queues.pop(conv_id, None)
             _run_tasks.pop(conv_id, None)
+            try:
+                await asyncio.wait_for(taskbrain.finish(task_id, status), timeout=5)
+            except Exception:  # noqa: BLE001 — ledger update is best-effort
+                pass
 
     _run_tasks[conv_id] = asyncio.create_task(drive())
     return queue

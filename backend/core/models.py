@@ -4,7 +4,7 @@ import datetime
 import uuid
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import Computed, DateTime, Float, ForeignKey, Index, Integer, String, Text, func
+from sqlalchemy import CheckConstraint, Computed, DateTime, Float, ForeignKey, Index, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import TSVECTOR
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -103,6 +103,34 @@ class UsageEvent(Base):
     tokens_in: Mapped[int] = mapped_column(Integer, default=0)
     tokens_out: Mapped[int] = mapped_column(Integer, default=0)
     cost: Mapped[float] = mapped_column(Float, default=0.0)
+
+
+class Task(Base):
+    __tablename__ = "tasks"
+
+    # Unified "Task Brain" ledger (OpenClaw-style): one observable row per background unit of work —
+    # detached chat generations, queued jobs, and automations — so the user can see what's running,
+    # resume it, or cancel it. Survives navigation; orphaned 'running' rows are reconciled on boot.
+    __table_args__ = (
+        CheckConstraint("kind IN ('chat', 'job', 'automation')", name="ck_tasks_kind"),
+        CheckConstraint(
+            "status IN ('running', 'queued', 'done', 'failed', 'canceled', 'interrupted')",
+            name="ck_tasks_status",
+        ),
+        Index("ix_tasks_created_at", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    kind: Mapped[str] = mapped_column(String(20))
+    title: Mapped[str] = mapped_column(String(300))
+    status: Mapped[str] = mapped_column(String(20), default="running")
+    conversation_id: Mapped[uuid.UUID | None] = mapped_column(PGUUID(as_uuid=True), nullable=True)
+    detail: Mapped[str | None] = mapped_column(Text, nullable=True)  # error / short note, sanitized
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+    finished_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class Feedback(Base):

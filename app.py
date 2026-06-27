@@ -98,6 +98,9 @@ async def _boot_and_serve() -> None:
     from backend.features import files as _files
     _files.cleanup()  # prune generated files past their TTL so tmp/ doesn't grow forever
 
+    from backend.features import taskbrain as _taskbrain
+    await _taskbrain.reconcile_orphans()  # mark last run's 'running' tasks as interrupted
+
     api = create_app(SESSION_TOKEN)
     config = uvicorn.Config(
         api, host=settings.api_host, port=settings.api_port, log_level="info", access_log=False
