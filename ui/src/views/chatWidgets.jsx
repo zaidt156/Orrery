@@ -2,7 +2,59 @@
 // thinking/working indicators. Kept out of Chat.jsx to keep that file focused.
 import { useEffect, useState } from "react";
 import { Download, Eye } from "lucide-react";
-import { saveClientFile } from "../lib/api.js";
+import { saveClientFile, getTasks, cancelTask } from "../lib/api.js";
+
+// Task Brain: a live, collapsible ledger of background work (chat generations, jobs, automations)
+// so the user can see what's running, jump to it, or cancel it. Polls; also refreshes on demand.
+export function TaskBrainPanel({ onOpenConversation }) {
+  const [tasks, setTasks] = useState([]);
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    const load = () => getTasks().then((r) => alive && setTasks(r.tasks || [])).catch(() => {});
+    load();
+    const id = setInterval(load, 4000);
+    window.addEventListener("orrery-tasks-changed", load);
+    return () => { alive = false; clearInterval(id); window.removeEventListener("orrery-tasks-changed", load); };
+  }, []);
+
+  if (!tasks.length) return null;
+  const active = tasks.filter((t) => t.status === "running" || t.status === "queued");
+
+  async function cancel(id) {
+    try { await cancelTask(id); } finally { window.dispatchEvent(new Event("orrery-tasks-changed")); }
+  }
+
+  return (
+    <div className="taskbrain">
+      <button className="tb-head" onClick={() => setOpen((v) => !v)}>
+        Activity{active.length ? <span className="tb-badge">{active.length}</span> : null}
+        <span className="think-caret">{open ? "▾" : "▸"}</span>
+      </button>
+      {open && (
+        <div className="tb-list">
+          {tasks.slice(0, 10).map((t) => (
+            <div key={t.id} className={`tb-row tb-${t.status}`}>
+              <span className="tb-dot" aria-hidden="true" />
+              <button
+                className="tb-title"
+                title={t.detail || t.status}
+                onClick={() => t.conversation_id && onOpenConversation?.(t.conversation_id)}
+              >
+                {t.title}
+              </button>
+              <span className="tb-status">{t.status}</span>
+              {(t.status === "running" || t.status === "queued") && (
+                <button className="tb-cancel" title="Cancel" onClick={() => cancel(t.id)}>×</button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 // Requested file controls: click the file chip to preview; use the download icon to save.
 export function ReplyFiles({ formats, onPreview, onDownload }) {

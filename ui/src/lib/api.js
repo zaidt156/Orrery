@@ -92,6 +92,8 @@ export const getBranding = () => apiGet("/api/branding");
 export const setBranding = (branding) => apiSend("/api/branding", "PUT", branding);
 export const getPrivacy = () => apiGet("/api/privacy");
 export const setPrivacy = (mode) => apiSend("/api/privacy", "PUT", { mode });
+export const getTasks = () => apiGet("/api/tasks");
+export const cancelTask = (id) => apiSend(`/api/tasks/${id}/cancel`, "POST");
 export const getUsage = () => apiGet("/api/usage");
 export const setSpendCap = (cap) => apiSend("/api/usage/cap", "PUT", cap);
 export const submitFeedback = (payload) => apiSend("/api/feedback", "POST", payload);

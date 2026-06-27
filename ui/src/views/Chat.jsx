@@ -26,7 +26,7 @@ import {
   extractHtml, stripDocSpec, specFormats, extractSvgs, splitThink,
 } from "./chatHelpers.jsx";
 import {
-  ReplyFiles, InlineSvg, CodeImageArtifact, GeneratedFileCard, ThinkingPulse, ReasoningPanel,
+  ReplyFiles, InlineSvg, CodeImageArtifact, GeneratedFileCard, ThinkingPulse, ReasoningPanel, TaskBrainPanel,
 } from "./chatWidgets.jsx";
 
 const EFFORTS = ["", "low", "medium", "high", "xhigh"];
@@ -437,6 +437,7 @@ export default function Chat() {
             </div>
           ))}
         </div>
+        <TaskBrainPanel onOpenConversation={open} />
       </aside>
 
       <div className="chat-main">

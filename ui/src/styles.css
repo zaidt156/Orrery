@@ -300,6 +300,25 @@ body{
 .trace-detail{color:var(--muted)}
 .trace-summary{margin:8px 0 2px; padding-left:20px; color:var(--muted)}
 .trace-summary li{margin:2px 0}
+/* Task Brain (Activity) panel in the chat sidebar */
+.taskbrain{margin-top:auto; border-top:1px solid var(--line); padding-top:8px}
+.tb-head{width:100%; background:none; border:none; cursor:pointer; padding:6px 2px; display:flex; align-items:center; gap:6px;
+  font-family:var(--font-mono); font-size:10.5px; letter-spacing:.06em; text-transform:uppercase; color:var(--faint)}
+.tb-badge{background:var(--ice-dim); color:var(--ice); border-radius:99px; padding:0 6px; font-size:10px}
+.tb-list{display:flex; flex-direction:column; gap:2px; margin-top:4px; max-height:200px; overflow:auto}
+.tb-row{display:flex; align-items:center; gap:6px; font-size:11.5px; padding:3px 2px}
+.tb-dot{width:7px; height:7px; border-radius:50%; background:var(--faint); flex:none}
+.tb-running .tb-dot{background:var(--ice); animation:tb-pulse 1.4s ease-in-out infinite}
+.tb-queued .tb-dot{background:#F2B14E}
+.tb-done .tb-dot{background:#5BC489}
+.tb-failed .tb-dot,.tb-interrupted .tb-dot{background:#E0667A}
+.tb-canceled .tb-dot{background:var(--faint)}
+@keyframes tb-pulse{0%,100%{opacity:1}50%{opacity:.35}}
+.tb-title{flex:1; min-width:0; background:none; border:none; cursor:pointer; text-align:left; color:var(--text);
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.tb-status{color:var(--faint); font-family:var(--font-mono); font-size:9.5px; text-transform:uppercase}
+.tb-cancel{background:none; border:none; cursor:pointer; color:var(--faint); font-size:14px; line-height:1; padding:0 2px}
+.tb-cancel:hover{color:#E0667A}
 .prompt-text{word-break:break-word; text-align:left}
 .prompt-text > *:first-child{margin-top:0}
 .prompt-text > *:last-child{margin-bottom:0}
