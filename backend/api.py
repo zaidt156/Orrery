@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field, field_validator
 from backend.core import appconfig, database
 from backend.core.config import settings
 from backend.core.observability import new_request_id
-from backend.features import artifacts, chat, data, exports, feedback, filepreview, local_models, projects, rag, usage
+from backend.features import artifacts, chat, data, exports, feedback, filepreview, local_models, projects, rag, route_telemetry, usage
 from backend.features import files as file_library
 from backend.providers import accounts, ai, catalog
 from backend.security import secrets
@@ -691,6 +691,10 @@ def create_app(session_token: str) -> FastAPI:
     async def list_tasks() -> dict:
         from backend.features import taskbrain
         return {"tasks": await taskbrain.recent(50)}
+
+    @r.get("/task-routes")
+    async def task_routes() -> dict:
+        return await route_telemetry.summary()
 
     @r.post("/tasks/{task_id}/cancel")
     async def cancel_task(task_id: str) -> dict:

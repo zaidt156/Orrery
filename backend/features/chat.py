@@ -17,7 +17,7 @@ from backend.core.config import settings
 from backend.core.database import get_sessionmaker
 from backend.core.observability import log_event
 from backend.core.models import Conversation, Message, Project
-from backend.features import code_images, docgen, filegen, rag, sandbox, skills, taskbrain, taskrouter
+from backend.features import code_images, docgen, filegen, rag, route_telemetry, sandbox, skills, taskbrain, taskrouter
 from backend.features import projects as project_store
 from backend.features import files as file_library
 from backend.features.prompting import FORMAT_INSTRUCTIONS, build_system_prompt, strip_think as _strip_think
@@ -482,12 +482,17 @@ async def stream_reply(
             yield reasoning_event("Preparing context", f"Loaded {len(sources)} document(s) from your collection to answer from.")
 
     plan = taskrouter.plan(user_content, has_attachments=bool(attachments))
+    route_event_id = await route_telemetry.record_plan(str(cid), plan, has_attachments=bool(attachments))
     if plan.route != "chat" or attachments:
         yield reasoning_event("Planning task", f"{plan.label}: {plan.detail}")
 
     if plan.route == "image" and not attachments:
+        outcome = "completed"
         async for ev in _deliver_code_image(cid, model, user_content, gen_system, effort):
+            if "error" in ev:
+                outcome = "failed"
             yield ev
+        await route_telemetry.record_outcome(route_event_id, outcome)
         return
 
     if plan.route == "project":
@@ -502,6 +507,7 @@ async def stream_reply(
             if message_id:
                 yield {"message_id": message_id}
             yield {"done": True}
+            await route_telemetry.record_outcome(route_event_id, "completed")
             return
 
     if plan.route == "audio" and plan.unavailable_reason:
@@ -511,6 +517,7 @@ async def stream_reply(
         if message_id:
             yield {"message_id": message_id}
         yield {"done": True}
+        await route_telemetry.record_outcome(route_event_id, "unavailable", "voice provider not configured")
         return
 
     if plan.route == "project" and plan.unavailable_reason:
@@ -520,13 +527,16 @@ async def stream_reply(
         if message_id:
             yield {"message_id": message_id}
         yield {"done": True}
+        await route_telemetry.record_outcome(route_event_id, "unavailable", "project route unavailable")
         return
 
     # File generation routing: deterministic `docgen` first for normal documents; the sandboxed
     # code path only when the router selects artifacts that need computation, visuals, or audio.
     if plan.route == "file":
         use_sandbox = plan.uses_sandbox and sandbox.image_ready()
+        sandbox_attempted = False
         if use_sandbox:
+            sandbox_attempted = True
             yield reasoning_event("Selected generation path", "Sandboxed code execution (charts, images, or computed files).")
             result = None
             async for ev in filegen.run(model, user_content, gen_system, effort, rag_context, trusted_context):
@@ -549,6 +559,7 @@ async def stream_reply(
                     yield {"files": produced}
                     yield {"message_id": message_id}
                     yield {"done": True}
+                    await route_telemetry.record_outcome(route_event_id, "sandbox_success")
                     return
             # sandbox missed → fall through to the deterministic builder so we never come up empty
         else:
@@ -559,13 +570,21 @@ async def stream_reply(
                 delivered = True
             yield ev
         if delivered:
+            outcome = "sandbox_fallback" if sandbox_attempted else "deterministic_success"
+            await route_telemetry.record_outcome(route_event_id, outcome)
             return
+        await route_telemetry.record_outcome(route_event_id, "deterministic_failed")
         yield {"status": ""}  # clear the progress note before the plain fallback reply streams
 
     budget_system = "\n\n".join(part for part in (gen_system, trusted_context, rag_context) if part)
     messages = _limit_messages(messages, context_window, budget_system)
+    outcome = "completed"
     async for event in _generate(cid, model, gen_system, messages, effort, rag_context, trusted_context):
+        if "error" in event:
+            outcome = "failed"
         yield event
+    if plan.route in {"chat", "project"}:
+        await route_telemetry.record_outcome(route_event_id, outcome)
 
 
 async def _deliver_code_image(

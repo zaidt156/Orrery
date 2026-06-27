@@ -86,6 +86,7 @@ and validation. These are safe operational summaries, not raw chain-of-thought.
 - Added WAV and MP3 validation.
 - Added image/audio/sandbox/project skill playbooks.
 - Added project workspaces with database storage, API endpoints, a UI tab, hierarchical chat listing, scoped chat start, chat assignment, and trusted project context in prompts.
+- Added planner telemetry for route counts, outcomes, sandbox fallbacks, and deterministic-builder fallbacks without storing prompt text or generated content.
 
 ## Next Architecture Work
 
@@ -93,7 +94,7 @@ and validation. These are safe operational summaries, not raw chain-of-thought.
 2. Voice settings: provider registry for TTS, STT, microphone input, playback, and voice safety policy.
 3. Skill memory: record which skill stack worked for each completed task and reuse it in project context.
 4. Media adapters: image/video providers behind the same capability planner.
-5. Planner telemetry: task-route counts, fallback counts, sandbox failure reasons, and file quality failures.
+5. Native tool-call loop and tool-level telemetry for the capability-agent phase.
 
 ---
 

@@ -35,6 +35,32 @@ _VERSIONED_MIGRATIONS: list[tuple[str, list[str]]] = [
         "CREATE INDEX IF NOT EXISTS ix_chunks_embedding_hnsw ON chunks "
         "USING hnsw (embedding vector_cosine_ops) WITH (m = 16, ef_construction = 64)",
     ]),
+    ("0003_task_route_events", [
+        "CREATE TABLE IF NOT EXISTS task_route_events ("
+        "id UUID PRIMARY KEY, "
+        "conversation_id UUID NULL REFERENCES conversations(id) ON DELETE SET NULL, "
+        "route VARCHAR(20) NOT NULL, "
+        "label VARCHAR(80) NOT NULL, "
+        "output_mode VARCHAR(20) NOT NULL, "
+        "skills VARCHAR(300) NOT NULL DEFAULT '', "
+        "confidence DOUBLE PRECISION NOT NULL DEFAULT 0, "
+        "has_attachments BOOLEAN NOT NULL DEFAULT FALSE, "
+        "sandbox_policy VARCHAR(20) NOT NULL DEFAULT 'none', "
+        "outcome VARCHAR(40) NOT NULL DEFAULT 'planned', "
+        "detail TEXT NULL, "
+        "created_at TIMESTAMPTZ DEFAULT now(), "
+        "CONSTRAINT ck_task_route_events_route CHECK (route IN ('chat', 'file', 'image', 'audio', 'project')), "
+        "CONSTRAINT ck_task_route_events_output_mode CHECK (output_mode IN ('chat', 'file', 'artifact', 'audio')), "
+        "CONSTRAINT ck_task_route_events_sandbox_policy CHECK (sandbox_policy IN ('none', 'preferred', 'required')), "
+        "CONSTRAINT ck_task_route_events_outcome CHECK (outcome IN ("
+        "'planned', 'completed', 'failed', 'unavailable', "
+        "'sandbox_success', 'sandbox_fallback', 'sandbox_failed', "
+        "'deterministic_success', 'deterministic_failed'))"
+        ")",
+        "CREATE INDEX IF NOT EXISTS ix_task_route_events_conversation_id ON task_route_events (conversation_id)",
+        "CREATE INDEX IF NOT EXISTS ix_task_route_events_route_created ON task_route_events (route, created_at)",
+        "CREATE INDEX IF NOT EXISTS ix_task_route_events_outcome_created ON task_route_events (outcome, created_at)",
+    ]),
 ]
 
 

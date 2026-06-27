@@ -20,6 +20,7 @@ def test_feature_modules_import():
     import backend.features.local_models  # noqa: F401
     import backend.features.projects  # noqa: F401
     import backend.features.rag  # noqa: F401
+    import backend.features.route_telemetry  # noqa: F401
     import backend.features.sandbox  # noqa: F401
     import backend.features.skills  # noqa: F401
     import backend.features.taskrouter  # noqa: F401

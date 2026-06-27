@@ -4,7 +4,7 @@ import datetime
 import uuid
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import CheckConstraint, Computed, DateTime, Float, ForeignKey, Index, Integer, String, Text, func
+from sqlalchemy import Boolean, CheckConstraint, Computed, DateTime, Float, ForeignKey, Index, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import TSVECTOR
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -127,7 +127,7 @@ class UsageEvent(Base):
 class Task(Base):
     __tablename__ = "tasks"
 
-    # Unified "Task Brain" ledger (OpenClaw-style): one observable row per background unit of work —
+    # Unified "Task Brain" ledger : one observable row per background unit of work —
     # detached chat generations, queued jobs, and automations — so the user can see what's running,
     # resume it, or cancel it. Survives navigation; orphaned 'running' rows are reconciled on boot.
     __table_args__ = (
@@ -150,6 +150,49 @@ class Task(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
     finished_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class TaskRouteEvent(Base):
+    __tablename__ = "task_route_events"
+
+    # Durable route telemetry for production hardening. These rows intentionally store capability
+    # decisions and sanitized outcomes only; they never store the user's prompt or generated content.
+    __table_args__ = (
+        CheckConstraint("route IN ('chat', 'file', 'image', 'audio', 'project')", name="ck_task_route_events_route"),
+        CheckConstraint(
+            "output_mode IN ('chat', 'file', 'artifact', 'audio')",
+            name="ck_task_route_events_output_mode",
+        ),
+        CheckConstraint(
+            "sandbox_policy IN ('none', 'preferred', 'required')",
+            name="ck_task_route_events_sandbox_policy",
+        ),
+        CheckConstraint(
+            "outcome IN ("
+            "'planned', 'completed', 'failed', 'unavailable', "
+            "'sandbox_success', 'sandbox_fallback', 'sandbox_failed', "
+            "'deterministic_success', 'deterministic_failed'"
+            ")",
+            name="ck_task_route_events_outcome",
+        ),
+        Index("ix_task_route_events_route_created", "route", "created_at"),
+        Index("ix_task_route_events_outcome_created", "outcome", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    conversation_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("conversations.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    route: Mapped[str] = mapped_column(String(20))
+    label: Mapped[str] = mapped_column(String(80))
+    output_mode: Mapped[str] = mapped_column(String(20))
+    skills: Mapped[str] = mapped_column(String(300), default="")
+    confidence: Mapped[float] = mapped_column(Float, default=0.0)
+    has_attachments: Mapped[bool] = mapped_column(Boolean, default=False)
+    sandbox_policy: Mapped[str] = mapped_column(String(20), default="none")
+    outcome: Mapped[str] = mapped_column(String(40), default="planned")
+    detail: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class Feedback(Base):

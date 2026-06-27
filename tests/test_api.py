@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from backend.api import Branding, NewConversation, create_app
-from backend.features import exports
+from backend.features import exports, route_telemetry
 from backend.providers import accounts
 from backend.security import secrets
 
@@ -174,3 +174,20 @@ def test_reply_export_rejects_unsupported_format():
     )
 
     assert r.status_code == 404
+
+
+def test_task_route_summary_endpoint(monkeypatch):
+    async def fake_summary():
+        return {
+            "routes": {"chat": 2, "file": 1},
+            "outcomes": {"completed": 2, "sandbox_fallback": 1},
+            "recent": [],
+        }
+
+    monkeypatch.setattr(route_telemetry, "summary", fake_summary)
+
+    r = _client().get("/api/task-routes", headers={"X-Orrery-Token": TOKEN})
+
+    assert r.status_code == 200
+    assert r.json()["routes"]["chat"] == 2
+    assert "sandbox_fallback" in r.json()["outcomes"]

@@ -693,3 +693,13 @@ citations**. Photorealistic image/video adapters and the reusable media library 
   most recent global chat in that case.
 - **Logo refresh.** Updated the full `assets/orrery-logo.svg` and the in-app rail mark with a sharper orbital
   identity, better depth, and cleaner planet/orbit geometry.
+
+## Step 57 - Architecture docs pass and planner telemetry (June 27, 2026)
+
+- **Docs reconciled before more hardening.** Re-read the tracked docs, local architecture implementation file,
+  security references, and skill playbooks so already-implemented production items are not duplicated.
+- **Planner telemetry.** Added route telemetry rows for chat/file/image/audio/project decisions, final outcomes,
+  sandbox fallbacks, and deterministic-builder fallbacks.
+- **Privacy boundary preserved.** Route telemetry records only capability metadata and sanitized outcome details;
+  it does not store prompts, attachments, generated code, document text, or secrets.
+- **API surface.** Added an authenticated `/api/task-routes` summary endpoint for future Settings/debug views.
