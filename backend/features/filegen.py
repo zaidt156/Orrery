@@ -23,7 +23,7 @@ from dataclasses import dataclass, field
 from pathlib import PurePosixPath
 
 from backend.features import sandbox, skills
-from backend.features.prompting import build_system_prompt
+from backend.features.prompting import FILE_SYSTEM_PROMPT, build_system_prompt
 from backend.features.reasoning_trace import ThinkStream, reasoning_event
 from backend.providers import ai
 
@@ -127,34 +127,6 @@ _SAFE_SAMPLE_RE = re.compile(
     re.IGNORECASE,
 )
 
-_SYSTEM = (
-    "You generate FILES by writing ONE Python program that runs in a locked-down, OFFLINE sandbox.\n"
-    "Reply with a single ```python code block and NOTHING else - no prose before or after.\n"
-    "Quality bar:\n"
-    "- Think like a senior document designer and production engineer before writing code. The file must be complete, polished, useful, and directly tailored to the user's request.\n"
-    "- Never create placeholder, stub, filler, lorem ipsum, TODO, empty, single-slide, or generic template files unless the user explicitly requested a template.\n"
-    "- Use the strongest suitable library for the format: python-pptx for PPTX, reportlab/fpdf2 for PDF, python-docx for Word, openpyxl/XlsxWriter for Excel, pandas only when it helps.\n"
-    "- For PowerPoint: use a real 16:9 widescreen deck with a designed cover, and VARY the layouts across slides (section dividers, two-column comparisons, a metric/stat callout, an image or shape-based visual slide) — do NOT make every slide an identical title+bullets list. Use a consistent color theme, concise titles, a relevant drawn/generated visual or accent on most content slides, speaker notes where useful, generous spacing, and no overcrowded bullet dumps.\n"
-    "- For PDF/Word: use headings, sections, tables where useful, page numbers or document metadata when appropriate, readable margins, and professional typography.\n"
-    "- For Excel/CSV: create clean headers, typed rows, formatting, widths, freeze panes, filters, formulas only when useful, and neutralize formula-like user text when it should remain text.\n"
-    "- For WAV/audio files: use the Python standard library wave/math/struct modules to synthesize a real playable WAV when no audio library is available. Keep levels controlled to avoid clipping.\n"
-    "Safety requirements:\n"
-    "- Do not create, alter, imitate, backdate, or forge official, medical, academic, legal, banking, employment, immigration, or identity documents in a way that could deceive.\n"
-    "- If the user asks for an official-document template or sample, make it clearly fictional/sample/watermarked and not usable as a real document.\n"
-    "Technical requirements:\n"
-    "- Save every deliverable into the ./out directory (it already exists), with clear filenames and correct extensions.\n"
-    "- Build real, complete, polished files that fully satisfy the request - never placeholders, stubs, or 'TODO' content.\n"
-    "- Reopen or validate each generated file in code before finishing when the library supports it. If validation fails, fix the file before printing success.\n"
-    "- Available libraries: python-docx, openpyxl, XlsxWriter, python-pptx, reportlab, fpdf2, pandas, numpy, matplotlib (use matplotlib.use('Agg')), Pillow, markdown, beautifulsoup4, lxml, odfpy, plus the Python standard library including wave/math/struct for audio.\n"
-    "- No network access of any kind; everything must work fully offline.\n"
-    "- Images/visuals: the sandbox is OFFLINE — NEVER download images or fetch URLs (it will fail and "
-    "waste the attempt). Create visuals in code instead: matplotlib charts, Pillow-drawn graphics/"
-    "diagrams/icons, or python-pptx shapes and color blocks. If the user asks for photos you cannot "
-    "draw, use tasteful shape/gradient graphics or clearly labeled placeholders and PROCEED — never let "
-    "missing images block the file.\n"
-    "- Do not read or write outside ./out. print() the name of each file you create.\n"
-    "- Create only the file types the user asked for, unless they explicitly request companion exports."
-)
 
 
 @dataclass
@@ -566,7 +538,7 @@ async def run(
 
     file_effort = quality_effort(model, effort)
     instructions = build_system_prompt(
-        app_rules=_SYSTEM,
+        app_rules=FILE_SYSTEM_PROMPT,
         skills_block=skills.skills_prompt(request),
         user_preferences=system_prompt,
         trusted_context=trusted_context,

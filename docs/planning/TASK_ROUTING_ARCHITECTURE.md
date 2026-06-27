@@ -94,3 +94,68 @@ and validation. These are safe operational summaries, not raw chain-of-thought.
 3. Skill memory: record which skill stack worked for each completed task and reuse it in project context.
 4. Media adapters: image/video providers behind the same capability planner.
 5. Planner telemetry: task-route counts, fallback counts, sandbox failure reasons, and file quality failures.
+
+---
+
+# Evolution: Capability Agent (the model decides, the sandbox executes)
+
+## Why evolve the regex planner
+
+`taskrouter.plan()` keyword-matches the user's wording. That still forces users to phrase requests a
+certain way ("make a pdf"). The lesson from OpenClaw and Hermes is the opposite: give the model
+**tools + skills**, and let *it* decide whether a turn needs an artifact, then act — within a safe
+boundary. The planner stays, but demoted to a *hint* (which skills to load, whether to pre-warm the
+sandbox), never a hard gate.
+
+## The agent loop (per turn)
+
+Mirrors Hermes' execution flow and OpenClaw's observe→think→act, adapted to Orrery's safety model:
+
+1. **Plan (soft):** `taskrouter.plan()` → skills to load + capability hints. No gating.
+2. **Build context:** APP RULES + loaded skills + **tool descriptions** + project/user memory +
+   conversation history + RAG as UNTRUSTED context.
+3. **Reason + maybe act (bounded loop, ≤ N steps):**
+   - Stream the model; reasoning is condensed to trace steps via `ThinkStream` (every model).
+   - If the model **invokes a tool** — native tool-call where the provider supports it, or the
+     universal fenced-block convention otherwise — run it, emit a `reasoning_event` + Task Brain row,
+     and feed the tool result back into the conversation.
+   - Otherwise, finalize the answer.
+4. **Deliver + remember:** persist the answer + validated artifacts; record which skills/tools
+   succeeded into project context (skill memory, Hermes-style self-improvement).
+
+## Tools (capabilities, not raw permissions)
+
+- **`run_code(python)`** — the universal artifact maker. Runs in the locked-down Docker sandbox
+  (no network, read-only root, non-root, CPU/mem/PID/time/output caps), returns files written to
+  `./out` plus stdout/stderr, then backend-validated. One tool ⇒ the model can make PDFs, decks,
+  sheets, images, audio (wav/mp3), charts, zips — by writing code, deciding for itself.
+- **`render_svg(brief)`** — fast sanitized vector image path.
+- **`build_doc(spec)`** — deterministic docgen builder (fast, no code) the model may choose for plain
+  documents.
+- Future: `web_search`, `tts`/`stt`, `media_generate` — same contract, same loop.
+
+## Model-agnostic execution (this is what makes it universal)
+
+- **Native tool-calling** via litellm `tools=` for providers that support function calling
+  (OpenAI/Anthropic/Gemini/Mistral/DeepSeek/OpenRouter and many local models). The model emits
+  `tool_calls`; the loop executes and returns a tool message.
+- **Universal convention fallback** for routes without tool-calling (Claude/Codex CLI plans run with
+  tools disabled; some local models): the system prompt tells the model it MAY create an artifact by
+  emitting exactly one ```python block (writing to `./out`) or one ```orrery-doc spec; the backend
+  detects and executes it after the turn. Any model that can emit a code block participates.
+- The two paths share one executor + one validator, so behavior is identical regardless of route.
+
+## Safety (unchanged, enforced at the boundary)
+
+Model-written code runs ONLY in the sandbox; the backend validates every artifact before the user
+sees it; untrusted/RAG content is never executed; provider/CLI errors are scrubbed. Tool power ≠ host
+access.
+
+## Phased implementation
+
+1. **Sandbox-as-tool, universal convention** — let the model create artifacts on the go from any chat
+   turn (fenced block detected + sandboxed + validated). Demote regex gating: the model decides.
+2. **Native litellm tool-calling loop** for supported providers (multi-step act→observe).
+3. **Skill memory** — persist the winning skill/tool stack per project and replay it (self-improving).
+4. **Voice/media tools** behind the same loop.
+5. **Planner + tool telemetry.**
