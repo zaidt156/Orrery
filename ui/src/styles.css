@@ -793,8 +793,12 @@ body{
   padding:10px 12px;font-family:var(--font-ui);font-size:13px;line-height:1.5;outline:none;resize:none;min-height:44px;max-height:140px;
 }
 .project-composer textarea:focus{border-color:var(--amber)}
-.project-composer .btn.send{flex:none;display:flex;align-items:center;gap:6px;white-space:nowrap}
-.project-composer .btn.send svg{width:14px;height:14px}
+.project-start-btn{
+  flex:none;min-width:88px;height:44px;display:inline-flex;align-items:center;justify-content:center;gap:7px;
+  white-space:nowrap;padding:0 14px;
+}
+.project-start-btn svg{width:14px;height:14px}
+.project-start-btn:disabled{opacity:.5;cursor:default}
 
 @media (max-width:860px){
   .projects-view{flex-direction:column}
@@ -807,6 +811,8 @@ body{
 @media (max-width:560px){
   .project-list{grid-template-columns:1fr}
   .project-head{align-items:flex-start;flex-wrap:wrap}
+  .project-composer{align-items:stretch;flex-direction:column}
+  .project-start-btn{width:100%}
 }
 
 /* chat command surface */

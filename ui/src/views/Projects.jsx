@@ -309,7 +309,7 @@ export default function Projects({ onNavigate }) {
                     rows={2}
                     placeholder="Start a new chat in this project…"
                   />
-                  <button className="btn primary send" onClick={sendMessage} disabled={!message.trim()}>
+                  <button className="btn primary project-start-btn" onClick={sendMessage} disabled={!message.trim()}>
                     <SendIcon /> Start
                   </button>
                 </div>
