@@ -1,90 +1,102 @@
-"""Chat code-interpreter: let the model write and run Python to answer anything computational.
+"""Chat tool loop: let the model run Python and search the web to answer anything.
 
-When a request is best solved by code (math, data wrangling, parsing, simulation, generating a
-chart/file), the model emits a fenced ```orrery-run Python block and ends its turn. Orrery executes
-it in the locked-down Docker sandbox (no network, capped, read-only root, non-root, timeout — see
-sandbox.py and security.md), captures stdout/stderr and any files written to out/, feeds that back
-to the model as an observation, and the model continues until it produces the final answer.
+The model can emit two fenced tool blocks and end its turn:
+  ```orrery-run     -> Python executed in the locked-down Docker sandbox (no network, capped,
+                       read-only root, non-root, timeout — see sandbox.py and security.md).
+  ```orrery-search  -> a web search performed by the backend (websearch.py), so web access is
+                       UNIVERSAL: it works on any model/connection (local, CLI plan, or API key),
+                       not only cloud models with their own web tool.
 
-Universal by design: it relies only on a fenced text convention, so it works on any provider/model
-(API, CLI plan, or local) without native tool-calling. Code is always run in the sandbox and treated
-as untrusted; the loop is bounded so it always terminates.
+Orrery runs the requested tool(s), feeds the results back as an observation, and the model continues
+until it produces the final answer. The loop is bounded so it always terminates. Sandbox output and
+web results are treated as UNTRUSTED context (facts to use/cite, never instructions). It relies only
+on a fenced text convention, so no native provider tool-calling is required.
 """
 
 from __future__ import annotations
 
 import asyncio
 import mimetypes
-import re
 from collections.abc import AsyncIterator, Awaitable, Callable
 
 from backend.features import files as file_library
-from backend.features import sandbox
+from backend.features import sandbox, websearch
 from backend.features.prompting import strip_think
 from backend.features.reasoning_trace import ThinkStream
 from backend.providers import ai
 
-MAX_RUNS = 4  # most sandbox executions per turn before we force a final answer
+MAX_RUNS = 4  # most tool rounds per turn before we force a final answer
 _STDOUT_FEEDBACK_CHARS = 6000
 
-_OPEN = "```orrery-run"
+_FENCE = "```orrery-"
 _CLOSE = "```"
-_HOLDBACK = len(_OPEN) - 1  # never emit a tail that might be a partial opening fence
-_RUN_BLOCK = re.compile(r"```orrery-run[^\n]*\n(.*?)```", re.DOTALL)
+_KINDS = ("run", "search")
+_HOLDBACK = len("```orrery-search")  # hold back enough to detect the longest opener
 
 
 class RunStream:
-    """Split a streaming answer into visible text vs. ```orrery-run code blocks.
+    """Split a streaming answer into visible text vs. orrery tool blocks.
 
-    Mirrors ThinkStream: feed deltas, get back (visible_text, [completed_code_blocks]). The code
-    blocks are suppressed from the visible answer (shown as a 'ran Python' step instead). A plain
-    ```python block the model is just *showing* passes through untouched — only ```orrery-run runs.
+    Mirrors ThinkStream: feed deltas, get back (visible_text, [(kind, body)]) where kind is "run" or
+    "search". The tool blocks are suppressed from the visible answer (shown as activity steps instead).
+    A plain ```python block the model is only *showing* passes through untouched.
     """
 
     def __init__(self) -> None:
         self._buf = ""
-        self._in_code = False
+        self._in = False
+        self._kind: str | None = None
 
-    def feed(self, delta: str) -> tuple[str, list[str]]:
+    def feed(self, delta: str) -> tuple[str, list[tuple[str, str]]]:
         self._buf += delta or ""
         out: list[str] = []
-        codes: list[str] = []
+        blocks: list[tuple[str, str]] = []
         while self._buf:
-            if self._in_code:
+            if self._in:
                 end = self._buf.find(_CLOSE)
                 if end == -1:
                     break  # wait for the closing fence
-                codes.append(self._buf[:end])
+                blocks.append((self._kind or "run", self._buf[:end]))
                 self._buf = self._buf[end + len(_CLOSE):]
-                self._in_code = False
+                self._in = False
+                self._kind = None
                 continue
-            start = self._buf.find(_OPEN)
+            start = self._buf.find(_FENCE)
             if start == -1:
-                cut = len(self._buf) - _HOLDBACK
+                cut = len(self._buf) - (_HOLDBACK - 1)
                 if cut > 0:
                     out.append(self._buf[:cut])
                     self._buf = self._buf[cut:]
                 break
+            nl = self._buf.find("\n", start)
+            if nl == -1:  # opener line not complete yet — emit text before it, hold the rest
+                if start > 0:
+                    out.append(self._buf[:start])
+                    self._buf = self._buf[start:]
+                break
+            head = self._buf[start + len(_FENCE):nl].strip().lower()
+            kind = next((k for k in _KINDS if head.startswith(k)), None)
+            if kind is None:  # an orrery- fence we don't recognize — pass it through as text
+                out.append(self._buf[:nl + 1])
+                self._buf = self._buf[nl + 1:]
+                continue
             if start > 0:
                 out.append(self._buf[:start])
-            # skip the opening fence line (``` orrery-run + optional language hint, up to newline)
-            nl = self._buf.find("\n", start)
-            if nl == -1:
-                self._buf = self._buf[start:]  # fence line not complete yet
-                break
             self._buf = self._buf[nl + 1:]
-            self._in_code = True
-        return "".join(out), codes
+            self._in = True
+            self._kind = kind
+        return "".join(out), blocks
 
-    def finish(self) -> tuple[str, list[str]]:
-        text, codes = "", []
-        if self._in_code:
-            codes.append(self._buf)  # unterminated block — run what we have
+    def finish(self) -> tuple[str, list[tuple[str, str]]]:
+        text, blocks = "", []
+        if self._in:
+            blocks.append((self._kind or "run", self._buf))  # unterminated — use what we have
         else:
             text = self._buf
         self._buf = ""
-        self._in_code = False
-        return text, codes
+        self._in = False
+        self._kind = None
+        return text, blocks
 
 
 def _store_files(result: sandbox.SandboxResult) -> list[dict]:
@@ -98,7 +110,7 @@ def _store_files(result: sandbox.SandboxResult) -> list[dict]:
     return produced
 
 
-def _observation(result: sandbox.SandboxResult, produced: list[dict]) -> str:
+def _sandbox_observation(result: sandbox.SandboxResult, produced: list[dict]) -> str:
     parts = [f"[sandbox result] exit_code={result.exit_code} timed_out={result.timed_out}"]
     if result.stdout.strip():
         parts.append("stdout:\n" + result.stdout[:_STDOUT_FEEDBACK_CHARS])
@@ -121,11 +133,11 @@ async def run(
     persist: Callable[[str, list[dict] | None], Awaitable[str]],
     max_runs: int = MAX_RUNS,
 ) -> AsyncIterator[dict]:
-    """Drive the write-code → run → observe → continue loop, then persist the final answer.
+    """Drive the tool loop (run code / search web -> observe -> continue), then persist the answer.
 
-    `formatted_prompt` is the fully built system prompt (already includes the orrery-run capability).
-    `persist(text, artifacts)` saves the assistant message and returns its id. Yields chat events
-    (delta / reasoning step via `trace` / files / message_id / done / error).
+    `formatted_prompt` already includes the tool capability block. `persist(text, artifacts)` saves the
+    assistant message and returns its id. Yields chat events (delta / step via `trace` / files /
+    sources / message_id / usage / done / error).
     """
     work = list(messages)
     visible_parts: list[str] = []
@@ -135,7 +147,8 @@ async def run(
     for run_index in range(max_runs):
         run_stream = RunStream()
         think = ThinkStream()
-        code_blocks: list[str] = []
+        blocks: list[tuple[str, str]] = []
+        iter_visible: list[str] = []
         usage_out: dict = {}
         try:
             async for delta in ai.stream_chat(model, work, formatted_prompt, effort, usage_out):
@@ -145,21 +158,24 @@ async def run(
                 answer, _ = think.feed(delta)
                 if not answer:
                     continue
-                visible, codes = run_stream.feed(answer)
-                code_blocks.extend(codes)
+                visible, found = run_stream.feed(answer)
+                blocks.extend(found)
                 if visible:
+                    iter_visible.append(visible)
                     visible_parts.append(visible)
                     yield {"delta": visible}
             tail, _ = think.finish()
             if tail:
-                visible, codes = run_stream.feed(tail)
-                code_blocks.extend(codes)
+                visible, found = run_stream.feed(tail)
+                blocks.extend(found)
                 if visible:
+                    iter_visible.append(visible)
                     visible_parts.append(visible)
                     yield {"delta": visible}
-            tail_visible, tail_codes = run_stream.finish()
-            code_blocks.extend(tail_codes)
+            tail_visible, tail_blocks = run_stream.finish()
+            blocks.extend(tail_blocks)
             if tail_visible:
+                iter_visible.append(tail_visible)
                 visible_parts.append(tail_visible)
                 yield {"delta": tail_visible}
             usage["in"] += usage_out.get("tokens_in") or 0
@@ -177,34 +193,57 @@ async def run(
             yield {"error": str(exc)}
             return
 
-        code = next((c for c in code_blocks if c.strip()), "")
-        if not code.strip() or run_index == max_runs - 1:
-            break  # no code requested (or budget spent) → this is the final answer
+        actionable = [(k, b) for k, b in blocks if b.strip()]
+        if not actionable or run_index == max_runs - 1:
+            break  # no tool requested (or budget spent) → this is the final answer
 
-        yield trace.step(
-            "Running Python", "Executing the model's code in the secure sandbox (no network, capped, isolated).",
-            kind="tool", status="running", phase="execute", metadata={"run": run_index + 1},
-        )
-        try:
-            result = await asyncio.to_thread(sandbox.run_code, code)
-        except sandbox.SandboxError as exc:
-            yield trace.error("Sandbox unavailable", str(exc))
-            work.append({"role": "assistant", "content": "```orrery-run\n" + code + "\n```"})
-            work.append({"role": "user", "content": f"[sandbox error] {exc}. Answer without running code."})
-            continue
+        echo = "".join(iter_visible)
+        observations: list[str] = []
+        for kind, body in actionable:
+            if kind == "run":
+                yield trace.step(
+                    "Running Python", "Executing the model's code in the secure sandbox (no network, capped, isolated).",
+                    kind="tool", status="running", phase="execute", metadata={"run": run_index + 1},
+                )
+                try:
+                    result = await asyncio.to_thread(sandbox.run_code, body)
+                except sandbox.SandboxError as exc:
+                    yield trace.error("Sandbox unavailable", str(exc))
+                    echo += f"\n\n```orrery-run\n{body}\n```"
+                    observations.append(f"[sandbox error] {exc}. Answer without running code.")
+                    continue
+                produced = _store_files(result)
+                if produced:
+                    all_files.extend(produced)
+                    yield {"files": produced}
+                yield trace.step(
+                    "Code finished" if result.ok else "Code run had issues",
+                    f"exit {result.exit_code}, {len(produced)} file(s)" + (" — timed out" if result.timed_out else ""),
+                    kind="result", status="done" if result.ok else "warning", phase="execute",
+                    metadata={"exit_code": result.exit_code, "files": len(produced)},
+                )
+                echo += f"\n\n```orrery-run\n{body}\n```"
+                observations.append(_sandbox_observation(result, produced))
+            else:  # search
+                query = next((line.strip() for line in body.splitlines() if line.strip()), "")
+                yield trace.step("Searching the web", query or "(empty query)",
+                                 kind="tool", status="running", phase="gather", metadata={"run": run_index + 1})
+                results = await websearch.search(query) if query else []
+                if results:
+                    urls = [r["url"] for r in results if r.get("url")][:8]
+                    if urls:
+                        yield {"sources": urls}
+                yield trace.step(
+                    "Web results" if results else "No web results",
+                    f"{len(results)} result(s) for: {query}",
+                    kind="result", status="done" if results else "warning", phase="gather",
+                    metadata={"results": len(results)},
+                )
+                echo += f"\n\n```orrery-search\n{query}\n```"
+                observations.append(f"[web search results] for \"{query}\":\n{websearch.format_results(results)}")
 
-        produced = _store_files(result)
-        if produced:
-            all_files.extend(produced)
-            yield {"files": produced}
-        yield trace.step(
-            "Code finished" if result.ok else "Code run had issues",
-            f"exit {result.exit_code}, {len(produced)} file(s)" + (" — timed out" if result.timed_out else ""),
-            kind="result", status="done" if result.ok else "warning", phase="execute",
-            metadata={"exit_code": result.exit_code, "files": len(produced)},
-        )
-        work.append({"role": "assistant", "content": "```orrery-run\n" + code + "\n```"})
-        work.append({"role": "user", "content": _observation(result, produced)})
+        work.append({"role": "assistant", "content": echo.strip()})
+        work.append({"role": "user", "content": "\n\n".join(observations)})
 
     final_text = strip_think("".join(visible_parts)).strip()
     if not final_text:

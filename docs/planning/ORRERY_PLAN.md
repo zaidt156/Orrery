@@ -317,9 +317,12 @@ Done:
 - [x] Deep Reasoning Mode (Quick/Standard/Deep/Max -> effort + retry budget)
 - [x] Local API session token; secrets only in keychain
 
+Done (web):
+- [x] Universal web search (keyless, any model) in chat + Deep Research
+
 In progress / next:
 - [x] High-end sandbox capability: model writes + runs Python in chat, output returned (code interpreter loop)
-- [x] Deep Research mode: decompose -> gather (RAG; provider web tool next) -> cited report
+- [x] Deep Research mode: decompose -> gather (documents + universal web search) -> cited report
 - [x] Reasoning-mode selector in the chat header (Quick/Standard/Deep/Max)
 
 Later phases (not started): Dashboards, Automations, Agents, Media Hub, Capability Contract schema,

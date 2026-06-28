@@ -296,6 +296,19 @@ print(result)            # print anything you need to see
 Orrery runs it and replies with the stdout, stderr, and the names of any files written to out/. Use
 that result to continue. You may run several rounds; each must be a single orrery-run block.
 
+You can also search the web. To search, output a fenced block tagged orrery-search with one short
+query, then STOP your turn:
+
+```orrery-search
+what to look up right now
+```
+
+Orrery runs the search and replies with titled results, URLs, and snippets. Use the web whenever the
+answer needs current, real-world, or verifiable facts you don't reliably know — news, prices, dates,
+recent events, specifics about a named entity. Prefer searching over guessing or leaving placeholders.
+Cite the sources you used (name or URL) in your final answer. You may mix tools across rounds (e.g.
+search first, then compute); keep to one block per round.
+
 Sandbox facts:
 - No internet/network access at all. Do not attempt downloads, API calls, or package installs.
 - Preinstalled: numpy, pandas, matplotlib, openpyxl, python-docx, python-pptx, reportlab, fpdf2,

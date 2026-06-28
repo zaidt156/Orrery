@@ -22,7 +22,7 @@ _MODE_TO_EFFORT = {"quick": "low", "standard": "", "deep": "high", "max": "xhigh
 # legacy "medium" folds into Standard for display
 _EFFORT_TO_MODE = {"": "standard", "low": "quick", "medium": "standard", "high": "deep", "xhigh": "max", "max": "max"}
 _LABELS = {"quick": "Quick", "standard": "Standard", "deep": "Deep", "max": "Max"}
-_FILE_RETRIES = {"quick": 1, "standard": 2, "deep": 3, "max": 4}
+_FILE_RETRIES = {"quick": 2, "standard": 3, "deep": 3, "max": 4}
 
 
 def _normalize(value: str | None) -> str:

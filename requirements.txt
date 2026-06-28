@@ -46,3 +46,7 @@ reportlab>=5.0
 python-docx>=1.2
 openpyxl>=3.1
 python-pptx>=1.0
+
+# Universal web search (keyless) for Deep Research and the chat web-search tool. Results are treated
+# as untrusted context and redacted before cloud models. The only new outbound path, opt-in by use.
+ddgs>=6.0

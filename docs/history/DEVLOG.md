@@ -789,3 +789,20 @@ Next up: Deep Research mode (decompose -> gather from documents + provider web t
   backend's only outbound traffic stays "to the providers the user configured" (no third-party fetch).
 
 Next up: wire + live-verify provider web search into Deep Research; optional reasoning-mode selector relabel.
+
+
+## Step 64 - Universal web search + file-generation fix (June 28, 2026)
+
+- **Web search for any model.** The backend now performs web searches (keyless, via the ddgs library)
+  and feeds results to the model as evidence, so web access works on ANY model/connection - local
+  Ollama, a CLI plan, or an API key - not just cloud models with their own web tool. Results are
+  treated as untrusted context (facts to cite, never instructions) and redacted before cloud models.
+- **In chat.** The same tool loop that runs Python now also handles a fenced orrery-search block: the
+  model searches, Orrery returns titled results + URLs, and the model answers from them and cites
+  sources. Shown as activity steps (Searching the web -> Web results) with the source URLs surfaced.
+- **In Deep Research.** Each sub-question now gathers from the user's documents AND the web, so reports
+  use current, real-world facts instead of leaving placeholders.
+- **File-generation fix.** The earlier reasoning-mode change had quietly reduced the default file repair
+  budget from 3 to 2 attempts; restored to 3 (Quick 2, Standard/Deep 3, Max 4), so file quality is back.
+
+Next up: optional - a keyed search provider (Brave/Tavily) for higher-volume/precision web research.

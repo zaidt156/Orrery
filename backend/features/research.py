@@ -15,7 +15,7 @@ import json
 import re
 from collections.abc import AsyncIterator, Awaitable, Callable
 
-from backend.features import rag
+from backend.features import rag, websearch
 from backend.features.prompting import FORMAT_INSTRUCTIONS, RESEARCH_PROMPT, build_system_prompt, strip_think
 from backend.features.reasoning_trace import ThinkStream
 from backend.providers import ai
@@ -90,8 +90,9 @@ async def run(
     trusted_context: str | None,
     trace,
     persist: Callable[[str, list[dict] | None], Awaitable[str]],
+    web_search: bool = True,
 ) -> AsyncIterator[dict]:
-    """Decompose -> gather -> synthesize a cited report. Yields chat events (delta/step/usage/done)."""
+    """Decompose -> gather (documents + web) -> synthesize a cited report. Yields chat events."""
     yield trace.step("Planning research", "Breaking the question into focused sub-questions.",
                      kind="route", status="running", phase="plan")
     subqs = await _plan(model, question, effort)
@@ -109,6 +110,15 @@ async def run(
                 passages = await rag.search(collection_id, subq, k=PASSAGES_PER_SUBQUESTION)
             except Exception:  # noqa: BLE001 — a retrieval miss shouldn't abort the whole report
                 passages = []
+        if web_search:
+            try:
+                hits = await websearch.search(subq, max_results=4)
+            except Exception:  # noqa: BLE001 — web is best-effort
+                hits = []
+            for h in hits:
+                body = f"{h.get('title', '')} — {h.get('snippet', '')}".strip(" —")
+                if body:
+                    passages.append({"source": h.get("url") or h.get("title") or "web", "content": body})
         findings.append((subq, passages))
         total_passages += len(passages)
         yield trace.step("Gathered evidence", f"{len(passages)} passage(s) for: {subq}",
