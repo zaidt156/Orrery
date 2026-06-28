@@ -3,8 +3,10 @@ from __future__ import annotations
 import hashlib
 import re
 import xml.etree.ElementTree as ET
+from collections.abc import AsyncIterator
 
-from backend.features.prompting import SVG_SYSTEM_PROMPT
+from backend.features.prompting import SVG_SYSTEM_PROMPT, _REASONING_DIRECTIVE
+from backend.features.reasoning_trace import ThinkStream
 from backend.providers import ai
 
 MAX_SVG_BYTES = 200_000
@@ -295,8 +297,13 @@ async def generate_svg(
     prompt: str,
     system_prompt: str | None = None,
     effort: str | None = None,
-) -> str:
-    instructions = SVG_SYSTEM_PROMPT
+) -> AsyncIterator[dict]:
+    """Stream the model's reasoning, then yield the sanitized SVG.
+
+    Yields {"reasoning_delta": text} live while the model thinks (so the image route shows real
+    reasoning like every other route), then a final {"svg": <sanitized svg string>}.
+    """
+    instructions = f"{_REASONING_DIRECTIVE}\n\n{SVG_SYSTEM_PROMPT}"
 
     if system_prompt:
         instructions += f"\nAdditional style instructions:\n{system_prompt.strip()[:4_000]}"
@@ -318,6 +325,7 @@ Return only the SVG document.
 
     for attempt in range(3):
         parts: list[str] = []
+        think = ThinkStream()  # split the model's <think> reasoning from the SVG output
 
         turn = base_turn
 
@@ -336,12 +344,25 @@ Return only the SVG document.
             instructions,
             effort,
         ):
-            if not isinstance(delta, ai.ReasoningDelta):
-                parts.append(str(delta))
+            if isinstance(delta, ai.ReasoningDelta):
+                for ev in think.feed_reasoning(str(delta)):
+                    yield ev
+                continue
+            answer, revs = think.feed(str(delta))
+            for ev in revs:
+                yield ev
+            if answer:
+                parts.append(answer)
+        tail, revs = think.finish()
+        for ev in revs:
+            yield ev
+        if tail:
+            parts.append(tail)
 
         try:
-            return sanitize_svg("".join(parts), prompt=request)
+            yield {"svg": sanitize_svg("".join(parts), prompt=request)}
+            return
         except UnsafeSvgError as exc:
             last_error = exc
 
-    return fallback_svg(request or str(last_error or "Generated image"))
+    yield {"svg": fallback_svg(request or str(last_error or "Generated image"))}

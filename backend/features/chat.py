@@ -911,16 +911,24 @@ async def _deliver_code_image(
     system_prompt: str | None,
     effort: str | None,
 ) -> AsyncIterator[dict]:
-    """Generate, persist, and stream a sanitized SVG artifact."""
+    """Generate, persist, and stream a sanitized SVG artifact (with the model's live reasoning)."""
     yield {"status": "Rendering a safe SVG image..."}
-    yield reasoning_event("Selected generation path", "Sanitized code-rendered SVG image.")
+    svg = None
     try:
-        svg = await code_images.generate_svg(model, user_content, system_prompt, filegen.quality_effort(model, effort))
+        async for ev in code_images.generate_svg(model, user_content, system_prompt, filegen.quality_effort(model, effort)):
+            if "svg" in ev:
+                svg = ev["svg"]
+            else:
+                yield ev  # reasoning_delta — the model's live thinking
     except ai.MissingKeyError as exc:
         yield {"error": f"No API key for {exc.provider}. Add it in Settings."}
         return
     except Exception as exc:  # noqa: BLE001 - provider errors are sanitized upstream
         yield {"error": str(exc)}
+        return
+
+    if not svg:
+        yield {"error": "Could not generate the image."}
         return
 
     artifact = {

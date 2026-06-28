@@ -884,3 +884,13 @@ Next: persist the reasoning trace across reloads; per-segment outer reasoning he
 
 Remaining: stream reasoning from the image (SVG) route too; persist reasoning across reloads; per-segment
 outer reasoning headlines.
+
+
+## Step 70 - Reasoning on the image route too (June 28, 2026)
+
+- **Image creation now streams reasoning like everything else.** generate_svg became a generator: it
+  applies the reasoning directive, streams the model's <think> reasoning live to the panel, then yields
+  the sanitized SVG. _deliver_code_image passes the reasoning through. So chat, file/document/deck,
+  research, AND image all show the model's real thinking now - universal across every creation type.
+
+Remaining: persist reasoning across reloads; per-segment outer reasoning headlines.
