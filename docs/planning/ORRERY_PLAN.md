@@ -318,7 +318,7 @@ Done:
 - [x] Local API session token; secrets only in keychain
 
 In progress / next:
-- [ ] High-end sandbox capability: model writes + runs Python in chat, output returned (code interpreter loop)
+- [x] High-end sandbox capability: model writes + runs Python in chat, output returned (code interpreter loop)
 - [ ] Deep Research mode: decompose -> gather (RAG + provider web tool) -> cited report
 - [ ] Reasoning-mode selector relabel in the chat header (cosmetic; effort selector already drives it)
 

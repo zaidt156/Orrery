@@ -18,10 +18,10 @@ from backend.core.config import settings
 from backend.core.database import get_sessionmaker
 from backend.core.observability import log_event
 from backend.core.models import Conversation, Message, Project
-from backend.features import code_images, docgen, filegen, rag, reasoning, route_telemetry, sandbox, skills, taskbrain, taskrouter
+from backend.features import code_images, code_interpreter, docgen, filegen, rag, reasoning, route_telemetry, sandbox, skills, taskbrain, taskrouter
 from backend.features import projects as project_store
 from backend.features import files as file_library
-from backend.features.prompting import FORMAT_INSTRUCTIONS, build_system_prompt, strip_think as _strip_think
+from backend.features.prompting import CODE_INTERPRETER_PROMPT, FORMAT_INSTRUCTIONS, build_system_prompt, strip_think as _strip_think
 from backend.features.chat_context import (
     DEFAULT_CONTEXT_WINDOW, _build_user_content, _content_token_estimate, _db_content,
     _effective_context_window, _history_text, _latest_user_text, _limit_messages,
@@ -705,19 +705,56 @@ async def stream_reply(
     budget_system = "\n\n".join(part for part in (gen_system, trusted_context, rag_context) if part)
     messages = _limit_messages(messages, context_window, budget_system)
     outcome = "completed"
-    yield trace.step(
-        "Generating answer",
-        "Streaming the response from the selected model while keeping hidden reasoning out of the visible answer.",
-        kind="work", status="running", phase="execute", metadata={"model": model},
-    )
-    async for event in _generate(cid, model, gen_system, messages, effort, rag_context, trusted_context):
-        if "error" in event:
-            outcome = "failed"
-            yield trace.error("Generation failed", event.get("error", "The model call failed."))
-        if event.get("done"):
-            yield trace.done("Finished streaming and saved the assistant reply.")
-            yield trace.summary()
-        yield event
+
+    if sandbox.image_ready():
+        # Code-interpreter path: the model may write ```orrery-run Python; Orrery runs it in the
+        # sandbox, feeds back stdout/files, and the model answers from the real output.
+        yield trace.step(
+            "Generating answer",
+            "Answering with the selected model; it can write and run Python in the sandbox if that helps.",
+            kind="work", status="running", phase="execute", metadata={"model": model},
+        )
+        user_text = _latest_user_text(messages)
+        gen_effort = filegen.quality_effort(model, effort) if _wants_high_effort(user_text) else effort
+        matched_skills = skills.select(user_text)
+        if matched_skills:
+            yield trace.step("Loaded skills", ", ".join(s.name for s in matched_skills), kind="context", status="done", phase="context")
+        formatted_prompt = build_system_prompt(
+            app_rules=FORMAT_INSTRUCTIONS,
+            feature_rules=CODE_INTERPRETER_PROMPT,
+            skills_block=skills.skills_prompt(user_text),
+            user_preferences=gen_system,
+            trusted_context=trusted_context,
+            untrusted_context=rag_context,
+        )
+
+        async def _persist(text: str, arts: list[dict] | None) -> str:
+            return await _persist_assistant(cid, text, model, arts)
+
+        async for event in code_interpreter.run(
+            model, formatted_prompt, messages, gen_effort, trace=trace, persist=_persist,
+        ):
+            if "error" in event:
+                outcome = "failed"
+                yield trace.error("Generation failed", event.get("error", "The model call failed."))
+            if event.get("done"):
+                yield trace.done("Finished the answer and saved the reply.")
+                yield trace.summary()
+            yield event
+    else:
+        yield trace.step(
+            "Generating answer",
+            "Streaming the response from the selected model while keeping hidden reasoning out of the visible answer.",
+            kind="work", status="running", phase="execute", metadata={"model": model},
+        )
+        async for event in _generate(cid, model, gen_system, messages, effort, rag_context, trusted_context):
+            if "error" in event:
+                outcome = "failed"
+                yield trace.error("Generation failed", event.get("error", "The model call failed."))
+            if event.get("done"):
+                yield trace.done("Finished streaming and saved the assistant reply.")
+                yield trace.summary()
+            yield event
     if plan.route in {"chat", "project"}:
         await route_telemetry.record_outcome(route_event_id, outcome)
 

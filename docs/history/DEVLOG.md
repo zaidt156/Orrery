@@ -754,3 +754,21 @@ trace detail, or centralizing the SSE event helpers, or the JSONB metadata migra
   chat, and file generator all agree.
 - **Next up:** generalize the sandbox into a chat code-interpreter so the model can write and run
   Python for any computational/'strange' request and hand back the output. Then Deep Research.
+
+
+## Step 62 - Chat code-interpreter: the model writes and runs Python (June 28, 2026)
+
+- **Run real code for real answers.** When a request is best solved by computation (math, data
+  wrangling, parsing, simulation, a chart, a generated file), the model now writes a fenced
+  `orrery-run` Python block and ends its turn. Orrery runs it in the existing locked-down sandbox
+  (no network, capped, isolated), captures stdout and any files written to out/, feeds that back,
+  and the model finishes the answer from the actual output. The loop is bounded.
+- **Universal.** It relies only on a fenced text convention, so it works on any model/connection
+  (API, CLI plan, or local) without native tool-calling. When the sandbox image is not built, chat
+  falls back to the normal path.
+- **Honest UI.** The raw code block is hidden from the answer and shown as activity-card steps
+  (Running Python -> Code finished), with any produced files attached and token/cost still metered.
+- **Safety.** Code always runs in the sandbox and is treated as untrusted; file/data contents read by
+  the code are facts, never instructions.
+
+Next up: Deep Research mode (decompose -> gather from documents + provider web tool -> cited report).
