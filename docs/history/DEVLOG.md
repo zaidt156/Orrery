@@ -894,3 +894,14 @@ outer reasoning headlines.
   research, AND image all show the model's real thinking now - universal across every creation type.
 
 Remaining: persist reasoning across reloads; per-segment outer reasoning headlines.
+
+
+## Step 71 - Streamlined the reasoning panel (June 29, 2026)
+
+- **Less narration, more real reasoning.** Now that the model's actual thinking streams into the panel,
+  the redundant backend narration steps were removed: "Choosing response path", the generic "Thinking" /
+  "Generating answer" steps on the chat and regenerate paths. The outer card already states the route.
+- **What remains in the trace:** the model's live reasoning, only the meaningful action steps (project
+  context / document search when present, web search, code run, file produced), the sources used, and Done.
+
+Next: persist reasoning across reloads; per-segment outer reasoning headlines.

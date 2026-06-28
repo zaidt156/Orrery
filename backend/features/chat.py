@@ -748,11 +748,7 @@ async def _route_model_reply(
     if sandbox.image_ready():
         user_text = _latest_user_text(limited_messages)
         gen_effort = filegen.quality_effort(model, effort) if _wants_high_effort(user_text) else effort
-        yield trace.step(
-            "Thinking",
-            "Reasoning about the request; the model can run Python in the sandbox or search the web if that helps.",
-            kind="work", status="running", phase="execute", metadata={"model": model},
-        )
+        # No generic "Thinking" step — the model's live reasoning streams into the panel directly.
         formatted_prompt = build_system_prompt(
             app_rules=FORMAT_INSTRUCTIONS,
             feature_rules=CODE_INTERPRETER_PROMPT,
@@ -776,11 +772,6 @@ async def _route_model_reply(
                 yield trace.summary()
             yield event
     else:
-        yield trace.step(
-            "Generating answer",
-            "Streaming the response from the selected model while keeping hidden reasoning out of the visible answer.",
-            kind="work", status="running", phase="execute", metadata={"model": model},
-        )
         async for event in _generate(cid, model, gen_system, limited_messages, effort, rag_context, trusted_context):
             if "error" in event:
                 outcome = "failed"
@@ -840,10 +831,6 @@ async def stream_reply(
         _outer_title_for_plan(plan),
         _outer_summary_for_plan(plan, has_attachments=bool(attachments)),
         status="running", phase="route", metadata=plan_meta,
-    )
-    yield trace.step(
-        "Choosing response path", f"Selected {plan.label}. {plan.detail}",
-        kind="route", status="done", phase="route", metadata=plan_meta,
     )
     route_event_id = await route_telemetry.record_plan(str(cid), plan, has_attachments=bool(attachments))
 
@@ -1012,7 +999,6 @@ async def regenerate(conv_id: str) -> AsyncIterator[dict]:
     yield trace.outer("Regenerating the answer", "Re-answering the last turn with the selected model.", status="running", phase="route")
     if trusted_context:
         yield trace.step("Preparing project context", "Loaded the current project's standing context and instructions.", kind="context", status="done", phase="context")
-    yield trace.step("Generating answer", "Streaming a fresh response from the selected model.", kind="work", status="running", phase="execute", metadata={"model": model})
     async for event in _generate(cid, model, system_prompt, messages, effort, trusted_context=trusted_context):
         if event.get("done"):
             yield trace.done("Finished streaming and saved the regenerated reply.")
