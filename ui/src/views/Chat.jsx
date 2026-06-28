@@ -29,7 +29,9 @@ import {
   ReplyFiles, InlineSvg, CodeImageArtifact, GeneratedFileCard, ThinkingPulse, ReasoningPanel, TaskBrainPanel,
 } from "./chatWidgets.jsx";
 
-const EFFORTS = ["", "low", "medium", "high", "xhigh"];
+// Reasoning depth modes shown to the user; the stored value is the underlying effort (see backend
+// reasoning.py for the canonical mapping). Standard = "" (the provider's own default depth).
+const REASONING_MODES = [["", "Standard"], ["low", "Quick"], ["high", "Deep"], ["xhigh", "Max"]];
 const CONTEXT_WINDOWS = [
   ["131072", "context: 128K"],
   ["262144", "context: 256K"],
@@ -548,8 +550,8 @@ export default function Chat() {
               <option key={value || "auto"} value={value}>{label}</option>
             ))}
           </select>
-          <select className="effort-pick" value={effort} onChange={(e) => chooseEffort(e.target.value)} title="Reasoning effort (where the model supports it)">
-            {EFFORTS.map((v) => <option key={v || "auto"} value={v}>{v ? `effort: ${v}` : "effort: auto"}</option>)}
+          <select className="effort-pick" value={effort === "medium" ? "" : effort} onChange={(e) => chooseEffort(e.target.value)} title="Reasoning depth (where the model supports it)">
+            {REASONING_MODES.map(([v, label]) => <option key={v || "std"} value={v}>{label}</option>)}
           </select>
           <span className="rag-toggle" title="Answer using your document collections">
             Use my data

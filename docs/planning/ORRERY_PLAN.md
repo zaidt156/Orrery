@@ -320,7 +320,7 @@ Done:
 In progress / next:
 - [x] High-end sandbox capability: model writes + runs Python in chat, output returned (code interpreter loop)
 - [x] Deep Research mode: decompose -> gather (RAG; provider web tool next) -> cited report
-- [ ] Reasoning-mode selector relabel in the chat header (cosmetic; effort selector already drives it)
+- [x] Reasoning-mode selector in the chat header (Quick/Standard/Deep/Max)
 
 Later phases (not started): Dashboards, Automations, Agents, Media Hub, Capability Contract schema,
 Approval gates, JSONB metadata migration.
