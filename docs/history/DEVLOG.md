@@ -905,3 +905,14 @@ Remaining: persist reasoning across reloads; per-segment outer reasoning headlin
   context / document search when present, web search, code run, file produced), the sources used, and Done.
 
 Next: persist reasoning across reloads; per-segment outer reasoning headlines.
+
+
+## Step 72 - Reasoning survives reloads (June 29, 2026)
+
+- **Persisted reasoning.** Added a `reasoning` column on messages (additive migration). After a turn
+  finishes, the frontend saves the reasoning snapshot (live thinking + trace steps + outer card +
+  summary + sources) via POST /conversations/{cid}/messages/{mid}/reasoning; get_conversation returns
+  it and the panel is rehydrated on load. So the reasoning no longer vanishes on refresh - it stays,
+  rolled up. Verified the round-trip end to end.
+
+Next: context handling fixes for chat + data (RAG) + project files (the dangerous context-mixing issue).

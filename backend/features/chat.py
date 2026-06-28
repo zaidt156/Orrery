@@ -103,10 +103,35 @@ async def get_conversation(conv_id: str) -> dict | None:
                     "content": m.content,
                     "model": m.model,
                     "artifacts": _message_artifacts(m.artifacts),
+                    "reasoning": _load_reasoning(m.reasoning),
                 }
                 for m in msgs
             ],
         }
+
+
+def _load_reasoning(raw: str | None) -> dict | None:
+    if not raw:
+        return None
+    try:
+        return json.loads(raw)
+    except (ValueError, TypeError):
+        return None
+
+
+async def save_reasoning(conv_id: str, message_id: str, reasoning: dict) -> bool:
+    """Persist the reasoning-panel snapshot for one assistant message so it survives reloads."""
+    try:
+        payload = json.dumps(reasoning)[:200_000]  # bounded; this is UI metadata, not the answer
+    except (TypeError, ValueError):
+        return False
+    async with get_sessionmaker()() as s:
+        message = await s.get(Message, uuid.UUID(message_id))
+        if message is None or str(message.conversation_id) != str(uuid.UUID(conv_id)):
+            return False
+        message.reasoning = payload
+        await s.commit()
+        return True
 
 
 _UNSET = object()

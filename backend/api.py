@@ -178,6 +178,10 @@ class NewArtifact(BaseModel):
     html: str
 
 
+class ReasoningBody(BaseModel):
+    reasoning: dict = {}  # UI snapshot: thinking text, trace steps, outer card, summary, sources
+
+
 class DbConnection(BaseModel):
     url: str
 
@@ -711,6 +715,10 @@ def create_app(session_token: str) -> FastAPI:
     async def send_message(cid: str, body: NewMessage) -> StreamingResponse:
         attachments = [a.model_dump() for a in body.attachments]
         return _sse_run(cid, chat.stream_reply(cid, body.content, attachments, body.collection_id))
+
+    @r.post("/conversations/{cid}/messages/{mid}/reasoning")
+    async def save_message_reasoning(cid: str, mid: str, body: ReasoningBody) -> dict:
+        return {"saved": await chat.save_reasoning(cid, mid, body.reasoning)}
 
     @r.post("/conversations/{cid}/code-image")
     async def generate_code_image(cid: str, body: NewMessage) -> StreamingResponse:

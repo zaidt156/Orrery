@@ -193,6 +193,8 @@ export const createConversation = (model, system_prompt, effort, context_window,
 export const getConversation = (id) => apiGet(`/api/conversations/${id}`);
 export const updateConversation = (id, patch) => apiSend(`/api/conversations/${id}`, "PATCH", patch);
 export const deleteConversation = (id) => apiSend(`/api/conversations/${id}`, "DELETE");
+export const saveReasoning = (conversationId, messageId, reasoning) =>
+  apiSend(`/api/conversations/${conversationId}/messages/${messageId}/reasoning`, "POST", { reasoning });
 export const downloadMessageExport = (conversationId, messageId, format) =>
   apiDownload(
     `/api/conversations/${conversationId}/messages/${messageId}/export/${format}`,

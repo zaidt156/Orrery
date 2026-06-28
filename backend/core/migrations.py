@@ -121,6 +121,7 @@ async def run_migrations() -> None:
         await conn.execute(text("UPDATE conversations SET context_window = 1000000 WHERE context_window IS NULL"))
         await conn.execute(text("ALTER TABLE messages ADD COLUMN IF NOT EXISTS context TEXT"))
         await conn.execute(text("ALTER TABLE messages ADD COLUMN IF NOT EXISTS artifacts TEXT"))
+        await conn.execute(text("ALTER TABLE messages ADD COLUMN IF NOT EXISTS reasoning TEXT"))
         label_updates = {
             "claude_plan/default": "Claude plan - adaptive thinking",
             "claude_plan/opus": "Claude plan - Opus - adaptive thinking",

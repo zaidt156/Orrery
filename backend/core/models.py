@@ -72,6 +72,8 @@ class Message(Base):
     context: Mapped[str | None] = mapped_column(Text, nullable=True)
     # JSON metadata for trusted, locally rendered artifacts such as sanitized SVG images.
     artifacts: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # JSON snapshot of the reasoning panel (live thinking + trace steps + sources) so it survives reloads.
+    reasoning: Mapped[str | None] = mapped_column(Text, nullable=True)
     model: Mapped[str | None] = mapped_column(String(120), nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

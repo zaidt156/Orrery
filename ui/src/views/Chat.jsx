@@ -20,7 +20,7 @@ import {
   getModels, listCollections, listConversations, getConversation, createConversation,
   updateConversation, deleteConversation, streamMessage, regenerateMessage,
   downloadMessageExport, streamCodeImage, createArtifact, previewExport, saveClientFile,
-  downloadGeneratedFile, previewGeneratedFile, stopGeneration, resumeGeneration, listProjects,
+  downloadGeneratedFile, previewGeneratedFile, stopGeneration, resumeGeneration, listProjects, saveReasoning,
 } from "../lib/api.js";
 import {
   EXPORT_FORMATS, requestedFileFormats, precedingUserText,
@@ -240,7 +240,7 @@ export default function Chat() {
     const full = await getConversation(id);
     activeIdRef.current = id;
     setActiveId(id);
-    setMessages(full.messages);
+    setMessages(full.messages.map(hydrateReasoning));
     setModel(full.model);
     setProjectId(full.project_id || "");
     setSystemPrompt(full.system_prompt || "");
@@ -326,8 +326,19 @@ export default function Chat() {
         a[a.length - 1] = { ...a[a.length - 1], ...patch };
         return a;
       });
+    let savedMsgId = null;
+    const reasoningAcc = { thinking: "", trace: [], outer: null, summary: null, sources: null };
     try {
       await start((ev) => {
+        // capture the reasoning so it can be persisted after the turn (non-exclusive with UI updates)
+        if (ev.reasoning_delta) reasoningAcc.thinking += ev.reasoning_delta;
+        if (ev.reasoning_step) reasoningAcc.trace.push(ev.reasoning_step);
+        if (ev.reasoning_event) reasoningAcc.trace.push(ev.reasoning_event);
+        if (ev.reasoning_outer) reasoningAcc.outer = ev.reasoning_outer;
+        if (ev.reasoning_summary) reasoningAcc.summary = ev.reasoning_summary;
+        if (ev.sources) reasoningAcc.sources = ev.sources;
+        if (ev.message_id) savedMsgId = ev.message_id;
+
         if (ev.delta) appendDelta(setMessages, ev.delta);
         else if (ev.reasoning_delta) appendThinking(setMessages, ev.reasoning_delta);
         else if (ev.reasoning_outer) setLast({ outer: ev.reasoning_outer });
@@ -357,6 +368,9 @@ export default function Chat() {
     } finally {
       setSending(false);
       abortRef.current = null;
+      if (savedMsgId && (reasoningAcc.thinking || reasoningAcc.trace.length || reasoningAcc.outer || reasoningAcc.sources)) {
+        saveReasoning(cid, savedMsgId, reasoningAcc).catch(() => {});  // persist so it survives reloads
+      }
     }
   }
 
@@ -366,7 +380,7 @@ export default function Chat() {
     await runStream(cid, (onEvent, signal) => resumeGeneration(cid, onEvent, signal));
     try {
       const full = await getConversation(cid);
-      if (cid === activeIdRef.current) setMessages(full.messages);
+      if (cid === activeIdRef.current) setMessages(full.messages.map(hydrateReasoning));
     } catch { /* keep what streamed */ }
   }
 
@@ -876,6 +890,20 @@ function appendStep(setMessages, step) {
     a[a.length - 1] = { ...last, steps, status: step };
     return a;
   });
+}
+
+// Rebuild a loaded message's reasoning panel fields from its persisted reasoning snapshot.
+function hydrateReasoning(m) {
+  const r = m?.reasoning;
+  if (!r) return m;
+  return {
+    ...m,
+    thinking: r.thinking || "",
+    trace: r.trace || [],
+    outer: r.outer || null,
+    summary: r.summary || null,
+    sources: r.sources || null,
+  };
 }
 
 // Append streamed raw model reasoning to the last assistant message (shown in the reasoning panel).
