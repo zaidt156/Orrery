@@ -307,15 +307,20 @@ export function ReasoningPanel({ outer, trace, summary, streaming }) {
       </button>
       {show && (
         <div className="think-body">
-          {steps.map((s, i) => (
-            <div key={s.id || i} className={`trace-step trace-${s.status || "done"}`}>
-              <span className="trace-icon" aria-hidden="true"><StepIcon kind={s.kind} status={s.status} /></span>
-              <span className="trace-text">
-                <span className="trace-stage">{s.stage}</span>
-                {s.detail ? <span className="trace-detail">{s.detail}</span> : null}
-              </span>
-            </div>
-          ))}
+          {steps.map((s, i) => {
+            // Steps are append-only and a "running" step is never re-emitted as done, so once the
+            // turn has finished (not streaming) any lingering "running" step is really complete.
+            const st = !streaming && s.status === "running" ? "done" : (s.status || "done");
+            return (
+              <div key={s.id || i} className={`trace-step trace-${st}`}>
+                <span className="trace-icon" aria-hidden="true"><StepIcon kind={s.kind} status={st} /></span>
+                <span className="trace-text">
+                  <span className="trace-stage">{s.stage}</span>
+                  {s.detail ? <span className="trace-detail">{s.detail}</span> : null}
+                </span>
+              </div>
+            );
+          })}
           {!streaming && summary?.items?.length ? (
             <ol className="trace-summary">
               {summary.items.map((it, i) => <li key={i}>{it}</li>)}

@@ -749,16 +749,16 @@ async def stream_reply(
     if sandbox.image_ready():
         # Code-interpreter path: the model may write ```orrery-run Python; Orrery runs it in the
         # sandbox, feeds back stdout/files, and the model answers from the real output.
-        yield trace.step(
-            "Generating answer",
-            "Answering with the selected model; it can write and run Python in the sandbox if that helps.",
-            kind="work", status="running", phase="execute", metadata={"model": model},
-        )
         user_text = _latest_user_text(messages)
         gen_effort = filegen.quality_effort(model, effort) if _wants_high_effort(user_text) else effort
         matched_skills = skills.select(user_text)
         if matched_skills:
             yield trace.step("Loaded skills", ", ".join(s.name for s in matched_skills), kind="context", status="done", phase="context")
+        yield trace.step(
+            "Generating answer",
+            "Answering with the selected model; it can write and run Python in the sandbox if that helps.",
+            kind="work", status="running", phase="execute", metadata={"model": model},
+        )
         formatted_prompt = build_system_prompt(
             app_rules=FORMAT_INSTRUCTIONS,
             feature_rules=CODE_INTERPRETER_PROMPT,
