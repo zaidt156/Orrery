@@ -714,3 +714,31 @@ citations**. Photorealistic image/video adapters and the reusable media library 
   build is missing.
 - **No feature behavior changed.** This was a visual asset pass only; auth, chat, routing, sandboxing, and storage paths
   were left untouched.
+
+
+## Step 59 - Project files and project chat window (June 28, 2026)
+
+- **Per-project files.** Each project now has its own document collection. Files of any text-bearing type
+  (PDF, Word, Excel, PowerPoint, text, code) are extracted, chunked, embedded, and answered from automatically
+  by chats inside that project. Images and other binaries are skipped instead of polluting search with base64.
+- **Projects rebuilt as a workspace.** The project page is now a name top-bar, a collapsible details/instructions
+  area, a files panel, and a message window: typing a first message starts a new chat inside the project.
+- **Layout fix.** Fixed a flexbox overflow (composer button was clipped) and a height-chain gap so the view fills
+  the window.
+- **Safety boundary preserved.** Uploaded project files are untrusted context used for facts only, exactly like RAG.
+
+## Step 60 - Two-layer reasoning work trace (June 28, 2026)
+
+- **What the user sees.** Replaced the single flat "how this was produced" list with a two-layer activity panel,
+  like a high-end AI workspace: a collapsed outer card (what Orrery is doing, in one line) that expands into a
+  step timeline (choose route -> load context -> run tool/sandbox -> validate -> done) plus a closing summary.
+- **Universal by design.** Every visible line is written by Orrery about its own actions, not the model's private
+  thoughts, so the panel looks and behaves identically whether the model is reached by API, a CLI plan, or a local
+  model that exposes no reasoning at all.
+- **Stronger privacy.** The think-stream no longer condenses raw model reasoning into visible text; it only strips
+  inline think blocks and counts how much hidden reasoning was removed. Raw chain-of-thought never reaches the screen.
+- **Consistency.** Normal chat, file, image, and project routes and the regenerate path all emit the same trace.
+
+Next up: decide the next roadmap step - Deep Reasoning Mode selector (Quick/Standard/Deep/Max) wired to effort and
+trace detail, or centralizing the SSE event helpers, or the JSONB metadata migration. Pending: push local commits
+(Projects files, reasoning trace) to main once approved.
