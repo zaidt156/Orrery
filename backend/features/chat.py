@@ -18,7 +18,7 @@ from backend.core.config import settings
 from backend.core.database import get_sessionmaker
 from backend.core.observability import log_event
 from backend.core.models import Conversation, Message, Project
-from backend.features import code_images, code_interpreter, docgen, filegen, rag, reasoning, route_telemetry, sandbox, skills, taskbrain, taskrouter
+from backend.features import code_images, code_interpreter, docgen, filegen, rag, reasoning, research, route_telemetry, sandbox, skills, taskbrain, taskrouter
 from backend.features import projects as project_store
 from backend.features import files as file_library
 from backend.features.prompting import CODE_INTERPRETER_PROMPT, FORMAT_INSTRUCTIONS, build_system_prompt, strip_think as _strip_think
@@ -521,6 +521,17 @@ def _outer_summary_for_plan(plan, *, has_attachments: bool) -> str:
     return f"{detail} Attachments are included as context." if has_attachments else detail
 
 
+_RESEARCH_PREFIX = re.compile(r"^\s*/(?:deep[\s-]?research|research)\b[:\s]*", re.IGNORECASE)
+
+
+def _research_query(text: str) -> str | None:
+    """Return the question after a /research (or /deep research) command, else None."""
+    match = _RESEARCH_PREFIX.match(text or "")
+    if not match:
+        return None
+    return text[match.end():].strip()
+
+
 async def stream_reply(
     conv_id: str,
     user_content: str,
@@ -541,6 +552,35 @@ async def stream_reply(
     messages = turn.messages
 
     yield {"title": turn.title}
+
+    # Deep Research: an explicit /research command runs the decompose -> gather -> cited-report
+    # workflow instead of a normal chat turn.
+    research_q = _research_query(user_content)
+    if research_q is not None:
+        trace = ReasoningTrace()
+        yield trace.outer(
+            "Deep Research",
+            "Decomposing the question, gathering evidence from your documents, and writing a cited report.",
+            status="running", phase="route", metadata={"route": "research", "reasoning_mode": reasoning.label(effort)},
+        )
+        research_collection = collection_id
+        if not research_collection and project_id:
+            research_collection = await project_store.collection_id_for(project_id)
+        research_trusted = await project_store.trusted_context(project_id)
+
+        async def _persist_research(text: str, arts: list[dict] | None) -> str:
+            return await _persist_assistant(cid, text, model, arts)
+
+        async for event in research.run(
+            model, research_q or user_content,
+            collection_id=research_collection, effort=effort,
+            trusted_context=research_trusted, trace=trace, persist=_persist_research,
+        ):
+            if event.get("done"):
+                yield trace.done("Finished the research report and saved it.")
+                yield trace.summary()
+            yield event
+        return
 
     # Plan first so the UI can show the collapsed outer reasoning card immediately. Every visible
     # line below is backend-authored: route chosen → context loaded → tool run → validated → done.

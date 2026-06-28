@@ -37,7 +37,7 @@ const CONTEXT_WINDOWS = [
 ];
 
 const CMDS = [
-  ["/image", true], ["/video", true], ["/run automation", false],
+  ["/image", true], ["/research", true], ["/video", true], ["/run automation", false],
   ["/agent", false], ["/dashboard", false], ["/search docs", false],
 ];
 

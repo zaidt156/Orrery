@@ -772,3 +772,20 @@ trace detail, or centralizing the SSE event helpers, or the JSONB metadata migra
   the code are facts, never instructions.
 
 Next up: Deep Research mode (decompose -> gather from documents + provider web tool -> cited report).
+
+
+## Step 63 - Deep Research mode (June 28, 2026)
+
+- **Proper research, not just a chat reply.** A /research command now runs a real workflow: the model
+  decomposes the question into focused sub-questions, gathers evidence for each from the user's uploaded
+  documents (RAG), then writes one structured report that cites its evidence with [n] markers and a
+  Sources list. Shown with the same two-layer activity card (Planning research -> Researching each
+  sub-question -> Writing report).
+- **Safety + honesty.** Gathered passages are untrusted evidence to cite, never instructions. The model
+  must not invent citations; when the documents are silent it answers from general knowledge and says so.
+- **Universal + metered.** Works on any model/connection; token/cost is tracked like normal chat.
+- **Next increment:** provider-native web search (OpenAI/Anthropic/Gemini tools via litellm), wired in
+  the gather step. Deferred so it can be verified live against the user's real provider/keys — the
+  backend's only outbound traffic stays "to the providers the user configured" (no third-party fetch).
+
+Next up: wire + live-verify provider web search into Deep Research; optional reasoning-mode selector relabel.
