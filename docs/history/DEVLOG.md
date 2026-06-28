@@ -869,3 +869,18 @@ reloads; per-segment outer reasoning headlines.
   file is produced (rather than the on-demand export fallback).
 
 Next: persist the reasoning trace across reloads; per-segment outer reasoning headlines.
+
+
+## Step 69 - Universal model reasoning on every route (June 28, 2026)
+
+- **The root cause:** raw reasoning only appears if the model emits it, and not all models do; the file
+  and image routes also weren't all streaming it. So the user often saw only backend narration steps.
+- **Universal fix:** every built system prompt now includes a reasoning directive telling the model to
+  think inside <think></think> before its output. ThinkStream already extracts that, streams it to the
+  reasoning panel as live thinking, and removes it from the final answer. So real reasoning now shows on
+  every route that builds a prompt - chat, file/document/deck generation, and Deep Research - on ANY
+  model/connection, even ones that don't natively emit reasoning tokens. The strict SVG route is left
+  untouched (separate prompt).
+
+Remaining: stream reasoning from the image (SVG) route too; persist reasoning across reloads; per-segment
+outer reasoning headlines.

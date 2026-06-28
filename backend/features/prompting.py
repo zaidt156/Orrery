@@ -148,6 +148,19 @@ _UNTRUSTED_HEADER = (
 )
 
 
+# Universal reasoning directive — included in EVERY built system prompt so the model's real thinking is
+# shown on every route (chat, file, deck, research, …) regardless of whether the model natively emits
+# reasoning tokens. ThinkStream extracts the <think> block, streams it to the panel, and removes it from
+# the final answer, so this is safe alongside strict-output rules (the answer/code/spec comes after </think>).
+_REASONING_DIRECTIVE = (
+    "Reasoning visibility: before your final output, think through the task inside <think> and </think> "
+    "tags — genuine, concise, step-by-step reasoning about THIS request (what you're doing, key decisions, "
+    "checks, and how you'll use any tools or produce any file). Orrery streams that to the user as your live "
+    "thinking and strips it from the final answer, so reason naturally and specifically. After the closing "
+    "</think>, produce the actual answer or required output exactly as the rules below specify."
+)
+
+
 def build_system_prompt(
     *,
     app_rules: str,
@@ -160,7 +173,7 @@ def build_system_prompt(
     parts: list[str] = [
         "# APP RULES\n"
         "These rules are mandatory and override all lower-priority sections.\n\n"
-        f"{app_rules.strip()}"
+        f"{app_rules.strip()}\n\n{_REASONING_DIRECTIVE}"
     ]
     if feature_rules and feature_rules.strip():
         parts.append(
