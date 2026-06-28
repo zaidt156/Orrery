@@ -160,26 +160,45 @@ function fileExtIcon(name = "") {
   return "📄";
 }
 
-// A file produced by the code-execution pipeline: name + size + Preview/Download.
+// Human "Type" label for the card subtitle (e.g. "Document · PDF").
+function fileTypeLabel(name = "") {
+  const ext = (name.split(".").pop() || "").toLowerCase();
+  if (["pdf", "doc", "docx"].includes(ext)) return "Document";
+  if (["xls", "xlsx", "csv", "tsv"].includes(ext)) return "Spreadsheet";
+  if (["ppt", "pptx"].includes(ext)) return "Presentation";
+  if (["png", "jpg", "jpeg", "gif", "webp", "svg"].includes(ext)) return "Image";
+  if (["zip", "tar", "gz"].includes(ext)) return "Archive";
+  if (["json", "yaml", "yml", "xml"].includes(ext)) return "Data";
+  if (["html", "htm", "js", "jsx", "ts", "tsx", "py", "css", "md", "sql"].includes(ext)) return "Code";
+  if (["txt", "log"].includes(ext)) return "Text";
+  if (["wav", "mp3"].includes(ext)) return "Audio";
+  return "File";
+}
+
+// A produced file shown as a rich card: thumbnail + name + "Type · EXT · size" + Preview/Download.
 export function GeneratedFileCard({ file, onPreview, onDownload }) {
   const [busy, setBusy] = useState(null);
   const canPreview = PREVIEWABLE_FILE.test(file.name || "");
+  const ext = (file.name?.split(".").pop() || "file").toUpperCase();
+  const meta = [fileTypeLabel(file.name), ext, file.size ? formatBytes(file.size) : ""].filter(Boolean).join(" · ");
   async function run(kind, fn) { setBusy(kind); try { await fn(); } finally { setBusy(null); } }
   return (
-    <div className="file-card">
-      <span className="file-card-icon">{fileExtIcon(file.name)}</span>
-      <span className="file-card-meta">
-        <span className="file-card-name">{file.name}</span>
-        <span className="file-card-size">{formatBytes(file.size)}</span>
+    <div className="file-card2">
+      <span className="file-thumb" aria-hidden="true">{fileExtIcon(file.name)}</span>
+      <span className="file-card2-meta">
+        <span className="file-card2-name" title={file.name}>{file.name}</span>
+        <span className="file-card2-sub">{meta}</span>
       </span>
-      {canPreview && (
-        <button className="file-chip" disabled={!!busy} onClick={() => run("preview", onPreview)} title="Preview in side panel">
-          <Eye /> {busy === "preview" ? "Opening…" : "Preview"}
+      <span className="file-card2-actions">
+        {canPreview && (
+          <button className="file-btn ghost" disabled={!!busy} onClick={() => run("preview", onPreview)} title="Preview in side panel">
+            <Eye /> {busy === "preview" ? "Opening…" : "Preview"}
+          </button>
+        )}
+        <button className="file-btn primary" disabled={!!busy} onClick={() => run("dl", onDownload)} title="Download to your computer">
+          <Download /> {busy === "dl" ? "Saving…" : "Download"}
         </button>
-      )}
-      <button className="file-chip" disabled={!!busy} onClick={() => run("dl", onDownload)} title="Download to your computer">
-        <Download /> {busy === "dl" ? "Saving…" : "Download"}
-      </button>
+      </span>
     </div>
   );
 }

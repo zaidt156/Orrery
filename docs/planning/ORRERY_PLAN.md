@@ -307,24 +307,29 @@ no inline DB I/O in the orchestrator. That is "production-ready, not fragile."
 
 Tracks the enhanced v4 plan against the real codebase. Updated as features land.
 
-Done:
-- [x] Safe two-layer reasoning work trace (outer card + inner timeline + summary)
-- [x] ThinkStream strips raw/inline reasoning; never condenses chain-of-thought to the UI
-- [x] stream_reply emits backend-authored trace per route (chat/file/image/project/audio) + regenerate
-- [x] Deterministic docgen route + sandboxed filegen route with validation + bounded repair
-- [x] Project workspaces: per-project files -> RAG, project-scoped chats, trusted project context
-- [x] Route telemetry (decision + outcome, sanitized)
-- [x] Deep Reasoning Mode (Quick/Standard/Deep/Max -> effort + retry budget)
-- [x] Local API session token; secrets only in keychain
-- [x] `stream_reply` split into route handlers with dispatcher tests for research/image/project/audio/file fallback paths
+Implemented:
+- [x] Reasoning panel shows the model's REAL reasoning, streamed live (provider reasoning channel +
+      inline <think>), plus a trace line of what it actually did (web search, code run, files) and the
+      sources it used; it stays rolled-up after the answer instead of vanishing. (Raw reasoning is shown
+      by the user's choice; the childish "Loaded skills" step was removed.)
+- [x] Code interpreter: the model writes and runs Python in the hardened sandbox (```orrery-run);
+      stdout + produced files come back and drive the answer.
+- [x] Universal web search: the model searches when it wants (```orrery-search) on ANY model/connection
+      (keyless backend search via ddgs); also wired into Deep Research. Results are untrusted + redacted.
+- [x] Deep Research: decompose -> gather (documents + web) -> one cited report; toggle now in the chatbox.
+- [x] Deep Reasoning Mode selector (Quick/Standard/Deep/Max -> effort + file-repair budget).
+- [x] File generation prefers the sandbox -> an actual downloadable file shown as a rich card (thumbnail
+      + Type/EXT/size + Preview/Download, "Download all" for multiple). Deterministic docgen is the fallback.
+- [x] Project workspaces: per-project files -> RAG, project-scoped chats, trusted project context.
+- [x] stream_reply split into route handlers + dispatcher tests; route telemetry (sanitized).
+- [x] Sources rendered inside the reasoning panel (no raw URL banner).
+- [x] Local API session token; secrets only in keychain.
 
-Done (web):
-- [x] Universal web search (keyless, any model) in chat + Deep Research
-
-In progress / next:
-- [x] High-end sandbox capability: model writes + runs Python in chat, output returned (code interpreter loop)
-- [x] Deep Research mode: decompose -> gather (documents + universal web search) -> cited report
-- [x] Reasoning-mode selector in the chat header (Quick/Standard/Deep/Max)
+Next:
+- [ ] Persist the reasoning trace across reloads (currently kept in-session only) + per-segment outer
+      reasoning headlines (the multi-card "what's going on" view from the reference screenshots).
+- [ ] Optional keyed web-search provider (Brave/Tavily) for higher volume/precision.
+- [ ] Cancellation/resume dispatcher coverage; typed SSE event helper (Phase 0 checklist remainder).
 
 Later phases (not started): Dashboards, Automations, Agents, Media Hub, Capability Contract schema,
 Approval gates, JSONB metadata migration.

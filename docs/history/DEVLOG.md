@@ -858,3 +858,14 @@ Next up: optional keyed search provider; per-step expand/collapse if the trace g
 
 Remaining: richer file cards (thumbnail + Download-and-open + Download all); persist reasoning across
 reloads; per-segment outer reasoning headlines.
+
+
+## Step 68 - Rich file cards (June 28, 2026)
+
+- **Produced files look like real files.** Generated files now render as a rich card: a file thumbnail,
+  the name, a "Type / EXT / size" subtitle, and Preview + Download actions; when a reply produces more
+  than one file, a "Download all" button appears. Matches the reference design the user shared.
+- Pairs with the earlier change that routes file requests through the sandbox so an actual downloadable
+  file is produced (rather than the on-demand export fallback).
+
+Next: persist the reasoning trace across reloads; per-segment outer reasoning headlines.

@@ -701,6 +701,15 @@ export default function Chat() {
                     />
                   )
                 ))}
+                {m.artifacts?.filter((a) => a.kind === "file").length > 1 && (
+                  <button
+                    className="file-downloadall"
+                    onClick={() => m.artifacts.filter((a) => a.kind === "file").forEach((a) =>
+                      downloadGeneratedFile(a.id, a.name).catch((e) => setBanner(String(e.message || e))))}
+                  >
+                    <Download /> Download all
+                  </button>
+                )}
                 {!m.streaming && !m.error && (
                   <div className="msg-actions">
                     <button title="Copy reply" aria-label="Copy reply" onClick={() => copy(m.content)}>
