@@ -10,6 +10,7 @@ import mimetypes
 import re
 import uuid
 from collections.abc import AsyncIterator
+from dataclasses import dataclass
 
 from sqlalchemy import select
 
@@ -26,7 +27,7 @@ from backend.features.chat_context import (
     _effective_context_window, _history_text, _latest_user_text, _limit_messages,
     _message_artifacts, _title_from, _wants_high_effort,
 )
-from backend.features.reasoning_trace import ThinkStream, reasoning_event
+from backend.features.reasoning_trace import ReasoningTrace, ThinkStream, reasoning_event
 from backend.providers import ai
 from backend.security import privacy
 
@@ -432,21 +433,28 @@ def cancel_run(conv_id: str) -> None:
         task.cancel()
 
 
-async def stream_reply(
-    conv_id: str,
-    user_content: str,
-    attachments: list[dict] | None = None,
-    collection_id: str | None = None,
-) -> AsyncIterator[dict]:
-    """Persist the user message (with any attachments), then stream + persist the reply."""
-    cid = uuid.UUID(conv_id)
-    attachments = attachments or []
+@dataclass(slots=True)
+class _TurnContext:
+    """Everything stream_reply needs from the DB for one turn — the single DB seam.
 
+    Keeping this load/persist in one place makes the orchestrator mockable (see Phase A of the
+    task-routing hardening plan): tests can substitute _prepare_turn instead of a live Postgres.
+    """
+    model: str
+    system_prompt: str | None
+    effort: str | None
+    project_id: uuid.UUID | None
+    context_window: int
+    messages: list[dict]
+    title: str
+
+
+async def _prepare_turn(cid: uuid.UUID, user_content: str, attachments: list[dict]) -> _TurnContext | None:
+    """Load the conversation + history and persist the incoming user message. None if missing."""
     async with get_sessionmaker()() as s:
         conv = await s.get(Conversation, cid)
         if conv is None:
-            yield {"error": "Conversation not found."}
-            return
+            return None
         model, system_prompt, effort = conv.model, conv.system_prompt, conv.effort
         project_id = conv.project_id
         context_window = _effective_context_window(conv.context_window)
@@ -467,15 +475,98 @@ async def stream_reply(
         if conv.title == "New chat" and not history:
             seed = user_content or (attachments[0].get("name") if attachments else "")
             conv.title = _title_from(seed)
-        new_title = conv.title
+        title = conv.title
         await s.commit()
 
-    yield {"title": new_title}
+    return _TurnContext(model, system_prompt, effort, project_id, context_window, messages, title)
+
+
+def _plan_metadata(plan) -> dict:
+    """Small, safe metadata for the reasoning UI (route/sandbox/confidence — never prompt text)."""
+    telemetry = getattr(plan, "telemetry", None)
+    if callable(telemetry):
+        try:
+            return telemetry()
+        except Exception:  # noqa: BLE001 — metadata is cosmetic; never break the stream
+            pass
+    sandbox = "required" if getattr(plan, "sandbox_required", False) else (
+        "preferred" if getattr(plan, "sandbox_preferred", False) else "none")
+    return {
+        "route": getattr(plan, "route", "chat"),
+        "label": getattr(plan, "label", "Chat"),
+        "output_mode": getattr(plan, "output_mode", "chat"),
+        "sandbox_policy": sandbox,
+        "confidence": float(getattr(plan, "confidence", 0.0) or 0.0),
+        "skills": ",".join(getattr(plan, "skills", ()) or ()),
+    }
+
+
+def _outer_title_for_plan(plan) -> str:
+    """The collapsed outer card headline — what Orrery is about to do, plainly."""
+    route = getattr(plan, "route", "chat")
+    label = getattr(plan, "label", "Chat")
+    if route == "file":
+        return "Preparing the requested file"
+    if route == "image":
+        return "Preparing a safe visual artifact"
+    if route == "project":
+        return "Preparing the project workspace action"
+    if route == "audio":
+        return "Checking audio and voice capabilities"
+    return f"Working through the request with {label.lower()}"
+
+
+def _outer_summary_for_plan(plan, *, has_attachments: bool) -> str:
+    detail = getattr(plan, "detail", "") or "Preparing the answer."
+    return f"{detail} Attachments are included as context." if has_attachments else detail
+
+
+async def stream_reply(
+    conv_id: str,
+    user_content: str,
+    attachments: list[dict] | None = None,
+    collection_id: str | None = None,
+) -> AsyncIterator[dict]:
+    """Persist the user message (with any attachments), then stream + persist the reply."""
+    cid = uuid.UUID(conv_id)
+    attachments = attachments or []
+
+    turn = await _prepare_turn(cid, user_content, attachments)
+    if turn is None:
+        yield {"error": "Conversation not found."}
+        return
+    model, system_prompt, effort = turn.model, turn.system_prompt, turn.effort
+    project_id = turn.project_id
+    context_window = turn.context_window
+    messages = turn.messages
+
+    yield {"title": turn.title}
+
+    # Plan first so the UI can show the collapsed outer reasoning card immediately. Every visible
+    # line below is backend-authored: route chosen → context loaded → tool run → validated → done.
+    # Raw/condensed model chain-of-thought is never surfaced here (see reasoning_trace safety rule).
+    plan = taskrouter.plan(user_content, has_attachments=bool(attachments))
+    plan_meta = _plan_metadata(plan)
+    trace = ReasoningTrace()
+    yield trace.outer(
+        _outer_title_for_plan(plan),
+        _outer_summary_for_plan(plan, has_attachments=bool(attachments)),
+        status="running", phase="route", metadata=plan_meta,
+    )
+    yield trace.step(
+        "Choosing response path", f"Selected {plan.label}. {plan.detail}",
+        kind="route", status="done", phase="route", metadata=plan_meta,
+    )
+    route_event_id = await route_telemetry.record_plan(str(cid), plan, has_attachments=bool(attachments))
 
     gen_system = system_prompt        # user's standing instructions only
     trusted_context = await project_store.trusted_context(project_id)
     if trusted_context:
-        yield reasoning_event("Preparing project context", "Loaded the current project's standing context and instructions.")
+        yield trace.step(
+            "Preparing project context",
+            "Loaded the current project's standing context and instructions.",
+            kind="context", status="done", phase="context",
+        )
     if not collection_id and project_id:  # project chats answer from the project's uploaded files
         collection_id = await project_store.collection_id_for(project_id)
     rag_context = None                 # retrieved docs — passed separately as UNTRUSTED context
@@ -484,18 +575,26 @@ async def stream_reply(
         if block:
             rag_context = block
             yield {"sources": sources}
-            yield reasoning_event("Preparing context", f"Loaded {len(sources)} document(s) from project/collection files to answer from.")
-
-    plan = taskrouter.plan(user_content, has_attachments=bool(attachments))
-    route_event_id = await route_telemetry.record_plan(str(cid), plan, has_attachments=bool(attachments))
-    if plan.route != "chat" or attachments:
-        yield reasoning_event("Planning task", f"{plan.label}: {plan.detail}")
+            yield trace.step(
+                "Searching uploaded documents",
+                f"Loaded {len(sources)} document(s) from project/collection files to answer from.",
+                kind="context", status="done", phase="context", metadata={"source_count": len(sources)},
+            )
 
     if plan.route == "image" and not attachments:
         outcome = "completed"
+        yield trace.step(
+            "Rendering visual artifact",
+            "Generating and sanitizing the SVG before saving it to the conversation.",
+            kind="tool", status="running", phase="execute",
+        )
         async for ev in _deliver_code_image(cid, model, user_content, gen_system, effort):
             if "error" in ev:
                 outcome = "failed"
+                yield trace.error("Image generation failed", ev.get("error", "The image route failed."))
+            elif ev.get("done"):
+                yield trace.done("Created and saved the sanitized visual artifact.")
+                yield trace.summary()
             yield ev
         await route_telemetry.record_outcome(route_event_id, outcome)
         return
@@ -503,6 +602,11 @@ async def stream_reply(
     if plan.route == "project":
         project_name = project_store.name_from_prompt(user_content)
         if project_name:
+            yield trace.step(
+                "Creating project",
+                f"Creating a durable project workspace named {project_name} and attaching this chat.",
+                kind="tool", status="running", phase="execute",
+            )
             project = await project_store.create_project(project_name)
             await project_store.set_conversation_project(str(cid), project["id"])
             message = f"Created project **{project['name']}** and attached this chat to it."
@@ -511,6 +615,8 @@ async def stream_reply(
             yield {"delta": message}
             if message_id:
                 yield {"message_id": message_id}
+            yield trace.done("Created the project and attached this chat to it.")
+            yield trace.summary()
             yield {"done": True}
             await route_telemetry.record_outcome(route_event_id, "completed")
             return
@@ -518,21 +624,13 @@ async def stream_reply(
     if plan.route == "audio" and plan.unavailable_reason:
         message = plan.unavailable_reason
         message_id = await _persist_assistant(cid, message, model)
+        yield trace.warning("Audio route unavailable", "Voice playback/transcription providers are not configured yet.")
         yield {"delta": message}
         if message_id:
             yield {"message_id": message_id}
+        yield trace.summary()
         yield {"done": True}
         await route_telemetry.record_outcome(route_event_id, "unavailable", "voice provider not configured")
-        return
-
-    if plan.route == "project" and plan.unavailable_reason:
-        message = plan.unavailable_reason
-        message_id = await _persist_assistant(cid, message, model)
-        yield {"delta": message}
-        if message_id:
-            yield {"message_id": message_id}
-        yield {"done": True}
-        await route_telemetry.record_outcome(route_event_id, "unavailable", "project route unavailable")
         return
 
     # File generation routing: deterministic `docgen` first for normal documents; the sandboxed
@@ -542,13 +640,17 @@ async def stream_reply(
         sandbox_attempted = False
         if use_sandbox:
             sandbox_attempted = True
-            yield reasoning_event("Selected generation path", "Sandboxed code execution (charts, images, or computed files).")
+            yield trace.step(
+                "Selected generation path",
+                "Using sandboxed code execution because this file needs computation, visuals, audio, archives, or complex output.",
+                kind="tool", status="done", phase="execute", metadata={"sandbox": True},
+            )
             result = None
             async for ev in filegen.run(model, user_content, gen_system, effort, rag_context, trusted_context):
                 if "result" in ev:
                     result = ev["result"]
                 else:
-                    yield ev  # status / reasoning_event / etc.
+                    yield ev  # status / reasoning step / etc.
             if result and result.get("ok") and result.get("files"):
                 produced: list[dict] = []
                 for item in result["files"]:
@@ -563,30 +665,57 @@ async def stream_reply(
                     yield {"delta": summary}
                     yield {"files": produced}
                     yield {"message_id": message_id}
+                    yield trace.done("Generated, validated, stored, and attached the requested file output.")
+                    yield trace.summary()
                     yield {"done": True}
                     await route_telemetry.record_outcome(route_event_id, "sandbox_success")
                     return
+            yield trace.warning(
+                "Sandbox fallback",
+                "The sandbox path did not produce an approved file, so Orrery is falling back to deterministic document generation.",
+                sandbox_attempted=True,
+            )
             # sandbox missed → fall through to the deterministic builder so we never come up empty
         else:
-            yield reasoning_event("Selected generation path", "Deterministic document builder.")
+            yield trace.step(
+                "Selected generation path",
+                "Using the deterministic document builder for this downloadable file.",
+                kind="tool", status="done", phase="execute", metadata={"sandbox": False},
+            )
         delivered = False
         async for ev in _deliver_docspec(cid, model, user_content, gen_system, effort, rag_context, trusted_context):
             if "files" in ev:
                 delivered = True
+            if ev.get("done"):
+                yield trace.done("Rendered the structured document spec, stored the file, and attached it to the chat.")
+                yield trace.summary()
             yield ev
         if delivered:
             outcome = "sandbox_fallback" if sandbox_attempted else "deterministic_success"
             await route_telemetry.record_outcome(route_event_id, outcome)
             return
         await route_telemetry.record_outcome(route_event_id, "deterministic_failed")
+        yield trace.warning(
+            "File route fallback",
+            "The file builder could not produce an approved artifact, so Orrery will answer in normal chat instead.",
+        )
         yield {"status": ""}  # clear the progress note before the plain fallback reply streams
 
     budget_system = "\n\n".join(part for part in (gen_system, trusted_context, rag_context) if part)
     messages = _limit_messages(messages, context_window, budget_system)
     outcome = "completed"
+    yield trace.step(
+        "Generating answer",
+        "Streaming the response from the selected model while keeping hidden reasoning out of the visible answer.",
+        kind="work", status="running", phase="execute", metadata={"model": model},
+    )
     async for event in _generate(cid, model, gen_system, messages, effort, rag_context, trusted_context):
         if "error" in event:
             outcome = "failed"
+            yield trace.error("Generation failed", event.get("error", "The model call failed."))
+        if event.get("done"):
+            yield trace.done("Finished streaming and saved the assistant reply.")
+            yield trace.summary()
         yield event
     if plan.route in {"chat", "project"}:
         await route_telemetry.record_outcome(route_event_id, outcome)
@@ -687,5 +816,14 @@ async def regenerate(conv_id: str) -> AsyncIterator[dict]:
     trusted_context = await project_store.trusted_context(project_id)
     budget_system = "\n\n".join(part for part in (system_prompt, trusted_context) if part)
     messages = _limit_messages(messages, context_window, budget_system)
+
+    trace = ReasoningTrace()  # same two-layer activity card as a normal turn
+    yield trace.outer("Regenerating the answer", "Re-answering the last turn with the selected model.", status="running", phase="route")
+    if trusted_context:
+        yield trace.step("Preparing project context", "Loaded the current project's standing context and instructions.", kind="context", status="done", phase="context")
+    yield trace.step("Generating answer", "Streaming a fresh response from the selected model.", kind="work", status="running", phase="execute", metadata={"model": model})
     async for event in _generate(cid, model, system_prompt, messages, effort, trusted_context=trusted_context):
+        if event.get("done"):
+            yield trace.done("Finished streaming and saved the regenerated reply.")
+            yield trace.summary()
         yield event

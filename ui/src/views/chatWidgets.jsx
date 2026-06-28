@@ -1,7 +1,9 @@
 // Leaf UI components for Chat: file chips, generated-file cards, SVG renders, and the
 // thinking/working indicators. Kept out of Chat.jsx to keep that file focused.
 import { useEffect, useState } from "react";
-import { Download, Eye } from "lucide-react";
+import {
+  AlertTriangle, CheckCircle2, Cog, Download, Eye, FileText, GitBranch, Loader2, Search, ShieldCheck, Terminal,
+} from "lucide-react";
 import { saveClientFile, getTasks, cancelTask } from "../lib/api.js";
 
 // Task Brain: a live, collapsible ledger of background work (chat generations, jobs, automations)
@@ -261,27 +263,57 @@ export function ThinkingPulse() {
   );
 }
 
-// Safe reasoning panel: a collapsible "How this was produced" that shows Orrery's own
-// work-trace steps and a closing summary — never the model's raw reasoning. Auto-open
-// while streaming so you can watch the steps; collapsed once the answer is done.
-export function ReasoningPanel({ trace, summary, streaming }) {
+// One timeline-row glyph per step. The shape comes from the step KIND (so a tool stays a terminal
+// even once it's done); colour comes from STATUS via the trace-<status> class.
+function StepIcon({ kind, status }) {
+  if (status === "running") return <Loader2 className="trace-spin" />;
+  switch (kind) {
+    case "route": return <GitBranch />;
+    case "context": return <Search />;
+    case "tool":
+    case "script": return <Terminal />;
+    case "file": return <FileText />;
+    case "validation":
+    case "safety": return <ShieldCheck />;
+    case "warning":
+    case "error": return <AlertTriangle />;
+    case "work": return <Cog />;
+    case "result":
+    default: return <CheckCircle2 />;
+  }
+}
+
+// Safe two-layer reasoning panel, like a high-end AI workspace:
+//   • outer = a collapsed activity card (what Orrery is doing + a one-line summary);
+//   • inner = an expandable timeline (route → context → tool → validation → done).
+// Every line is Orrery's own work-trace — never the model's raw reasoning. Auto-opens while
+// streaming so the steps are visible live; collapses to the outer card once the answer is done.
+export function ReasoningPanel({ outer, trace, summary, streaming }) {
   const [open, setOpen] = useState(false);
   const steps = trace || [];
-  if (!steps.length && !summary) return null;
+  if (!steps.length && !summary && !outer) return null;
   const show = open || streaming;
+  const title = streaming
+    ? (outer?.title || "Working…")
+    : (outer?.title || summary?.title || "How this was produced");
   return (
     <div className={`think-block${streaming ? " live" : ""}`}>
       <button className="think-head" onClick={() => setOpen((v) => !v)}>
-        {streaming ? "Thinking…" : (summary?.title || "How this was produced")}
+        <span className="think-headings">
+          <span className="think-title">{title}</span>
+          {outer?.summary ? <span className="think-sub">{outer.summary}</span> : null}
+        </span>
         <span className="think-caret">{show ? "▾" : "▸"}</span>
       </button>
       {show && (
         <div className="think-body">
           {steps.map((s, i) => (
-            <div key={i} className="trace-step">
-              <span className="trace-check" aria-hidden="true">✓</span>
-              <span className="trace-stage">{s.stage}</span>
-              {s.detail ? <span className="trace-detail"> — {s.detail}</span> : null}
+            <div key={s.id || i} className={`trace-step trace-${s.status || "done"}`}>
+              <span className="trace-icon" aria-hidden="true"><StepIcon kind={s.kind} status={s.status} /></span>
+              <span className="trace-text">
+                <span className="trace-stage">{s.stage}</span>
+                {s.detail ? <span className="trace-detail">{s.detail}</span> : null}
+              </span>
             </div>
           ))}
           {!streaming && summary?.items?.length ? (

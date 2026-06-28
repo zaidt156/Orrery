@@ -287,18 +287,31 @@ body{
 .think-stars i:nth-child(2){color:var(--amber); animation-delay:.3s}
 .think-stars i:nth-child(3){animation-delay:.6s}
 @keyframes shimmer{0%{background-position:200% 0} 100%{background-position:-200% 0}}
-.think-block{margin-bottom:9px; border-left:2px solid var(--line); padding-left:10px}
-.think-block.live{border-left-color:var(--ice)}
-.think-head{background:none; border:none; cursor:pointer; padding:0; display:flex; align-items:center; gap:6px;
-  font-family:var(--font-mono); font-size:10.5px; letter-spacing:.06em; text-transform:uppercase; color:var(--faint)}
-.think-block.live .think-head{color:var(--ice)}
-.think-caret{font-size:9px}
-.think-body{margin-top:6px; white-space:pre-wrap; word-break:break-word; color:var(--muted); font-size:12.5px; line-height:1.55; opacity:.92}
-.trace-step{display:flex; gap:6px; align-items:baseline; margin:3px 0; white-space:normal}
-.trace-check{color:var(--ice); font-size:11px}
-.trace-stage{color:var(--text); font-weight:600}
-.trace-detail{color:var(--muted)}
-.trace-summary{margin:8px 0 2px; padding-left:20px; color:var(--muted)}
+/* Two-layer reasoning panel: outer activity card + inner step timeline */
+.think-block{margin:4px 0 10px; border:1px solid var(--line); border-radius:10px; background:var(--bg1); overflow:hidden}
+.think-block.live{border-color:var(--ice)}
+.think-head{width:100%; background:none; border:none; cursor:pointer; padding:9px 12px; display:flex;
+  align-items:center; gap:10px; text-align:left}
+.think-headings{flex:1; min-width:0; display:flex; flex-direction:column; gap:2px}
+.think-title{color:var(--text); font-size:12.5px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.think-block.live .think-title{color:var(--ice)}
+.think-sub{color:var(--faint); font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.think-caret{font-size:9px; color:var(--faint); flex:none}
+.think-body{padding:2px 12px 11px}
+.trace-step{display:flex; gap:9px; align-items:flex-start; padding:5px 0; border-top:1px solid var(--line-soft)}
+.trace-step:first-child{border-top:none}
+.trace-icon{flex:none; display:flex; margin-top:1px; color:var(--faint)}
+.trace-icon svg{width:14px; height:14px}
+.trace-text{min-width:0; display:flex; flex-direction:column; gap:1px}
+.trace-stage{color:var(--text); font-size:12.5px; font-weight:600; line-height:1.4}
+.trace-detail{color:var(--muted); font-size:12px; line-height:1.5}
+.trace-done .trace-icon{color:#54c08a}
+.trace-running .trace-icon{color:var(--amber)}
+.trace-warning .trace-icon{color:var(--amber)}
+.trace-error .trace-icon{color:#e0635f}
+.trace-spin{animation:trace-spin .9s linear infinite}
+@keyframes trace-spin{to{transform:rotate(360deg)}}
+.trace-summary{margin:8px 0 2px; padding-left:20px; color:var(--muted); font-size:12px}
 .trace-summary li{margin:2px 0}
 /* Task Brain (Activity) panel in the chat sidebar */
 .taskbrain{margin-top:auto; border-top:1px solid var(--line); padding-top:8px}
@@ -787,18 +800,12 @@ body{
 
 .project-chat-panel{flex:1;min-width:0;min-height:0;display:flex;flex-direction:column;padding:14px clamp(16px,3vw,30px)}
 .project-chats-scroll{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:7px;padding-right:2px}
-.project-composer{display:flex;gap:8px;align-items:flex-end;padding-top:12px;border-top:1px solid var(--line-soft);margin-top:10px}
-.project-composer textarea{
-  flex:1;min-width:0;box-sizing:border-box;background:var(--bg1);border:1px solid var(--line);border-radius:10px;color:var(--text);
-  padding:10px 12px;font-family:var(--font-ui);font-size:13px;line-height:1.5;outline:none;resize:none;min-height:44px;max-height:140px;
-}
-.project-composer textarea:focus{border-color:var(--amber)}
-.project-start-btn{
-  flex:none;min-width:88px;height:44px;display:inline-flex;align-items:center;justify-content:center;gap:7px;
-  white-space:nowrap;padding:0 14px;
-}
-.project-start-btn svg{width:14px;height:14px}
-.project-start-btn:disabled{opacity:.5;cursor:default}
+.project-composer{padding-top:12px;border-top:1px solid var(--line-soft);margin-top:10px}
+.project-composer-box{min-height:52px}
+.project-composer-box textarea{min-height:22px;max-height:120px}
+.project-composer-icon{width:16px;height:16px;color:var(--faint);flex:none}
+.project-composer-box .send{flex:none}
+.project-composer-box .send:disabled{opacity:.5;cursor:default}
 
 @media (max-width:860px){
   .projects-view{flex-direction:column}
@@ -811,8 +818,6 @@ body{
 @media (max-width:560px){
   .project-list{grid-template-columns:1fr}
   .project-head{align-items:flex-start;flex-wrap:wrap}
-  .project-composer{align-items:stretch;flex-direction:column}
-  .project-start-btn{width:100%}
 }
 
 /* chat command surface */

@@ -325,6 +325,8 @@ export default function Chat() {
     try {
       await start((ev) => {
         if (ev.delta) appendDelta(setMessages, ev.delta);
+        else if (ev.reasoning_outer) setLast({ outer: ev.reasoning_outer });
+        else if (ev.reasoning_step) appendTrace(setMessages, ev.reasoning_step);
         else if (ev.reasoning_event) appendTrace(setMessages, ev.reasoning_event);
         else if (ev.reasoning_summary) setLast({ summary: ev.reasoning_summary });
         else if (ev.artifact) setLast({ artifacts: [ev.artifact] });
@@ -656,8 +658,8 @@ export default function Chat() {
                   return (
                     <>
                       {m.streaming && !body && <ThinkingPulse />}
-                      {(m.trace?.length || m.summary) && (
-                        <ReasoningPanel trace={m.trace} summary={m.summary} streaming={m.streaming} />
+                      {(m.trace?.length || m.summary || m.outer) && (
+                        <ReasoningPanel outer={m.outer} trace={m.trace} summary={m.summary} streaming={m.streaming} />
                       )}
                       <div className="ai-text">
                         {cleaned ? <Markdown>{cleaned}</Markdown> : null}
