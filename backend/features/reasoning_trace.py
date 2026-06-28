@@ -278,28 +278,32 @@ class ThinkStream:
         return buffer.lower().find(tag)
 
     def feed_reasoning(self, text: str) -> list[dict]:
-        """Accept separate provider reasoning deltas; return no visible events."""
-        if text:
-            self.stats.chunks += 1
-            self.stats.chars += len(text)
-        return []
+        """Stream the model's raw reasoning from a separate provider channel (reasoning_content/thinking)."""
+        if not text:
+            return []
+        self.stats.chunks += 1
+        self.stats.chars += len(text)
+        return [{"reasoning_delta": text}]
 
     def feed(self, delta: str) -> tuple[str, list[dict]]:
-        """Return (answer_text_to_emit, reasoning_events). reasoning_events is always []."""
+        """Return (answer_text_to_emit, reasoning_events). Inline <think> content is streamed as raw reasoning."""
         self._buf += delta or ""
         answer: list[str] = []
+        reasoning: list[str] = []
         while self._buf:
             if self._in_think:
                 end = self._find_tag(self._buf, _THINK_CLOSE)
                 if end == -1:
                     cut = len(self._buf) - (_MAX_TAG - 1)
                     if cut > 0:
+                        reasoning.append(self._buf[:cut])
                         self.stats.chunks += 1
                         self.stats.chars += cut
                         self._buf = self._buf[cut:]
                     break
                 hidden = self._buf[:end]
                 if hidden:
+                    reasoning.append(hidden)
                     self.stats.chunks += 1
                     self.stats.chars += len(hidden)
                 self._buf = self._buf[end + len(_THINK_CLOSE):]
@@ -317,13 +321,16 @@ class ThinkStream:
                 answer.append(self._buf[:start])
             self._buf = self._buf[start + len(_THINK_OPEN):]
             self._in_think = True
-        return "".join(answer), []
+        revents = [{"reasoning_delta": "".join(reasoning)}] if reasoning else []
+        return "".join(answer), revents
 
     def finish(self) -> tuple[str, list[dict]]:
-        """Flush remaining answer text, or discard an unterminated hidden block."""
+        """Flush remaining answer text, or the tail of an unterminated reasoning block."""
         answer = ""
+        reasoning: list[str] = []
         if self._in_think:
             if self._buf:
+                reasoning.append(self._buf)
                 self.stats.chunks += 1
                 self.stats.chars += len(self._buf)
             self.stats.inline_think_blocks += 1
@@ -331,7 +338,8 @@ class ThinkStream:
             answer = self._buf
         self._buf = ""
         self._in_think = False
-        return answer, []
+        revents = [{"reasoning_delta": "".join(reasoning)}] if reasoning else []
+        return answer, revents
 
 
 def hidden_reasoning_notice(stats: HiddenReasoningStats) -> dict | None:

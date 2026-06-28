@@ -148,13 +148,18 @@ async def run(
             formatted_prompt, effort, usage_out,
         ):
             if isinstance(delta, ai.ReasoningDelta):
-                think.feed_reasoning(str(delta))
+                for ev in think.feed_reasoning(str(delta)):
+                    yield ev
                 continue
-            answer, _ = think.feed(delta)
+            answer, revs = think.feed(delta)
+            for ev in revs:
+                yield ev
             if answer:
                 parts.append(answer)
                 yield {"delta": answer}
-        tail, _ = think.finish()
+        tail, tail_revs = think.finish()
+        for ev in tail_revs:
+            yield ev
         if tail:
             parts.append(tail)
             yield {"delta": tail}

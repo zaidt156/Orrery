@@ -196,9 +196,6 @@ async def _generate(
     message_id: str | None = None
     usage_out: dict = {}
     user_text = _latest_user_text(messages)
-    matched_skills = skills.select(user_text)  # which skill playbooks apply to this turn
-    if matched_skills:
-        yield reasoning_event("Loaded skills", ", ".join(s.name for s in matched_skills))
     formatted_prompt = build_system_prompt(  # explicit authority layers (app > skills > user > untrusted)
         app_rules=FORMAT_INSTRUCTIONS,
         skills_block=skills.skills_prompt(user_text),
@@ -655,13 +652,16 @@ async def _route_file(
     state: _RouteResult,
 ) -> AsyncIterator[dict]:
     """Generate requested files, falling back from sandbox to docgen to normal chat."""
-    use_sandbox = plan.uses_sandbox and sandbox.image_ready()
+    # Prefer the sandbox whenever it's available: model-written Python (python-docx/openpyxl/pptx/
+    # reportlab/Pillow…) reliably produces a real, downloadable file of any type — which is what the
+    # user sees as an actual file card. The deterministic docgen builder remains the fallback.
+    use_sandbox = sandbox.image_ready()
     sandbox_attempted = False
     if use_sandbox:
         sandbox_attempted = True
         yield trace.step(
             "Selected generation path",
-            "Using sandboxed code execution because this file needs computation, visuals, audio, archives, or complex output.",
+            "Writing and running code in the secure sandbox to produce the requested file.",
             kind="tool", status="done", phase="execute", metadata={"sandbox": True},
         )
         result = None
@@ -748,12 +748,9 @@ async def _route_model_reply(
     if sandbox.image_ready():
         user_text = _latest_user_text(limited_messages)
         gen_effort = filegen.quality_effort(model, effort) if _wants_high_effort(user_text) else effort
-        matched_skills = skills.select(user_text)
-        if matched_skills:
-            yield trace.step("Loaded skills", ", ".join(s.name for s in matched_skills), kind="context", status="done", phase="context")
         yield trace.step(
-            "Generating answer",
-            "Answering with the selected model; it can write and run Python in the sandbox if that helps.",
+            "Thinking",
+            "Reasoning about the request; the model can run Python in the sandbox or search the web if that helps.",
             kind="work", status="running", phase="execute", metadata={"model": model},
         )
         formatted_prompt = build_system_prompt(

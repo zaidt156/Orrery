@@ -9,6 +9,7 @@ import {
   Pencil,
   RefreshCw,
   Repeat2,
+  Telescope,
   WandSparkles,
   X,
 } from "lucide-react";
@@ -328,6 +329,7 @@ export default function Chat() {
     try {
       await start((ev) => {
         if (ev.delta) appendDelta(setMessages, ev.delta);
+        else if (ev.reasoning_delta) appendThinking(setMessages, ev.reasoning_delta);
         else if (ev.reasoning_outer) setLast({ outer: ev.reasoning_outer });
         else if (ev.reasoning_step) appendTrace(setMessages, ev.reasoning_step);
         else if (ev.reasoning_event) appendTrace(setMessages, ev.reasoning_event);
@@ -580,17 +582,6 @@ export default function Chat() {
               </select>
             )}
           </span>
-          <span className="rag-toggle" title="Deep Research: break the question down, search your documents and the web, and write a cited report">
-            Deep Research
-            <span
-              className={`toggle${researchMode ? " on" : ""}`}
-              role="switch"
-              aria-checked={researchMode}
-              tabIndex={0}
-              onClick={() => setResearchMode((v) => !v)}
-              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setResearchMode((v) => !v); } }}
-            />
-          </span>
         </div>
 
         {noKey && (
@@ -675,8 +666,8 @@ export default function Chat() {
                   return (
                     <>
                       {m.streaming && !body && <ThinkingPulse />}
-                      {(m.trace?.length || m.summary || m.outer || m.sources?.length) && (
-                        <ReasoningPanel outer={m.outer} trace={m.trace} summary={m.summary} sources={m.sources} streaming={m.streaming} />
+                      {(m.trace?.length || m.summary || m.outer || m.sources?.length || m.thinking) && (
+                        <ReasoningPanel outer={m.outer} trace={m.trace} thinking={m.thinking} summary={m.summary} sources={m.sources} streaming={m.streaming} />
                       )}
                       <div className="ai-text">
                         {cleaned ? <Markdown>{cleaned}</Markdown> : null}
@@ -788,6 +779,14 @@ export default function Chat() {
               onChange={handleFiles}
             />
             <button className="icon-btn" aria-label="Attach file" title="Attach images or text files" onClick={() => fileRef.current?.click()}><AttachIcon /></button>
+            <button
+              className={`research-toggle${researchMode ? " on" : ""}`}
+              aria-pressed={researchMode}
+              title="Deep Research: break the question down, search your documents and the web, and write a cited report"
+              onClick={() => setResearchMode((v) => !v)}
+            >
+              <Telescope /> {researchMode ? "Research" : ""}
+            </button>
             <textarea
               ref={composerRef}
               rows={1}
@@ -866,6 +865,16 @@ function appendStep(setMessages, step) {
     const steps = last.steps ? [...last.steps] : [];
     if (step && steps[steps.length - 1] !== step) steps.push(step);
     a[a.length - 1] = { ...last, steps, status: step };
+    return a;
+  });
+}
+
+// Append streamed raw model reasoning to the last assistant message (shown in the reasoning panel).
+function appendThinking(setMessages, text) {
+  setMessages((p) => {
+    const a = [...p];
+    const last = a[a.length - 1];
+    a[a.length - 1] = { ...last, thinking: (last.thinking || "") + text };
     return a;
   });
 }

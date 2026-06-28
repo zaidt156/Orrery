@@ -840,3 +840,21 @@ Next up: add cancellation/resume dispatcher coverage, then add the typed SSE eve
   workflow. Removed the easy-to-miss /research chip in favour of the toggle.
 
 Next up: optional keyed search provider; per-step expand/collapse if the trace grows long.
+
+
+## Step 67 - Real reasoning in the panel + Deep Research in the chatbox (June 28, 2026)
+
+- **Show the model's actual reasoning, live.** ThinkStream no longer discards reasoning; it streams the
+  model's real thinking (provider reasoning channel AND inline <think>) into the panel as it happens.
+  The reasoning panel now shows that live thinking, the trace line of what was actually done (searched
+  the web, ran Python, produced files), the sources used, and a Done state - then stays, rolled up,
+  once the answer is finished.
+- **Dropped the childish steps.** Removed the "Loaded skills" line; kept only genuine activity.
+- **Deep Research moved into the chatbox.** The toggle now sits next to the attach button in the
+  composer (not the top toolbar); on = the turn runs decompose -> gather (documents + web) -> cited report.
+- **Files: produce the real thing.** File requests now prefer the sandbox whenever it's available, so
+  the model writes code to generate an actual downloadable file (real file card) instead of falling back
+  to an on-demand export; deterministic docgen remains the fallback.
+
+Remaining: richer file cards (thumbnail + Download-and-open + Download all); persist reasoning across
+reloads; per-segment outer reasoning headlines.

@@ -173,6 +173,13 @@ body{
 }
 .icon-btn{background:none;border:none;color:var(--faint);cursor:pointer;display:flex;padding:4px}
 .icon-btn:hover{color:var(--text)}
+/* Deep Research toggle, inside the chatbox */
+.research-toggle{display:inline-flex; align-items:center; gap:5px; flex:none; background:none;
+  border:1px solid transparent; color:var(--faint); cursor:pointer; border-radius:8px; padding:5px 8px;
+  font-family:var(--font-mono); font-size:11px; white-space:nowrap}
+.research-toggle svg{width:16px; height:16px}
+.research-toggle:hover{color:var(--text)}
+.research-toggle.on{color:var(--amber); border-color:var(--amber); background:rgba(242,177,78,0.12)}
 .send{width:30px;height:30px;border-radius:8px;background:var(--amber);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#221805}
 .composer .hint{font-family:var(--font-mono); font-size:9.5px; color:var(--faint); margin-top:7px; padding-left:4px}
 .composer .send:disabled{opacity:.5; cursor:default}
@@ -322,6 +329,15 @@ body{
 .trace-source.doc{color:var(--muted); cursor:default}
 .trace-sources-foot{margin-top:10px; padding-top:9px; border-top:1px solid var(--line-soft); display:flex; flex-direction:column; gap:6px}
 .trace-sources-label{font-family:var(--font-mono); font-size:10px; letter-spacing:.06em; text-transform:uppercase; color:var(--faint)}
+/* raw model reasoning streamed into the panel */
+.trace-think .trace-icon{color:var(--amber)}
+.trace-think-body{display:block; white-space:pre-wrap; word-break:break-word; color:var(--muted); font-size:12px;
+  line-height:1.6; max-height:320px; overflow-y:auto}
+/* connecting trace line between consecutive steps (timeline look) */
+.think-body .trace-step{position:relative}
+.think-body .trace-step + .trace-step::before{content:""; position:absolute; left:6.5px; top:-7px; height:13px;
+  width:1px; background:var(--line)}
+.think-body .trace-icon{position:relative; z-index:1}
 /* Task Brain (Activity) panel in the chat sidebar */
 .taskbrain{margin-top:auto; border-top:1px solid var(--line); padding-top:8px}
 .tb-head{width:100%; background:none; border:none; cursor:pointer; padding:6px 2px; display:flex; align-items:center; gap:6px;

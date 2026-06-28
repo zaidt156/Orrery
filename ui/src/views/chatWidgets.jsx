@@ -2,7 +2,7 @@
 // thinking/working indicators. Kept out of Chat.jsx to keep that file focused.
 import { useEffect, useState } from "react";
 import {
-  AlertTriangle, CheckCircle2, Cog, Download, Eye, FileText, GitBranch, Loader2, Search, ShieldCheck, Terminal,
+  AlertTriangle, Brain, CheckCircle2, Cog, Download, Eye, FileText, GitBranch, Loader2, Search, ShieldCheck, Terminal,
 } from "lucide-react";
 import { saveClientFile, getTasks, cancelTask } from "../lib/api.js";
 
@@ -302,20 +302,19 @@ function SourceLinks({ urls }) {
   );
 }
 
-// Safe two-layer reasoning panel, like a high-end AI workspace:
-//   • outer = a collapsed activity card (what Orrery is doing + a one-line summary);
-//   • inner = an expandable timeline (route → context → tool/search → validation → done), with the
-//     real sources it used shown inline (per step) and a combined Sources list at the bottom.
-// Every line is Orrery's own work-trace — never the model's raw reasoning. Auto-opens while
-// streaming so the steps are visible live; collapses to the outer card once the answer is done.
-export function ReasoningPanel({ outer, trace, summary, sources, streaming }) {
+// Two-layer reasoning panel, like a high-end AI workspace:
+//   • collapsed = a one-line activity headline;
+//   • expanded = the model's live reasoning + a trace line of what it actually did
+//     (searched the web, ran Python, produced files) and the sources it used.
+// Auto-opens while streaming so you watch it think; collapses — but stays — once the answer is done.
+export function ReasoningPanel({ outer, trace, thinking, summary, sources, streaming }) {
   const [open, setOpen] = useState(false);
   const steps = trace || [];
-  if (!steps.length && !summary && !outer && !sources?.length) return null;
+  if (!steps.length && !summary && !outer && !sources?.length && !thinking) return null;
   const show = open || streaming;
   const title = streaming
-    ? (outer?.title || "Working…")
-    : (outer?.title || summary?.title || "How this was produced");
+    ? (outer?.title || "Thinking…")
+    : (outer?.title || summary?.title || "Reasoning");
   return (
     <div className={`think-block${streaming ? " live" : ""}`}>
       <button className="think-head" onClick={() => setOpen((v) => !v)}>
@@ -327,6 +326,14 @@ export function ReasoningPanel({ outer, trace, summary, sources, streaming }) {
       </button>
       {show && (
         <div className="think-body">
+          {thinking ? (
+            <div className="trace-step trace-think">
+              <span className="trace-icon" aria-hidden="true"><Brain /></span>
+              <span className="trace-text">
+                <span className="trace-think-body">{thinking}{streaming ? <span className="caret" /> : null}</span>
+              </span>
+            </div>
+          ) : null}
           {steps.map((s, i) => {
             // Steps are append-only and a "running" step is never re-emitted as done, so once the
             // turn has finished (not streaming) any lingering "running" step is really complete.

@@ -153,9 +153,12 @@ async def run(
         try:
             async for delta in ai.stream_chat(model, work, formatted_prompt, effort, usage_out):
                 if isinstance(delta, ai.ReasoningDelta):
-                    think.feed_reasoning(str(delta))
+                    for ev in think.feed_reasoning(str(delta)):
+                        yield ev  # stream the model's raw reasoning live
                     continue
-                answer, _ = think.feed(delta)
+                answer, revs = think.feed(delta)
+                for ev in revs:
+                    yield ev  # inline <think> reasoning, streamed live
                 if not answer:
                     continue
                 visible, found = run_stream.feed(answer)
@@ -164,7 +167,9 @@ async def run(
                     iter_visible.append(visible)
                     visible_parts.append(visible)
                     yield {"delta": visible}
-            tail, _ = think.finish()
+            tail, tail_revs = think.finish()
+            for ev in tail_revs:
+                yield ev
             if tail:
                 visible, found = run_stream.feed(tail)
                 blocks.extend(found)
