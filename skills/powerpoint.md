@@ -1,17 +1,27 @@
 ---
 name: PowerPoint / slide deck design
-triggers: powerpoint, power point, pptx, ppt, slide deck, slidedeck, presentation, slides, deck, keynote
+triggers: powerpoint, power point, pptx, ppt, slide deck, slidedeck, presentation, slides, keynote
 ---
-When the request is a presentation, design a real deck via the `orrery-doc` JSON `slides` array
-(see the FILES instruction for the exact schema). Make it presentation-quality, not a wall of text:
+Use this skill when the user asks for a presentation or slide deck. Design a real deck through the
+`orrery-doc` JSON `slides` array or the configured slide artifact mechanism.
 
-- **One idea per slide.** Each slide gets a clear, specific title (not "Introduction" — say what it
-  introduces) and 3–6 concise bullet points. Keep bullets to one line where possible; no paragraphs.
-- **Open and close well.** Start with a title slide (use `title` + `subtitle`). If the deck is more
-  than ~4 slides, add an agenda/overview slide near the front and a summary or "key takeaways" slide
-  at the end.
-- **Right length.** If the user asks for N slides/pages, produce N content slides (plus the title
-  slide). If they don't say, pick a sensible number for the topic (usually 6–12).
-- **Speaker notes.** Add a short `notes` field per slide with what a presenter would say — it makes
-  the deck genuinely usable.
-- Use parallel phrasing across bullets, lead with the point, and prefer concrete facts/numbers.
+## Activation boundary
+
+Do not activate for unrelated uses of "deck" such as card decks, patios, or design decks unless the user clearly
+means a presentation.
+
+## Deck contract
+
+- **One idea per slide.** Each slide must have a specific title and a single purpose.
+- **Useful structure.** Start with a strong title slide. For decks over four slides, include an agenda near the
+  front and a takeaways/next-steps slide near the end.
+- **Respect slide count.** If the user asks for a number of slides, treat it as the total slide count unless they
+  explicitly say "content slides" or "excluding title."
+- **Keep text presentable.** Use 3–6 concise bullets per content slide. Prefer one-line bullets. Avoid paragraphs.
+- **Use speaker notes.** Add short, practical notes for each slide explaining what the presenter should say.
+- **Make it visual.** Include chart, diagram, table, image, or layout suggestions where they improve understanding.
+- **Avoid filler.** No generic "Introduction" titles, repeated bullets, vague benefits, or text walls.
+- **Match the audience.** Adjust depth, tone, and terminology to the audience: executive, technical, academic,
+  sales, training, or classroom.
+- **Final quality check.** Verify the deck has a clear story: problem/context → key points → evidence/examples →
+  recommendation or takeaway.

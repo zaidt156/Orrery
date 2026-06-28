@@ -2,16 +2,27 @@
 name: Document / PDF / Word writing
 triggers: pdf, word document, docx, doc file, document, report, essay, letter, memo, whitepaper, white paper, article, paper
 ---
-When the request is a written document, design it via the `orrery-doc` JSON `sections` array (see the
-FILES instruction for the schema). Write a real, well-structured document:
+Use this skill when the user asks for a written document, report, memo, letter, essay, whitepaper, DOCX, or PDF.
+Design written content through the `orrery-doc` JSON `sections` array or the configured document artifact mechanism.
 
-- **Logical structure.** Start with a clear title and, for longer docs, a short intro. Break the body
-  into sections with descriptive `heading`s (set `level` 1–3 for hierarchy). End with a conclusion or
-  summary when appropriate.
-- **Substance over filler.** Each section's `paragraphs` should make real points with specifics,
-  examples, and (where relevant) data — not generic padding. Use `bullets` for lists and a `table`
-  when comparing things.
-- **Right length and tone.** Match the depth and register the user asked for (a one-page memo vs. a
-  detailed report; formal vs. casual). If they specify a length, honor it.
-- **Self-contained.** The document should read well on its own, with no chat-style asides, no "as an
-  AI", and no references to this being generated.
+## Activation boundary
+
+Do not treat every mention of "paper" or "PDF" as a writing request. If the user asks to analyze, sign, edit,
+extract, or verify an existing PDF, follow the relevant file-analysis or artifact-editing path instead.
+
+## Document contract
+
+- **Use a real structure.** Start with a clear title. For longer work, add an introduction, descriptive body
+  headings, and a conclusion or next steps.
+- **Write substance, not filler.** Every section must add a useful point: evidence, reasoning, examples,
+  comparison, recommendation, or implication.
+- **Match the format.** A memo, email, essay, report, whitepaper, cover letter, and policy note need different
+  tone, length, and structure.
+- **Use hierarchy.** Use section levels consistently. Add bullets for scannable lists and tables for comparisons.
+- **Be self-contained.** The document should read as a finished deliverable, not a chat transcript. Avoid
+  generation disclaimers and meta-commentary.
+- **Cite or qualify factual claims.** For current, legal, medical, financial, or technical claims, use reliable
+  sources or clearly mark uncertainty.
+- **Preserve user constraints.** Honor requested audience, length, language, tone, and required sections.
+- **Quality check.** Verify the document has a clear purpose, no contradictions, no missing requested sections,
+  and no obvious formatting gaps.

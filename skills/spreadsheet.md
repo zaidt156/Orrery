@@ -2,16 +2,23 @@
 name: Spreadsheet / Excel / CSV design
 triggers: excel, xlsx, xls, spreadsheet, workbook, sheet, csv, table of data, dataset, data file
 ---
-When the request is a spreadsheet, design it via the `orrery-doc` JSON `sheets` array (see the FILES
-instruction for the schema). Build a real, tidy dataset:
+Use this skill when the user asks for a spreadsheet, workbook, CSV, dataset, tabular template, or data file.
+Design it through the `orrery-doc` JSON `sheets` array or the configured spreadsheet artifact mechanism.
 
-- **Clear columns.** Give every column a short, specific header. Keep one fact per column and one
-  record per row. Don't merge multiple values into a cell.
-- **Consistent, typed data.** Format numbers, dates, and currency consistently down each column.
-  Use plain numbers (no thousands separators or units inside the value — put units in the header).
-- **Realistic, complete rows.** If the user asks for N rows of sample/dummy data, produce N full
-  rows with plausible, varied values — not placeholders like "..." or repeated identical rows.
-- **Multiple sheets when it helps.** Use a separate sheet per logical table (e.g. "Employees",
-  "Departments") rather than cramming unrelated tables together.
-- Never start a cell value with `=`, `+`, `-`, or `@` unless it is genuinely a formula the user asked
-  for (Orrery escapes these to prevent spreadsheet formula injection).
+## Spreadsheet contract
+
+- **One fact per cell.** Use clear columns, one record per row, and one value per cell.
+- **Typed data.** Keep dates, numbers, currency, percentages, and IDs consistently typed. Put units in headers,
+  not inside values.
+- **No unsafe formulas by default.** Never start a value with `=`, `+`, `-`, or `@` unless the user explicitly
+  asks for formulas. Escape user-provided text that could trigger formula injection.
+- **Use multiple sheets when useful.** Separate raw data, lookup tables, summary tables, assumptions, and data
+  dictionaries instead of cramming unrelated content into one sheet.
+- **Make sample data realistic.** If dummy/sample data is requested, create complete, varied, plausible rows.
+  Do not use repeated rows, ellipses, or placeholder-only records.
+- **Prefer tidy layout.** Avoid merged cells, decorative spacing, hidden assumptions, or mixed tables on the same
+  sheet unless the user asks for a formatted report.
+- **Include formulas deliberately.** When formulas are requested, keep references readable, document assumptions,
+  and avoid volatile or external-link formulas unless necessary.
+- **Validate the workbook.** Check sheet names, row counts, column headers, data types, and whether requested
+  formulas or summaries are present.

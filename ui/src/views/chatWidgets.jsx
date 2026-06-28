@@ -283,15 +283,35 @@ function StepIcon({ kind, status }) {
   }
 }
 
+function hostLabel(url) {
+  try { return new URL(url).hostname.replace(/^www\./, ""); }
+  catch { return url; }
+}
+
+// Sources rendered inside the trace: web URLs become clickable links (domain label), document
+// names become non-clickable chips. Shown where the search/research actually happened.
+function SourceLinks({ urls }) {
+  if (!urls?.length) return null;
+  return (
+    <span className="trace-sources">
+      {urls.map((u, i) => (/^https?:\/\//i.test(u)
+        ? <a key={i} className="trace-source" href={u} target="_blank" rel="noreferrer noopener" title={u}>{hostLabel(u)}</a>
+        : <span key={i} className="trace-source doc" title={u}>{u}</span>
+      ))}
+    </span>
+  );
+}
+
 // Safe two-layer reasoning panel, like a high-end AI workspace:
 //   • outer = a collapsed activity card (what Orrery is doing + a one-line summary);
-//   • inner = an expandable timeline (route → context → tool → validation → done).
+//   • inner = an expandable timeline (route → context → tool/search → validation → done), with the
+//     real sources it used shown inline (per step) and a combined Sources list at the bottom.
 // Every line is Orrery's own work-trace — never the model's raw reasoning. Auto-opens while
 // streaming so the steps are visible live; collapses to the outer card once the answer is done.
-export function ReasoningPanel({ outer, trace, summary, streaming }) {
+export function ReasoningPanel({ outer, trace, summary, sources, streaming }) {
   const [open, setOpen] = useState(false);
   const steps = trace || [];
-  if (!steps.length && !summary && !outer) return null;
+  if (!steps.length && !summary && !outer && !sources?.length) return null;
   const show = open || streaming;
   const title = streaming
     ? (outer?.title || "Working…")
@@ -317,6 +337,7 @@ export function ReasoningPanel({ outer, trace, summary, streaming }) {
                 <span className="trace-text">
                   <span className="trace-stage">{s.stage}</span>
                   {s.detail ? <span className="trace-detail">{s.detail}</span> : null}
+                  {s.metadata?.sources?.length ? <SourceLinks urls={s.metadata.sources} /> : null}
                 </span>
               </div>
             );
@@ -325,6 +346,12 @@ export function ReasoningPanel({ outer, trace, summary, streaming }) {
             <ol className="trace-summary">
               {summary.items.map((it, i) => <li key={i}>{it}</li>)}
             </ol>
+          ) : null}
+          {sources?.length ? (
+            <div className="trace-sources-foot">
+              <span className="trace-sources-label">Sources</span>
+              <SourceLinks urls={sources} />
+            </div>
           ) : null}
         </div>
       )}

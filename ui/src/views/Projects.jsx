@@ -302,16 +302,19 @@ export default function Projects({ onNavigate }) {
                   )}
                 </div>
                 <div className="project-composer">
-                  <textarea
-                    value={message}
-                    onChange={(e) => setMessage(e.target.value)}
-                    onKeyDown={onComposerKey}
-                    rows={2}
-                    placeholder="Start a new chat in this project…"
-                  />
-                  <button className="btn primary project-start-btn" onClick={sendMessage} disabled={!message.trim()}>
-                    <SendIcon /> Start
-                  </button>
+                  <div className="composer-box project-composer-box">
+                    <MessageSquare className="project-composer-icon" aria-hidden="true" />
+                    <textarea
+                      value={message}
+                      onChange={(e) => setMessage(e.target.value)}
+                      onKeyDown={onComposerKey}
+                      rows={1}
+                      placeholder="Start a new chat in this project…"
+                    />
+                    <button className="send" aria-label="Start project chat" title="Start project chat" onClick={sendMessage} disabled={!message.trim()}>
+                      <SendIcon />
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>

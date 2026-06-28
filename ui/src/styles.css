@@ -313,6 +313,15 @@ body{
 @keyframes trace-spin{to{transform:rotate(360deg)}}
 .trace-summary{margin:8px 0 2px; padding-left:20px; color:var(--muted); font-size:12px}
 .trace-summary li{margin:2px 0}
+/* sources inside the reasoning trace (per-step + combined footer) */
+.trace-sources{display:flex; flex-wrap:wrap; gap:5px; margin-top:5px}
+.trace-source{font-family:var(--font-mono); font-size:10.5px; color:var(--ice); background:var(--bg2);
+  border:1px solid var(--line); border-radius:6px; padding:2px 7px; text-decoration:none; white-space:nowrap;
+  max-width:240px; overflow:hidden; text-overflow:ellipsis}
+.trace-source:hover{border-color:var(--ice); color:var(--text)}
+.trace-source.doc{color:var(--muted); cursor:default}
+.trace-sources-foot{margin-top:10px; padding-top:9px; border-top:1px solid var(--line-soft); display:flex; flex-direction:column; gap:6px}
+.trace-sources-label{font-family:var(--font-mono); font-size:10px; letter-spacing:.06em; text-transform:uppercase; color:var(--faint)}
 /* Task Brain (Activity) panel in the chat sidebar */
 .taskbrain{margin-top:auto; border-top:1px solid var(--line); padding-top:8px}
 .tb-head{width:100%; background:none; border:none; cursor:pointer; padding:6px 2px; display:flex; align-items:center; gap:6px;

@@ -148,3 +148,197 @@ async def test_generate_returns_saved_message_id(monkeypatch):
     ]
 
     assert {"message_id": "00000000-0000-0000-0000-000000000099"} in events
+
+
+def _fake_turn(*, model: str = "openai/test", effort: str | None = None) -> chat._TurnContext:
+    return chat._TurnContext(
+        model=model,
+        system_prompt=None,
+        effort=effort,
+        project_id=None,
+        context_window=chat.DEFAULT_CONTEXT_WINDOW,
+        messages=[{"role": "user", "content": "hello"}],
+        title="Test chat",
+    )
+
+
+@pytest.mark.anyio
+async def test_stream_reply_dispatches_image_route(monkeypatch):
+    calls = []
+
+    async def fake_prepare_turn(*args, **kwargs):
+        return _fake_turn()
+
+    async def fake_trusted_context(project_id):
+        return None
+
+    async def fake_record_plan(*args, **kwargs):
+        return "route-1"
+
+    async def fake_route_image(*args, **kwargs):
+        calls.append("image")
+        yield {"artifact": {"kind": "svg"}}
+        yield {"done": True}
+
+    monkeypatch.setattr(chat, "_prepare_turn", fake_prepare_turn)
+    monkeypatch.setattr(chat.project_store, "trusted_context", fake_trusted_context)
+    monkeypatch.setattr(chat.route_telemetry, "record_plan", fake_record_plan)
+    monkeypatch.setattr(chat, "_route_image", fake_route_image)
+
+    events = [
+        event
+        async for event in chat.stream_reply(
+            "00000000-0000-0000-0000-000000000001",
+            "Draw a clean logo for a data observatory",
+        )
+    ]
+
+    assert calls == ["image"]
+    assert {"title": "Test chat"} in events
+    assert {"artifact": {"kind": "svg"}} in events
+    assert events[-1] == {"done": True}
+
+
+@pytest.mark.anyio
+async def test_stream_reply_file_route_can_fall_back_to_model_reply(monkeypatch):
+    calls = []
+
+    async def fake_prepare_turn(*args, **kwargs):
+        return _fake_turn()
+
+    async def fake_trusted_context(project_id):
+        return None
+
+    async def fake_record_plan(*args, **kwargs):
+        return "route-1"
+
+    async def fake_route_file(*args, **kwargs):
+        calls.append("file")
+        state = args[-1]
+        state.handled = False
+        yield {"status": ""}
+
+    async def fake_route_model_reply(*args, **kwargs):
+        calls.append("model")
+        yield {"delta": "fallback answer"}
+        yield {"done": True}
+
+    monkeypatch.setattr(chat, "_prepare_turn", fake_prepare_turn)
+    monkeypatch.setattr(chat.project_store, "trusted_context", fake_trusted_context)
+    monkeypatch.setattr(chat.route_telemetry, "record_plan", fake_record_plan)
+    monkeypatch.setattr(chat, "_route_file", fake_route_file)
+    monkeypatch.setattr(chat, "_route_model_reply", fake_route_model_reply)
+
+    events = [
+        event
+        async for event in chat.stream_reply(
+            "00000000-0000-0000-0000-000000000001",
+            "Create a PDF report about revenue",
+        )
+    ]
+
+    assert calls == ["file", "model"]
+    assert {"status": ""} in events
+    assert {"delta": "fallback answer"} in events
+    assert events[-1] == {"done": True}
+
+
+@pytest.mark.anyio
+async def test_stream_reply_dispatches_research_route(monkeypatch):
+    calls = []
+
+    async def fake_prepare_turn(*args, **kwargs):
+        return _fake_turn(effort="high")
+
+    async def fake_route_research(*args, **kwargs):
+        calls.append(args[2])
+        yield {"delta": "research report"}
+        yield {"done": True}
+
+    monkeypatch.setattr(chat, "_prepare_turn", fake_prepare_turn)
+    monkeypatch.setattr(chat, "_route_research", fake_route_research)
+
+    events = [
+        event
+        async for event in chat.stream_reply(
+            "00000000-0000-0000-0000-000000000001",
+            "/research latest revenue trend",
+        )
+    ]
+
+    assert calls == ["latest revenue trend"]
+    assert {"delta": "research report"} in events
+    assert events[-1] == {"done": True}
+
+
+@pytest.mark.anyio
+async def test_stream_reply_dispatches_project_create_route(monkeypatch):
+    calls = []
+
+    async def fake_prepare_turn(*args, **kwargs):
+        return _fake_turn()
+
+    async def fake_trusted_context(project_id):
+        return None
+
+    async def fake_record_plan(*args, **kwargs):
+        return "route-1"
+
+    async def fake_route_project_create(*args, **kwargs):
+        calls.append(args[2])
+        yield {"project": {"id": "p1", "name": args[2]}}
+        yield {"done": True}
+
+    monkeypatch.setattr(chat, "_prepare_turn", fake_prepare_turn)
+    monkeypatch.setattr(chat.project_store, "trusted_context", fake_trusted_context)
+    monkeypatch.setattr(chat.project_store, "name_from_prompt", lambda text: "Acme rollout")
+    monkeypatch.setattr(chat.route_telemetry, "record_plan", fake_record_plan)
+    monkeypatch.setattr(chat, "_route_project_create", fake_route_project_create)
+
+    events = [
+        event
+        async for event in chat.stream_reply(
+            "00000000-0000-0000-0000-000000000001",
+            "Create a new project workspace for Acme rollout",
+        )
+    ]
+
+    assert calls == ["Acme rollout"]
+    assert {"project": {"id": "p1", "name": "Acme rollout"}} in events
+    assert events[-1] == {"done": True}
+
+
+@pytest.mark.anyio
+async def test_stream_reply_dispatches_audio_unavailable_route(monkeypatch):
+    calls = []
+
+    async def fake_prepare_turn(*args, **kwargs):
+        return _fake_turn()
+
+    async def fake_trusted_context(project_id):
+        return None
+
+    async def fake_record_plan(*args, **kwargs):
+        return "route-1"
+
+    async def fake_route_audio_unavailable(*args, **kwargs):
+        calls.append(args[2])
+        yield {"delta": args[2]}
+        yield {"done": True}
+
+    monkeypatch.setattr(chat, "_prepare_turn", fake_prepare_turn)
+    monkeypatch.setattr(chat.project_store, "trusted_context", fake_trusted_context)
+    monkeypatch.setattr(chat.route_telemetry, "record_plan", fake_record_plan)
+    monkeypatch.setattr(chat, "_route_audio_unavailable", fake_route_audio_unavailable)
+
+    events = [
+        event
+        async for event in chat.stream_reply(
+            "00000000-0000-0000-0000-000000000001",
+            "Create a voice narration for this introduction",
+        )
+    ]
+
+    assert calls and "Voice playback" in calls[0]
+    assert {"delta": calls[0]} in events
+    assert events[-1] == {"done": True}

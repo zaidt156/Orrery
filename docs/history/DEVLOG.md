@@ -806,3 +806,37 @@ Next up: wire + live-verify provider web search into Deep Research; optional rea
   budget from 3 to 2 attempts; restored to 3 (Quick 2, Standard/Deep 3, Max 4), so file quality is back.
 
 Next up: optional - a keyed search provider (Brave/Tavily) for higher-volume/precision web research.
+
+
+## Step 65 - Task-routing dispatcher split (June 28, 2026)
+
+- **Followed the v4 checklist.** Continued Phase 0 from the improved phased plan: keep the existing
+  `_prepare_turn` DB seam, then split `stream_reply` into explicit route handlers instead of one large
+  orchestration block.
+- **Handlers now own their paths.** Research, image, project creation, unavailable audio, file generation,
+  and normal model replies each have a named async generator. The public stream contract is unchanged:
+  title, reasoning trace, status, files/artifacts, deltas, message ids, usage, errors, and done events
+  still flow the same way.
+- **Safer fallback path.** File requests still try the selected file route first; if no approved artifact
+  is produced, the dispatcher falls back to the normal model reply path without overwriting the file-route
+  telemetry outcome.
+- **Tests added.** Added dispatcher tests that use the `_prepare_turn` seam and fake handlers, so research,
+  image, project creation, unavailable audio, and file-to-chat fallback are verified without a real database,
+  Docker sandbox, or provider call.
+
+Next up: add cancellation/resume dispatcher coverage, then add the typed SSE event helper from the Phase 0 checklist.
+
+
+## Step 66 - Reasoning panel: sources in the trace + visible Deep Research (June 28, 2026)
+
+- **No more raw URL banner.** Removed the "searched: <urls>" line that dumped links above the answer.
+  Sources now live inside the reasoning panel: web results show as clickable domain chips under the
+  "Web results" step, plus a combined "Sources" list at the bottom of the expanded panel (document
+  names render as plain chips, web URLs as links). They appear when the user opens the reasoning card.
+- **Lingering spinner fixed earlier; this builds on it.** The trace reads cleanly: each step resolves
+  to a check when the turn ends, and the real query/result detail is shown per step.
+- **Deep Research is now discoverable.** Added a "Deep Research" toggle in the chat toolbar next to
+  "Use my data". When on, the turn runs the decompose -> gather (documents + web) -> cited-report
+  workflow. Removed the easy-to-miss /research chip in favour of the toggle.
+
+Next up: optional keyed search provider; per-step expand/collapse if the trace grows long.

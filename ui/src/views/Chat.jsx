@@ -39,7 +39,7 @@ const CONTEXT_WINDOWS = [
 ];
 
 const CMDS = [
-  ["/image", true], ["/research", true], ["/video", true], ["/run automation", false],
+  ["/image", true], ["/video", true], ["/run automation", false],
   ["/agent", false], ["/dashboard", false], ["/search docs", false],
 ];
 
@@ -73,6 +73,7 @@ export default function Chat() {
   const composerRef = useRef(null);
   const [attachments, setAttachments] = useState([]);
   const [useData, setUseData] = useState(false);
+  const [researchMode, setResearchMode] = useState(false);
   const [collections, setCollections] = useState([]);
   const [dataColl, setDataColl] = useState("");
   const [projects, setProjects] = useState([]);
@@ -401,7 +402,11 @@ export default function Chat() {
   }
 
   async function send() {
-    await submitPrompt(input, attachments, { clearComposer: true });
+    // Deep Research toggle routes the turn through the decompose→gather→cited-report workflow.
+    const text = researchMode && input.trim() && !/^\s*\/research\b/i.test(input)
+      ? `/research ${input.trim()}`
+      : input;
+    await submitPrompt(text, attachments, { clearComposer: true });
   }
 
   async function resubmitPrompt(message) {
@@ -575,6 +580,17 @@ export default function Chat() {
               </select>
             )}
           </span>
+          <span className="rag-toggle" title="Deep Research: break the question down, search your documents and the web, and write a cited report">
+            Deep Research
+            <span
+              className={`toggle${researchMode ? " on" : ""}`}
+              role="switch"
+              aria-checked={researchMode}
+              tabIndex={0}
+              onClick={() => setResearchMode((v) => !v)}
+              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setResearchMode((v) => !v); } }}
+            />
+          </span>
         </div>
 
         {noKey && (
@@ -650,7 +666,6 @@ export default function Chat() {
               <div className={`msg ai${m.error ? " err" : ""}`} key={i}>
                 <div className="who">
                   Orrery
-                  {m.sources?.length > 0 && <span className="rag-chip">searched: {m.sources.join(", ")}</span>}
                   {tokenLabel(m) && <span className="token-chip" title="Exact for API models; estimated otherwise">{tokenLabel(m)}</span>}
                 </div>
                 {(() => {
@@ -660,8 +675,8 @@ export default function Chat() {
                   return (
                     <>
                       {m.streaming && !body && <ThinkingPulse />}
-                      {(m.trace?.length || m.summary || m.outer) && (
-                        <ReasoningPanel outer={m.outer} trace={m.trace} summary={m.summary} streaming={m.streaming} />
+                      {(m.trace?.length || m.summary || m.outer || m.sources?.length) && (
+                        <ReasoningPanel outer={m.outer} trace={m.trace} summary={m.summary} sources={m.sources} streaming={m.streaming} />
                       )}
                       <div className="ai-text">
                         {cleaned ? <Markdown>{cleaned}</Markdown> : null}

@@ -277,18 +277,18 @@ sandboxed `filegen` when code/visuals/audio/computation; project → workspace).
 > can't be verified. The fix is seams + tests + decomposition, each phase shippable and green.
 
 ### Phase A — Seams (make it testable)
-1. Extract `_prepare_turn(conv_id, content, attachments) -> TurnContext` (load conversation + history +
+1. [x] Extract `_prepare_turn(conv_id, content, attachments) -> TurnContext` (load conversation + history +
    persist the user message). One mockable DB seam instead of inline I/O in the orchestrator.
-2. Add a `fake_db` pytest fixture (in-memory async session) so DB-touching code is testable without Postgres.
+2. [ ] Add a `fake_db` pytest fixture (in-memory async session) so DB-touching code is testable without Postgres.
 
 ### Phase B — Decompose the orchestrator
-3. Split `stream_reply` into a thin dispatcher + one handler per route — `_route_chat`, `_route_file`,
-   `_route_image`, `_route_audio`, `_route_project` — each a small single-responsibility async generator.
+3. [x] Split `stream_reply` into a thin dispatcher + one handler per route — `_route_model_reply`, `_route_file`,
+   `_route_image`, `_route_audio_unavailable`, `_route_project_create`, `_route_research` — each a small single-responsibility async generator.
    Verbatim move, no logic change; the full suite stays green.
-4. Centralize SSE event shapes (a typed `events` helper) so the stream protocol is explicit and consistent.
+4. [ ] Centralize SSE event shapes (a typed `events` helper) so the stream protocol is explicit and consistent.
 
 ### Phase C — Lock it down
-5. Integration tests for the dispatcher: each route → correct executor + events; fallback chain
+5. [ ] Integration tests for the dispatcher: each route → correct executor + events; fallback chain
    (sandbox miss → docgen → plain reply); error, cancellation, and resume paths. Cheap once seams exist.
 6. Audit every external `await` (DB / ai / sandbox) for graceful degradation (most already guarded).
 7. CI gate: `compileall` + import smoke tests + full suite on every change.
@@ -316,6 +316,7 @@ Done:
 - [x] Route telemetry (decision + outcome, sanitized)
 - [x] Deep Reasoning Mode (Quick/Standard/Deep/Max -> effort + retry budget)
 - [x] Local API session token; secrets only in keychain
+- [x] `stream_reply` split into route handlers with dispatcher tests for research/image/project/audio/file fallback paths
 
 Done (web):
 - [x] Universal web search (keyless, any model) in chat + Deep Research

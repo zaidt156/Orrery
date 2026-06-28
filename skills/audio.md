@@ -2,10 +2,26 @@
 name: Audio and voice artifacts
 triggers: audio, sound, sound effect, sfx, soundtrack, voice, voiceover, voice-over, narration, text to speech, tts, speech, wav, mp3
 ---
-When the request involves audio or voice, identify whether the user wants a downloadable audio file, a script for narration, transcription, or live playback.
+Use this skill when the user asks for audio generation, voice scripts, narration, sound effects, transcription
+guidance, or downloadable sound files.
 
-- For downloadable sounds, create a real playable file, preferably WAV unless the user asks for another format.
-- For generated WAV files, synthesize audio in code with controlled volume, sample rate, duration, and clean fade-in/fade-out when useful.
-- For voice scripts, write only the narration text and delivery notes the user asked for, not unrelated chat commentary.
-- Do not claim live voice playback, microphone transcription, or cloned voices are available unless a configured provider actually supports them.
-- Avoid imitating a real person's voice or creating deceptive voice content.
+## Determine the output type
+
+Classify the request before acting:
+- downloadable audio file;
+- narration/voiceover script;
+- sound-design instructions;
+- transcription or cleanup guidance;
+- live playback or microphone use.
+
+## Audio contract
+
+- **Create real files when requested.** For downloadable generated sounds, produce a playable WAV unless another
+  format is explicitly requested and available.
+- **Control technical specs.** Use a clear sample rate, duration, channel count, amplitude, and fade-in/fade-out
+  where useful.
+- **Write clean scripts.** For narration, provide only the script and requested delivery notes, not unrelated chat.
+- **Do not overclaim capability.** Do not claim live playback, microphone transcription, speech cloning, or provider
+  access unless the configured environment supports it.
+- **Avoid deceptive voice use.** Do not imitate a real person's voice or create misleading voice content.
+- **Validate audio.** Check file existence, duration, sample rate, and non-silent waveform before returning.

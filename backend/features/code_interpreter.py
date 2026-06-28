@@ -229,15 +229,14 @@ async def run(
                 yield trace.step("Searching the web", query or "(empty query)",
                                  kind="tool", status="running", phase="gather", metadata={"run": run_index + 1})
                 results = await websearch.search(query) if query else []
-                if results:
-                    urls = [r["url"] for r in results if r.get("url")][:8]
-                    if urls:
-                        yield {"sources": urls}
+                urls = [r["url"] for r in results if r.get("url")][:8]
+                if urls:
+                    yield {"sources": urls}
                 yield trace.step(
                     "Web results" if results else "No web results",
                     f"{len(results)} result(s) for: {query}",
                     kind="result", status="done" if results else "warning", phase="gather",
-                    metadata={"results": len(results)},
+                    metadata={"results": len(results), "sources": urls},
                 )
                 echo += f"\n\n```orrery-search\n{query}\n```"
                 observations.append(f"[web search results] for \"{query}\":\n{websearch.format_results(results)}")
