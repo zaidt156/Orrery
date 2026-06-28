@@ -300,3 +300,27 @@ sandboxed `filegen` when code/visuals/audio/computation; project → workspace).
 
 **Outcome:** a small readable dispatcher, every route independently tested, regressions caught by CI,
 no inline DB I/O in the orchestrator. That is "production-ready, not fragile."
+
+---
+
+## v4 Build Status (living)
+
+Tracks the enhanced v4 plan against the real codebase. Updated as features land.
+
+Done:
+- [x] Safe two-layer reasoning work trace (outer card + inner timeline + summary)
+- [x] ThinkStream strips raw/inline reasoning; never condenses chain-of-thought to the UI
+- [x] stream_reply emits backend-authored trace per route (chat/file/image/project/audio) + regenerate
+- [x] Deterministic docgen route + sandboxed filegen route with validation + bounded repair
+- [x] Project workspaces: per-project files -> RAG, project-scoped chats, trusted project context
+- [x] Route telemetry (decision + outcome, sanitized)
+- [x] Deep Reasoning Mode (Quick/Standard/Deep/Max -> effort + retry budget)
+- [x] Local API session token; secrets only in keychain
+
+In progress / next:
+- [ ] High-end sandbox capability: model writes + runs Python in chat, output returned (code interpreter loop)
+- [ ] Deep Research mode: decompose -> gather (RAG + provider web tool) -> cited report
+- [ ] Reasoning-mode selector relabel in the chat header (cosmetic; effort selector already drives it)
+
+Later phases (not started): Dashboards, Automations, Agents, Media Hub, Capability Contract schema,
+Approval gates, JSONB metadata migration.

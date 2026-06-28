@@ -18,7 +18,7 @@ from backend.core.config import settings
 from backend.core.database import get_sessionmaker
 from backend.core.observability import log_event
 from backend.core.models import Conversation, Message, Project
-from backend.features import code_images, docgen, filegen, rag, route_telemetry, sandbox, skills, taskbrain, taskrouter
+from backend.features import code_images, docgen, filegen, rag, reasoning, route_telemetry, sandbox, skills, taskbrain, taskrouter
 from backend.features import projects as project_store
 from backend.features import files as file_library
 from backend.features.prompting import FORMAT_INSTRUCTIONS, build_system_prompt, strip_think as _strip_think
@@ -547,6 +547,7 @@ async def stream_reply(
     # Raw/condensed model chain-of-thought is never surfaced here (see reasoning_trace safety rule).
     plan = taskrouter.plan(user_content, has_attachments=bool(attachments))
     plan_meta = _plan_metadata(plan)
+    plan_meta["reasoning_mode"] = reasoning.label(effort)  # Quick / Standard / Deep / Max
     trace = ReasoningTrace()
     yield trace.outer(
         _outer_title_for_plan(plan),

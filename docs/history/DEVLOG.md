@@ -742,3 +742,15 @@ citations**. Photorealistic image/video adapters and the reusable media library 
 Next up: decide the next roadmap step - Deep Reasoning Mode selector (Quick/Standard/Deep/Max) wired to effort and
 trace detail, or centralizing the SSE event helpers, or the JSONB metadata migration. Pending: push local commits
 (Projects files, reasoning trace) to main once approved.
+
+
+## Step 61 - Deep Reasoning Mode (June 28, 2026)
+
+- **Reasoning depth as a named mode.** Added Quick / Standard / Deep / Max, mapped onto the existing
+  per-chat effort value so no database change was needed. The mode drives three knobs at once:
+  the provider's reasoning effort, the file-generation repair budget (Quick 1 -> Max 4 attempts),
+  and how the depth is labelled in the activity card.
+- **Single source of truth.** A new reasoning module owns the mode<->effort mapping so the UI,
+  chat, and file generator all agree.
+- **Next up:** generalize the sandbox into a chat code-interpreter so the model can write and run
+  Python for any computational/'strange' request and hand back the output. Then Deep Research.

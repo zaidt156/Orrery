@@ -22,12 +22,12 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from pathlib import PurePosixPath
 
-from backend.features import sandbox, skills
+from backend.features import reasoning, sandbox, skills
 from backend.features.prompting import FILE_SYSTEM_PROMPT, build_system_prompt
 from backend.features.reasoning_trace import ThinkStream, reasoning_event
 from backend.providers import ai
 
-MAX_ATTEMPTS = 3
+MAX_ATTEMPTS = 3  # default repair budget; the active reasoning mode can widen it (see reasoning.file_retries)
 QUALITY_FILE_EFFORT = "high"
 QUALITY_CLAUDE_PLAN_EFFORT = "xhigh"
 _CODE_FENCE = re.compile(r"```(?:python|py)?\s*\n([\s\S]*?)```", re.IGNORECASE)
@@ -546,13 +546,14 @@ async def run(
     )
     convo: list[dict] = [{"role": "user", "content": request}]
     last_error = ""
+    max_attempts = reasoning.file_retries(effort)  # Quick=1 … Max=4 repair attempts
 
-    for attempt in range(MAX_ATTEMPTS):
+    for attempt in range(max_attempts):
         yield {
             "status": (
                 "Designing the document…"
                 if attempt == 0
-                else f"Fixing the generated file ({attempt + 1}/{MAX_ATTEMPTS})…"
+                else f"Fixing the generated file ({attempt + 1}/{max_attempts})…"
             )
         }
         yield reasoning_event(
