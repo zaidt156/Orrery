@@ -91,6 +91,7 @@ export default function Admin() {
   return (
     <section className="view">
       <div className="admin-wrap">
+        <div className="admin-inner">
         <div className="admin-head">
           <ShieldCheck />
           <div>
@@ -191,6 +192,7 @@ export default function Admin() {
             </div>
           </div>
         )}
+        </div>
       </div>
     </section>
   );
