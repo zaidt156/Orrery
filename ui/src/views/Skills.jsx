@@ -71,7 +71,7 @@ export default function Skills() {
     setMcp((prev) => prev.map((x) => (x.id === srv.id ? { ...x, testing: true } : x)));
     try {
       const res = await testMcp(srv.id);
-      if (res.ok) { setMsg(`${srv.name}: connected — ${res.tools.length} tool(s).`); await loadMcp(); }
+      if (res.ok) { setMsg(`${srv.name}: connected - ${res.tools.length} tool(s).`); await loadMcp(); }
       else setErr(res.error || "Could not connect to the server.");
     } catch (e) { setErr(String(e.message || e)); } finally {
       setMcp((prev) => prev.map((x) => (x.id === srv.id ? { ...x, testing: false } : x)));
@@ -99,7 +99,7 @@ export default function Skills() {
   async function addItem() {
     setBusy(true); setErr("");
     try {
-      const created = await createSkill({ name: "New skill", body: "Describe what the model should do…", triggers: "", always: false, enabled: true });
+      const created = await createSkill({ name: "New skill", body: "Describe what the model should do...", triggers: "", always: false, enabled: true });
       await load(created.id);
     } catch (e) { setErr(String(e.message || e)); } finally { setBusy(false); }
   }
@@ -141,11 +141,11 @@ export default function Skills() {
     <section className="view projects-view">
       <aside className="project-side">
         <button className="btn primary project-new" onClick={addItem} disabled={busy}><Plus /> New skill</button>
-        <button className="btn ghost sm" onClick={() => fileRef.current?.click()} disabled={busy} style={{ width: "100%", justifyContent: "center" }}>
+        <button className="btn ghost sm skill-wide" onClick={() => fileRef.current?.click()} disabled={busy}>
           <Upload /> Upload .md skill
         </button>
         <input ref={fileRef} type="file" accept=".md,.markdown,.txt,text/markdown,text/plain" hidden onChange={onFilePick} />
-        <button className="btn ghost sm" onClick={() => setGenOpen((o) => !o)} disabled={busy} style={{ width: "100%", justifyContent: "center" }}>
+        <button className="btn ghost sm skill-wide" onClick={() => setGenOpen((o) => !o)} disabled={busy}>
           <WandSparkles /> Generate with AI
         </button>
         {genOpen && (
@@ -154,16 +154,16 @@ export default function Skills() {
               value={genText}
               onChange={(e) => setGenText(e.target.value)}
               rows={3}
-              placeholder="Describe the skill you want the model to write… e.g. 'A skill for writing tight, friendly release notes from a changelog.'"
+              placeholder="Describe the skill you want the model to write, e.g. 'A skill for writing tight, friendly release notes from a changelog.'"
             />
-            <button className="btn primary sm" onClick={generate} disabled={genBusy || !genText.trim()} style={{ width: "100%", justifyContent: "center" }}>
-              {genBusy ? "Generating…" : "Generate skill"}
+            <button className="btn primary sm skill-wide" onClick={generate} disabled={genBusy || !genText.trim()}>
+              {genBusy ? "Generating..." : "Generate skill"}
             </button>
           </div>
         )}
         <div className="ontology-search">
           <Search />
-          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search skills…" />
+          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search skills..." />
         </div>
         <div className="project-list project-tree">
           <div className={`project-node${!activeId ? " active" : ""}`}>
@@ -197,9 +197,16 @@ export default function Skills() {
       <main className="project-main">
         {!activeId ? (
           <div className="skill-overview">
+            <div className="workspace-summary skill-summary">
+              <span><b>{items.length}</b><small>User skills</small></span>
+              <span><b>{enabledCount}</b><small>Enabled</small></span>
+              <span><b>{builtin.length}</b><small>Built-in</small></span>
+              <span><b>{mcpEnabled}/{mcp.length}</b><small>MCP on</small></span>
+            </div>
+
             <section className="ov-section">
               <div className="section-label"><span>Built-in skills</span></div>
-              <p className="ov-sub">Prebuilt skills shipped with Orrery — always available, matched automatically.</p>
+              <p className="ov-sub">Prebuilt skills shipped with Orrery - always available, matched automatically.</p>
               <div className="ov-list">
                 {builtin.length === 0 && <div className="project-muted">None found.</div>}
                 {builtin.map((b) => (
@@ -222,8 +229,8 @@ export default function Skills() {
                 <div className="mcp-form">
                   <input placeholder="Name" value={mcpForm.name} onChange={(e) => setMcpForm((f) => ({ ...f, name: e.target.value }))} />
                   <select value={mcpForm.transport} onChange={(e) => setMcpForm((f) => ({ ...f, transport: e.target.value }))}>
-                    <option value="stdio">stdio — local command</option>
-                    <option value="http">http / sse — URL</option>
+                    <option value="stdio">stdio - local command</option>
+                    <option value="http">http / sse - URL</option>
                   </select>
                   {mcpForm.transport === "stdio" ? (
                     <input placeholder="Command, e.g. npx -y @modelcontextprotocol/server-filesystem /path" value={mcpForm.command} onChange={(e) => setMcpForm((f) => ({ ...f, command: e.target.value }))} />
@@ -240,9 +247,9 @@ export default function Skills() {
                     <Server />
                     <span className="ov-meta">
                       <b>{s.name}</b>
-                      <small>{(s.tools?.length ? `${s.tools.length} tool(s) · ` : "")}{s.transport === "http" ? (s.url || "http") : (s.command || "stdio")}</small>
+                      <small>{(s.tools?.length ? `${s.tools.length} tool(s) - ` : "")}{s.transport === "http" ? (s.url || "http") : (s.command || "stdio")}</small>
                     </span>
-                    <button className="btn ghost sm" onClick={() => testMcpServer(s)} disabled={s.testing}>{s.testing ? "Testing…" : "Test"}</button>
+                    <button className="btn ghost sm" onClick={() => testMcpServer(s)} disabled={s.testing}>{s.testing ? "Testing..." : "Test"}</button>
                     <span className={`toggle${s.enabled ? " on" : ""}`} role="switch" aria-checked={s.enabled} tabIndex={0} title={s.enabled ? "Enabled" : "Disabled"} onClick={() => toggleMcp(s, !s.enabled)} />
                     <button className="icon-btn" title="Remove" onClick={() => removeMcp(s)}><X /></button>
                   </div>
@@ -278,9 +285,15 @@ export default function Skills() {
               <button className="btn ghost" onClick={remove} disabled={busy}><Trash2 /></button>
             </div>
 
+            <div className="workspace-summary">
+              <span><b>{draft.enabled ? "Enabled" : "Disabled"}</b><small>Status</small></span>
+              <span><b>{draft.always ? "Always" : "Triggered"}</b><small>Activation</small></span>
+              <span><b>{draft.triggers.split(/[\n,]/).filter((x) => x.trim()).length}</b><small>Triggers</small></span>
+            </div>
+
             <div className="project-details">
               <label>
-                Trigger phrases (comma or newline separated; leave empty if “always on”)
+                Trigger phrases (comma or newline separated; leave empty if "always on")
                 <textarea
                   value={draft.triggers}
                   onChange={(e) => setDraft((d) => ({ ...d, triggers: e.target.value }))}
@@ -293,13 +306,13 @@ export default function Skills() {
             {err && <div className="chat-banner">{err}</div>}
 
             <div className="project-body">
-              <div className="project-files-panel" style={{ width: "100%" }}>
+              <div className="project-files-panel full-panel">
                 <div className="section-label"><span>Skill instructions</span></div>
                 <textarea
                   className="skill-body"
                   value={draft.body}
                   onChange={(e) => setDraft((d) => ({ ...d, body: e.target.value }))}
-                  placeholder="Write the playbook the model should follow when this skill applies…"
+                  placeholder="Write the playbook the model should follow when this skill applies..."
                 />
               </div>
             </div>

@@ -13,7 +13,7 @@ import {
   Sparkles,
   Workflow,
 } from "lucide-react";
-import { getAdmin, getBranding, getHealth } from "./lib/api.js";
+import { getAdmin, getBranding, getHealth, getTeam } from "./lib/api.js";
 import { Logo } from "./components/icons.jsx";
 
 function BrandHeader() {
@@ -55,6 +55,7 @@ const Media = lazy(() => import("./views/Media.jsx"));
 const LocalModels = lazy(() => import("./views/LocalModels.jsx"));
 const Settings = lazy(() => import("./views/Settings.jsx"));
 const Admin = lazy(() => import("./views/Admin.jsx"));
+const Lock = lazy(() => import("./views/Lock.jsx"));
 
 // `feature` ties a tab to an admin flag — when that feature is turned off, the tab is hidden.
 const TABS = [
@@ -80,6 +81,7 @@ export default function App() {
   );
   const [db, setDb] = useState("checking"); // checking | ok | error | down
   const [features, setFeatures] = useState(null); // null until loaded → show all tabs
+  const [teamState, setTeamState] = useState(null); // null until loaded; {team_mode, locked, user}
 
   useEffect(() => {
     let alive = true;
@@ -93,14 +95,23 @@ export default function App() {
       getAdmin()
         .then((s) => alive && setFeatures(Object.fromEntries((s.features || []).map((f) => [f.name, f.enabled]))))
         .catch(() => {});
+    const loadTeam = () => getTeam().then((s) => alive && setTeamState(s)).catch(() => alive && setTeamState({ team_mode: false, locked: false }));
     loadFeatures();
+    loadTeam();
     window.addEventListener("orrery-features-changed", loadFeatures);
+    window.addEventListener("orrery-team-changed", loadTeam);
     return () => {
       alive = false;
       clearInterval(id);
       window.removeEventListener("orrery-features-changed", loadFeatures);
+      window.removeEventListener("orrery-team-changed", loadTeam);
     };
   }, []);
+
+  // Joined to a team database without a valid key → hold everything behind the lock screen.
+  if (teamState?.team_mode && teamState?.locked) {
+    return <Suspense fallback={null}><Lock onUnlocked={() => window.dispatchEvent(new CustomEvent("orrery-team-changed"))} /></Suspense>;
+  }
 
   const visibleTabs = TABS.filter((t) => !t.feature || !features || features[t.feature] !== false);
   const ActiveView = (visibleTabs.find((t) => t.key === active) || visibleTabs[0]).View;

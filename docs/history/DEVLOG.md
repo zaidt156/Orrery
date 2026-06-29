@@ -1010,3 +1010,21 @@ Next: MCP server support; then admin user + feature flags.
 
 Next: http/SSE MCP transport; then the team/multi-user direction (shared-database vs shared-server) the
 user is weighing - awaiting their pick before building, since it changes the local-first boundary.
+
+
+## Step 80 - Team access: lock screen, keys & roles (June 29, 2026)
+
+- Orrery can now be a shared, multi-person workspace. From Admin -> "Set up team access", the founding
+  admin names themselves and gets an access key (shown once). After that, any Orrery pointed at the same
+  database is **locked** until a valid key is entered; the admin issues a key per teammate from the same
+  screen, each marked admin or member, and can revoke (key stops working immediately), change role, or
+  delete - with a guard that won't let you remove the last admin.
+- A member who unlocks sees the normal app but not the admin controls; admins see the toggles and the
+  user list. Each person still keeps their own model API keys on their own machine - the access key is
+  only about identity and permissions, never provider secrets.
+- Keys are high-entropy and stored only as a hash; the unlock key for a machine lives in the OS keychain.
+  Single-user installs are unaffected - no key, no lock, full local access (solo = implicit admin).
+
+Next: tie private data (chats/projects) to the signed-in user so each person sees only their own, while
+skills/ontologies/MCP stay shared; then the approval queue (members propose skills/MCP -> admins approve
+-> team-wide).

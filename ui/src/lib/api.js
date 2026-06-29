@@ -182,6 +182,16 @@ export const getAdmin = () => apiGet("/api/admin");
 export const setAdminToken = (token, current) => apiSend("/api/admin/token", "POST", { token, current });
 export const setAdminFeatures = (flags, token) => apiSend("/api/admin/features", "PUT", { flags, token });
 
+// Team access: identity, keys, roles (shared-database multi-user)
+export const getTeam = () => apiGet("/api/team");
+export const setupTeam = (name) => apiSend("/api/team/setup", "POST", { name });
+export const unlockTeam = (key) => apiSend("/api/team/unlock", "POST", { key });
+export const signOutTeam = () => apiSend("/api/team/signout", "POST");
+export const listTeamUsers = () => apiGet("/api/team/users");
+export const createTeamUser = (name, role) => apiSend("/api/team/users", "POST", { name, role });
+export const updateTeamUser = (id, patch) => apiSend(`/api/team/users/${id}`, "PATCH", patch);
+export const deleteTeamUser = (id) => apiSend(`/api/team/users/${id}`, "DELETE");
+
 export const listProjects = () => apiGet("/api/projects");
 export const createProject = (project) => apiSend("/api/projects", "POST", project);
 export const getProject = (id) => apiGet(`/api/projects/${id}`);
