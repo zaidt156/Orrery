@@ -2,110 +2,285 @@
 
 <img src="assets/orrery-logo.svg" alt="Orrery" width="440">
 
-### A local-first desktop AI workspace
+### A local desktop AI workspace for models, files, data, projects, and automation
 
-Bring your own model accounts / API keys and your own PostgreSQL database — Orrery ties them together
-into one private workspace that runs on your machine.
+Orrery lets you connect your own AI providers, local models, PostgreSQL data, project context,
+documents, skills, and workflow tools in one Windows desktop app.
 
 ![License](https://img.shields.io/badge/License-Apache_2.0-F2B14E)
+![Windows](https://img.shields.io/badge/Windows-supported-9DB9F0?logo=windows&logoColor=white)
 ![Python](https://img.shields.io/badge/Python-3.12+-9DB9F0?logo=python&logoColor=white)
 ![React](https://img.shields.io/badge/React-Vite-9DB9F0?logo=react&logoColor=white)
-![FastAPI](https://img.shields.io/badge/FastAPI-0B1020?logo=fastapi&logoColor=009688)
+![FastAPI](https://img.shields.io/badge/FastAPI-localhost-0B1020?logo=fastapi&logoColor=009688)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-pgvector-0B1020?logo=postgresql&logoColor=4169E1)
 ![PRs welcome](https://img.shields.io/badge/PRs-welcome-5BC489)
 
 </div>
 
-Nothing leaves your computer except the calls to the model providers you choose. Your data sits at the
-centre, with focused tabs around it: **Chat · Data · Dashboards · Automations · Agents · Media Hub ·
-Local Models · Settings**.
+## Status
 
-## Built with
+Orrery is open source and under active development. Windows is the supported target right now.
+macOS and Linux are planned, but the current desktop packaging, installer notes, and testing path are
+Windows-focused.
+
+The app is built for people who want AI help across documents, databases, local models, dashboards,
+automations, projects, and structured workflows while keeping control of their data. When you choose
+a cloud model, only the selected prompt/context needed for that request is sent to that provider.
+Your app state, files, database connection details, generated files, and credentials stay in your
+environment.
+
+## What Orrery Supports
+
+- Chat with multiple model routes: API-key providers, official CLI/account routes, custom
+  OpenAI-compatible endpoints, and local Ollama models.
+- Accounts & Keys: add provider API keys, connect supported first-party CLI plans, and manage active
+  models without exposing secrets in the UI.
+- Local models through Ollama, including one-click install/pull helpers where available.
+- File upload, search, and retrieval-augmented generation (RAG) with PostgreSQL and pgvector.
+- A data layer for local or active PostgreSQL connections, so dashboards and automations can be built
+  from connected data sources.
+- Projects with chat hierarchy and reusable context.
+- Ontologies and reusable knowledge structures for stronger context control.
+- Effort modes and context-window controls, including high-limit options for deeper work.
+- Sandboxed file generation for PDFs, Word documents, spreadsheets, PowerPoint decks, CSV files,
+  charts, SVG/image-style outputs, and other requested artifacts.
+- Skills: reusable instruction playbooks that guide chat, file generation, research, coding, images,
+  projects, spreadsheets, presentations, and sandboxed work.
+- Admin controls for small teams, including feature toggles and approval flow for team-created
+  skills/tools.
+- Reasoning trace summaries that show what Orrery is doing without exposing raw private chain of
+  thought.
+
+## Architecture
 
 | Layer | Technology |
 |---|---|
-| Backend | **Python 3.12** · FastAPI · SQLAlchemy + psycopg · Procrastinate (job queue) |
-| Frontend | **React + Vite** (JavaScript) |
-| Database | **PostgreSQL** + pgvector |
-| Desktop shell | pywebview |
-| Models | litellm (API providers) · official CLI plans · Ollama (local) |
-| File sandbox | Docker (isolated code execution) |
+| Desktop shell | pywebview using the system WebView2 runtime on Windows |
+| Backend API | Python 3.12, FastAPI, Uvicorn |
+| Frontend | React + Vite |
+| Database | PostgreSQL + pgvector |
+| Queue / jobs | Procrastinate, backed by PostgreSQL |
+| Model routing | LiteLLM, official provider CLIs where supported, Ollama for local models |
+| Secrets | Operating-system keychain through `keyring` |
+| File sandbox | Docker container with no network, resource limits, read-only root, and mounted output folder |
 
-## Features
+## Download A Windows Build
 
-- **Chat** with frontier or local models — streaming responses, adaptive reasoning, and full Markdown.
-- **File generation** — ask for a PDF, Word document, Excel sheet, PowerPoint, CSV, chart, or image and
-  get a real, downloadable file. Generation runs in an isolated sandbox.
-- **Data** — connect a PostgreSQL database and browse it safely.
-- **Dashboards, Automations & Agents** — turn your data and models into live views, scheduled
-  workflows, and scoped assistants.
-- **Local Models** — run private on-device models through Ollama, no API key required.
-- **Bring your own everything** — your models, your database, your machine.
+When a release is published, download the Windows package from the
+[GitHub Releases page](https://github.com/zaidt156/Orrery/releases):
 
-## Getting started
+- `Orrery-Windows.zip`: recommended package with `Orrery.exe`, database compose file, sandbox
+  Dockerfile, and Windows notes.
+- `Orrery.exe`: standalone executable for users who already have PostgreSQL and the sandbox image
+  configured.
 
-**Prerequisites:** Python 3.12+, Node.js 20+, and Docker Desktop.
+The first public builds are preview builds. If a release asset is not attached yet, run Orrery from
+source using the steps below or ask a maintainer to publish a tagged release.
 
-```bash
-# 1) Start a local PostgreSQL (pgvector) database.
-#    Create a .env file with LOCAL-ONLY values (never commit it):
-#      POSTGRES_USER=orrery
-#      POSTGRES_PASSWORD=choose_a_local_password
-#      POSTGRES_DB=orrery
-#      POSTGRES_PORT=5432
-#      DATABASE_URL=postgresql+psycopg://orrery:choose_a_local_password@127.0.0.1:5432/orrery
+### Windows Release Prerequisites
+
+Install these before running the released `.exe`:
+
+1. Windows 10/11.
+2. Microsoft Edge WebView2 Runtime. It is already present on most Windows 10/11 installs.
+3. Docker Desktop, if you want the included PostgreSQL container or sandboxed file generation.
+4. PostgreSQL with pgvector. The release zip includes `docker-compose.yml` for a local pgvector
+   database.
+5. Optional: Ollama for local models.
+6. Optional: first-party provider CLIs for account-plan routes, such as Claude Code, Codex CLI, or
+   Gemini CLI. These routes are advanced and opt-in. Orrery launches the official CLI and does not
+   scrape browser sessions or copy provider tokens.
+
+### Run The Windows Release
+
+From the extracted `Orrery-Windows.zip` folder:
+
+```powershell
+# Start the included local PostgreSQL + pgvector database.
+copy .env.example .env
 docker compose up -d
 
-# 2) Backend
-python -m venv .venv
-#   Windows:  .venv\Scripts\activate      macOS/Linux:  source .venv/bin/activate
+# Build the sandbox image used for model-written code and rich file generation.
+docker build -t orrery-sandbox:latest sandbox
+
+# Start the app.
+.\Orrery.exe
+```
+
+On first launch, if no database URL is saved in the Windows keychain, Orrery asks for a PostgreSQL
+connection string. For the included Docker database, use:
+
+```text
+postgresql+psycopg://orrery:orrery_dev_password@127.0.0.1:5432/orrery
+```
+
+You can also point Orrery at your own local, LAN, or cloud PostgreSQL server as long as pgvector is
+available and the connection string is reachable from your machine.
+
+## Run From Source On Windows
+
+### Prerequisites
+
+Install:
+
+1. Git.
+2. Python 3.12 or newer.
+3. Node.js 20 or newer.
+4. Docker Desktop.
+5. PostgreSQL + pgvector, or use the included Docker Compose database.
+6. Optional: Ollama for local models.
+7. Optional: provider API keys or official provider CLIs for the models you want to use.
+
+### Setup
+
+```powershell
+git clone https://github.com/zaidt156/Orrery.git
+cd Orrery
+
+# Local development settings. Never commit .env.
+copy .env.example .env
+
+# Start local PostgreSQL + pgvector.
+docker compose up -d
+
+# Build the sandbox image used by file generation.
+docker build -t orrery-sandbox:latest sandbox
+
+# Python environment.
+py -3.12 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
 pip install -r requirements.txt
 
-# 3) Frontend
-cd ui && npm install && npm run build && cd ..
+# Frontend production build served by FastAPI.
+cd ui
+npm install
+npm run build
+cd ..
 
-# 4) Run
+# Launch Orrery.
 python app.py
 ```
 
-On first launch Orrery connects to your database, applies migrations, and opens the desktop window.
-Set up model access in **Settings → Accounts**.
+The app opens a desktop window. The backend API is bound to localhost and protected by a fresh
+per-session token.
 
-> Optional: on Windows, if the project lives in a synced folder, the helpers in `scripts/setup/`
-> keep `node_modules` and the virtual environment out of the sync path.
+### Development Mode
 
-## Models & keys
+Use Vite hot reload while keeping the Python backend and desktop shell:
 
-In **Settings → Accounts** you can add API keys for major providers, connect supported CLI-based
-plans, add any OpenAI-compatible endpoint, or run local models with Ollama. **API keys are stored in
-your operating system's keychain** — never in files, logs, or this repository — and the interface
-only ever shows a masked preview.
+```powershell
+# In .env:
+# ORRERY_DEV=1
 
-For ChatGPT-plan access, the default model is automatic: Orrery lets the official Codex CLI choose
-the newest GPT model that the installed CLI and signed-in account can use. If the local CLI is too
-old, Settings shows an update action; if a pinned GPT model is rejected by Codex, Orrery retries the
-same request through the automatic default route instead of failing immediately.
+# Terminal 1
+cd ui
+npm run dev
+
+# Terminal 2
+.\.venv\Scripts\Activate.ps1
+python app.py
+```
+
+For production-style local testing, set `ORRERY_DEV=0`, run `npm run build`, and start `python app.py`.
+
+## Model Setup
+
+Open `Settings -> Accounts & Keys` inside Orrery.
+
+- OpenAI, Anthropic, Google, and compatible providers can use API keys where supported.
+- Ollama models run locally and do not require an API key.
+- Claude, ChatGPT/Codex, and Gemini CLI routes are optional account-plan routes where the official
+  first-party CLI supports non-interactive local execution. Orrery does not use unofficial browser
+  cookies, hidden web APIs, or session scraping.
+- API keys and database URLs are stored in the operating-system keychain. They are not written to
+  `.env`, PostgreSQL, logs, or the repository.
+
+Provider subscriptions and provider API billing are not always the same product. If a provider does
+not officially allow subscription spend through a third-party app, Orrery keeps that route disabled
+or uses only the supported first-party CLI path with warnings.
+
+## Data And RAG
+
+Orrery uses PostgreSQL as the main data layer. You can:
+
+- Use the included local Docker database.
+- Connect your own PostgreSQL server.
+- Browse connected data safely.
+- Upload documents into collections.
+- Use pgvector and PostgreSQL full-text search for hybrid retrieval.
+- Use retrieved context in chat while keeping untrusted document text separated from system
+  instructions.
+- Build dashboards and automations from connected data sources as those features mature.
+
+## File Generation And Sandbox
+
+Rich file generation uses a locked-down Docker sandbox. Build the image once:
+
+```powershell
+docker build -t orrery-sandbox:latest sandbox
+```
+
+The sandbox has no network, a read-only root filesystem, dropped Linux capabilities, memory/CPU/PID
+limits, and a per-run output folder. Model-written code never runs inside the Orrery process.
+
+If the sandbox image is missing, normal chat still works, but code-execution-based file generation is
+limited until the image is built.
 
 ## Security
 
-Orrery is built local-first and security-first:
+Orrery is designed around clear local boundaries:
 
-- **Secrets stay in your OS keychain** — never written to disk, logs, or source control.
-- **The app runs locally** — its API is bound to localhost and protected by a per-session token.
-- **Model-written code is sandboxed** — code used to generate files runs in an isolated, network-less
-  environment with strict resource limits, never in the app process.
-- **Database access is read-only and parameterized.**
+- Secrets stay in the OS keychain.
+- The API binds to localhost and requires a per-session token.
+- Cloud models receive only the request context you choose to send through that model route.
+- Local Ollama models keep inference on your machine.
+- User files, RAG chunks, and model outputs are treated as untrusted input.
+- Generated code runs only in Docker sandbox mode.
+- Database URLs and provider errors are redacted before display/logging.
 
-See [`SECURITY.md`](SECURITY.md) to report a vulnerability.
+Read [`SECURITY.md`](SECURITY.md) for vulnerability reporting.
+
+## Build A Windows Release
+
+Maintainers can build release assets with GitHub Actions.
+
+1. Push the changes to GitHub.
+2. Create and push a version tag:
+
+```powershell
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+3. The `Build Windows Release` workflow builds:
+
+- `Orrery.exe`
+- `Orrery-Windows.zip`
+
+4. On version tags, the workflow attaches both files to the GitHub Release automatically.
+
+You can also run the workflow manually from `Actions -> Build Windows Release`. Manual runs upload
+the files as workflow artifacts but do not create a public release unless the run is from a version
+tag.
+
+## Test And Verify
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements-dev.txt
+python -m pytest
+
+cd ui
+npm run build
+```
 
 ## Contributing
 
-Contributions are welcome! Please read [`CONTRIBUTING.md`](CONTRIBUTING.md) for the development
-setup and pull-request workflow, and our [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md). Open an issue
-with the provided templates for bugs and feature requests; report security issues privately via
-[`SECURITY.md`](SECURITY.md).
+Contributions, feedback, and ideas are welcome. Please read [`CONTRIBUTING.md`](CONTRIBUTING.md),
+[`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md), and [`SECURITY.md`](SECURITY.md) before opening issues
+or pull requests.
 
 ## License
 
-Licensed under the [Apache License 2.0](LICENSE).
-
+Orrery is licensed under the [Apache License 2.0](LICENSE).

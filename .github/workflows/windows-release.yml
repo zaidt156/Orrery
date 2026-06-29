@@ -1,0 +1,117 @@
+name: Build Windows Release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    name: Build Windows desktop package
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Build frontend
+        working-directory: ui
+        run: |
+          npm ci
+          npm run build
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build Orrery.exe
+        run: |
+          pyinstaller `
+            --noconfirm `
+            --clean `
+            --name Orrery `
+            --console `
+            --icon assets\desktop\orrery.ico `
+            --add-data "assets;assets" `
+            --add-data "ui\dist;ui\dist" `
+            --add-data "skills;skills" `
+            --add-data "sandbox;sandbox" `
+            --add-data "backend\providers\model_manifest.json;backend\providers" `
+            --collect-all litellm `
+            --collect-all fastembed `
+            --collect-all webview `
+            --collect-submodules keyring.backends `
+            --hidden-import win32timezone `
+            app.py
+
+      - name: Create release package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force release\Orrery-Windows\sandbox | Out-Null
+          Copy-Item dist\Orrery\Orrery.exe release\Orrery-Windows\Orrery.exe
+          Copy-Item docker-compose.yml release\Orrery-Windows\docker-compose.yml
+          Copy-Item .env.example release\Orrery-Windows\.env.example
+          Copy-Item sandbox\Dockerfile release\Orrery-Windows\sandbox\Dockerfile
+
+          @'
+          Orrery Windows Preview
+          ======================
+
+          Requirements:
+          - Windows 10/11
+          - Microsoft Edge WebView2 Runtime
+          - Docker Desktop if using the included PostgreSQL database or sandboxed file generation
+          - PostgreSQL with pgvector, either your own server or the included docker-compose.yml
+
+          Quick start:
+          1. Copy .env.example to .env.
+          2. Run: docker compose up -d
+          3. Run: docker build -t orrery-sandbox:latest sandbox
+          4. Run: Orrery.exe
+          5. If prompted for a database URL, use:
+             postgresql+psycopg://orrery:orrery_dev_password@127.0.0.1:5432/orrery
+
+          Notes:
+          - API keys and database URLs are stored in the Windows keychain.
+          - Orrery binds its API to localhost and uses a per-session token.
+          - The preview executable uses a console window so first-run database prompts and startup
+            errors are visible.
+          '@ | Set-Content release\Orrery-Windows\README-WINDOWS.txt -Encoding utf8
+
+          Compress-Archive -Path release\Orrery-Windows\* -DestinationPath release\Orrery-Windows.zip -Force
+          Copy-Item release\Orrery-Windows\Orrery.exe release\Orrery.exe
+
+      - name: Upload workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: Orrery-Windows
+          path: |
+            release/Orrery.exe
+            release/Orrery-Windows.zip
+
+      - name: Attach files to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release/Orrery.exe
+            release/Orrery-Windows.zip
