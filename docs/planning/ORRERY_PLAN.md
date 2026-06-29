@@ -341,13 +341,13 @@ Next:
 - [x] Admin user + feature flags: an Admin tab; a token (OS keychain) gates global on/off of code
       interpreter, web search, Deep Research, ontology, file gen, media, automations, agents, MCP.
       Enforced in chat; the rail hides tabs for off features. (Single instance — see team decision below.)
-- [ ] **Team / multi-user direction (DECISION PENDING).** The user wants a 20-person / 2-admin setup
-      where admins manage skills/ontologies/MCP/flags for everyone, connected over the LAN. Recommended:
-      the **shared-Postgres** model — all clients point at one team Postgres (the existing "bring your own
-      database"), so admin-managed resources are shared automatically; the admin token gates edits;
-      add a per-user identity + ownership on private data (chats/projects); each user keeps their OWN
-      model keys in their OWN keychain (never shared). Alternatives: a shared Orrery server (LAN-bound
-      backend + accounts — bigger, breaks localhost-only) or config-pack sync. Confirm before building.
+- [x] **Team / multi-user (shared-Postgres model).** All clients point at one team Postgres; admin-managed
+      resources are shared automatically. Built: a `team_users` table with access keys (sha256-hashed,
+      shown once) + roles (admin|member); founding-admin bootstrap from the Admin tab; a lock screen for
+      clients without a key; per-user ownership of chats/projects (private per person; shared skills/
+      ontologies/MCP stay common); and an approval queue (member-authored skills/MCP are pending until an
+      admin approves them team-wide). Each user keeps their own model keys in their own keychain.
+      TODO: bootstrap is deliberate founding-admin setup (not first-connect); no team-teardown UI yet.
 - [ ] Per-segment outer reasoning headlines (the multi-card 'what's going on' view).
 - [ ] Optional keyed web-search provider (Brave/Tavily) for higher volume/precision.
 
