@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { LayoutGrid, Plus, Save, Search, Server, Sparkles, Trash2, Upload, WandSparkles, X } from "lucide-react";
 import {
   createMcp, createSkill, deleteMcp, deleteSkill, generateSkill, getModels, listMcp, listSkills,
-  updateMcp, updateSkill, uploadSkill,
+  testMcp, updateMcp, updateSkill, uploadSkill,
 } from "../lib/api.js";
 
 const emptyDraft = { name: "", triggers: "", body: "", always: false, enabled: true };
@@ -16,6 +16,7 @@ export default function Skills() {
   const [draft, setDraft] = useState(emptyDraft);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const [msg, setMsg] = useState("");
   const [query, setQuery] = useState("");
   const [models, setModels] = useState([]);
   const [genText, setGenText] = useState("");
@@ -32,6 +33,8 @@ export default function Skills() {
   const filtered = q
     ? items.filter((s) => (s.name || "").toLowerCase().includes(q) || (s.triggers || "").toLowerCase().includes(q))
     : items;
+  const enabledCount = items.filter((s) => s.enabled).length;
+  const mcpEnabled = mcp.filter((s) => s.enabled).length;
 
   async function load(nextActive) {
     const data = await listSkills();
@@ -62,6 +65,17 @@ export default function Skills() {
   async function removeMcp(srv) {
     if (!window.confirm("Remove this MCP server?")) return;
     try { await deleteMcp(srv.id); await loadMcp(); } catch (e) { setErr(String(e.message || e)); }
+  }
+  async function testMcpServer(srv) {
+    setErr(""); setMsg("");
+    setMcp((prev) => prev.map((x) => (x.id === srv.id ? { ...x, testing: true } : x)));
+    try {
+      const res = await testMcp(srv.id);
+      if (res.ok) { setMsg(`${srv.name}: connected — ${res.tools.length} tool(s).`); await loadMcp(); }
+      else setErr(res.error || "Could not connect to the server.");
+    } catch (e) { setErr(String(e.message || e)); } finally {
+      setMcp((prev) => prev.map((x) => (x.id === srv.id ? { ...x, testing: false } : x)));
+    }
   }
 
   async function generate() {
@@ -224,7 +238,11 @@ export default function Skills() {
                 {mcp.map((s) => (
                   <div key={s.id} className="ov-row">
                     <Server />
-                    <span className="ov-meta"><b>{s.name}</b><small>{s.transport === "http" ? (s.url || "http") : (s.command || "stdio")}</small></span>
+                    <span className="ov-meta">
+                      <b>{s.name}</b>
+                      <small>{(s.tools?.length ? `${s.tools.length} tool(s) · ` : "")}{s.transport === "http" ? (s.url || "http") : (s.command || "stdio")}</small>
+                    </span>
+                    <button className="btn ghost sm" onClick={() => testMcpServer(s)} disabled={s.testing}>{s.testing ? "Testing…" : "Test"}</button>
                     <span className={`toggle${s.enabled ? " on" : ""}`} role="switch" aria-checked={s.enabled} tabIndex={0} title={s.enabled ? "Enabled" : "Disabled"} onClick={() => toggleMcp(s, !s.enabled)} />
                     <button className="icon-btn" title="Remove" onClick={() => removeMcp(s)}><X /></button>
                   </div>
@@ -232,6 +250,7 @@ export default function Skills() {
               </div>
             </section>
             {err && <div className="chat-banner">{err}</div>}
+            {msg && <div className="admin-ok">{msg}</div>}
           </div>
         ) : (
           <>

@@ -26,6 +26,7 @@ export default function Ontology() {
     ? items.filter((o) => (o.name || "").toLowerCase().includes(q) || (o.description || "").toLowerCase().includes(q))
     : items;
   const connectedItems = items.filter((o) => o.connected);
+  const totalChunks = files.reduce((sum, f) => sum + Number(f.chunks || 0), 0);
 
   async function load(nextActive) {
     const data = await listOntologies();
@@ -111,16 +112,16 @@ export default function Ontology() {
         <button className="btn primary project-new" onClick={addItem} disabled={busy}><Plus /> New ontology</button>
         <div className="ontology-search">
           <Search />
-          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search ontologies…" />
+          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search ontologies..." />
         </div>
         {connectedItems.length > 0 && (
           <div className="ontology-connected">
-            <div className="ontology-connected-label">Connected now · {connectedItems.length}</div>
+            <div className="ontology-connected-label">Connected now - {connectedItems.length}</div>
             <div className="ontology-connected-chips">
               {connectedItems.map((o) => (
                 <span key={o.id} className="ontology-chip" title="Used as context in every chat">
                   <button className="chip-name" onClick={() => openItem(o.id).catch((e) => setErr(String(e.message || e)))}>{o.name}</button>
-                  <button className="chip-x" title="Disconnect" onClick={() => setItemConnected(o, false)}>×</button>
+                  <button className="chip-x" title="Disconnect" onClick={() => setItemConnected(o, false)}>x</button>
                 </span>
               ))}
             </div>
@@ -142,7 +143,7 @@ export default function Ontology() {
                 role="switch"
                 aria-checked={o.connected}
                 tabIndex={0}
-                title={o.connected ? "Connected — used in chats" : "Connect to use in chats"}
+                title={o.connected ? "Connected - used in chats" : "Connect to use in chats"}
                 onClick={() => setItemConnected(o, !o.connected)}
                 onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setItemConnected(o, !o.connected); } }}
               />
@@ -177,6 +178,12 @@ export default function Ontology() {
               <button className="btn ghost" onClick={remove} disabled={busy}><Trash2 /></button>
             </div>
 
+            <div className="workspace-summary">
+              <span><b>{connected ? "Connected" : "Not connected"}</b><small>Chat context</small></span>
+              <span><b>{files.length}</b><small>Files</small></span>
+              <span><b>{totalChunks}</b><small>Chunks</small></span>
+            </div>
+
             <div className="project-details">
               <label>
                 Description
@@ -193,11 +200,11 @@ export default function Ontology() {
             {err && <div className="chat-banner">{err}</div>}
 
             <div className="project-body">
-              <div className="project-files-panel" style={{ width: "100%" }}>
+              <div className="project-files-panel full-panel">
                 <div className="section-label">
                   <span>Knowledge files</span>
                   <button className="btn ghost sm" onClick={() => fileRef.current?.click()} disabled={uploading}>
-                    <Upload /> {uploading ? "Adding…" : "Add files"}
+                    <Upload /> {uploading ? "Adding..." : "Add files"}
                   </button>
                 </div>
                 <input ref={fileRef} type="file" multiple hidden onChange={onFilePick} />

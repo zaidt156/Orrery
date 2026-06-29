@@ -274,6 +274,7 @@ class McpServer(Base):
     command: Mapped[str | None] = mapped_column(Text, nullable=True)     # for stdio: the launch command
     url: Mapped[str | None] = mapped_column(String(500), nullable=True)  # for http/sse: the endpoint
     enabled: Mapped[bool] = mapped_column(default=False)                 # explicit opt-in
+    tools: Mapped[str | None] = mapped_column(Text, nullable=True)       # cached tool catalog (JSON)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

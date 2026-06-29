@@ -16,11 +16,12 @@ on a fenced text convention, so no native provider tool-calling is required.
 from __future__ import annotations
 
 import asyncio
+import json
 import mimetypes
 from collections.abc import AsyncIterator, Awaitable, Callable
 
 from backend.features import files as file_library
-from backend.features import sandbox, websearch
+from backend.features import mcp, sandbox, websearch
 from backend.features.prompting import strip_think
 from backend.features.reasoning_trace import ThinkStream
 from backend.providers import ai
@@ -30,7 +31,7 @@ _STDOUT_FEEDBACK_CHARS = 6000
 
 _FENCE = "```orrery-"
 _CLOSE = "```"
-_KINDS = ("run", "search")
+_KINDS = ("run", "search", "tool")
 _HOLDBACK = len("```orrery-search")  # hold back enough to detect the longest opener
 
 
@@ -123,6 +124,25 @@ def _sandbox_observation(result: sandbox.SandboxResult, produced: list[dict]) ->
     return "\n\n".join(parts)
 
 
+async def _run_mcp_tool(servers: list[dict], body: str) -> dict:
+    """Parse an orrery-tool request {server, tool, args} and call the MCP tool. Output is untrusted."""
+    try:
+        spec = json.loads(body)
+    except (ValueError, TypeError):
+        return {"ok": False, "label": "invalid request", "observation": "[mcp] The orrery-tool block was not valid JSON."}
+    name = str(spec.get("server", "")).strip()
+    tool = str(spec.get("tool", "")).strip()
+    args = spec.get("args") if isinstance(spec.get("args"), dict) else {}
+    server = next((s for s in servers if s.get("name") == name or s.get("id") == name), None)
+    if server is None or not tool:
+        return {"ok": False, "label": f"{name}::{tool}", "observation": f"[mcp] No connected server/tool for '{name}::{tool}'."}
+    res = await mcp.call_tool_by_id(server["id"], tool, args)
+    if res.get("ok"):
+        return {"ok": True, "label": f"{name}::{tool}",
+                "observation": f"[mcp tool result] {name}::{tool}:\n{(res.get('text') or '')[:_STDOUT_FEEDBACK_CHARS]}"}
+    return {"ok": False, "label": f"{name}::{tool}", "observation": f"[mcp tool error] {res.get('error', 'failed')}"}
+
+
 async def run(
     model: str,
     formatted_prompt: str,
@@ -133,6 +153,7 @@ async def run(
     persist: Callable[[str, list[dict] | None], Awaitable[str]],
     max_runs: int = MAX_RUNS,
     allow_web: bool = True,
+    mcp_servers: list[dict] | None = None,
 ) -> AsyncIterator[dict]:
     """Drive the tool loop (run code / search web -> observe -> continue), then persist the answer.
 
@@ -230,7 +251,7 @@ async def run(
                 )
                 echo += f"\n\n```orrery-run\n{body}\n```"
                 observations.append(_sandbox_observation(result, produced))
-            else:  # search
+            elif kind == "search":
                 if not allow_web:
                     echo += f"\n\n```orrery-search\n{body.strip()}\n```"
                     observations.append("[web search is disabled by the administrator]")
@@ -250,6 +271,15 @@ async def run(
                 )
                 echo += f"\n\n```orrery-search\n{query}\n```"
                 observations.append(f"[web search results] for \"{query}\":\n{websearch.format_results(results)}")
+            else:  # tool (MCP)
+                echo += f"\n\n```orrery-tool\n{body.strip()}\n```"
+                tool_res = await _run_mcp_tool(mcp_servers or [], body)
+                yield trace.step(
+                    "Calling MCP tool" if tool_res["ok"] else "MCP tool issue", tool_res["label"],
+                    kind="tool", status="done" if tool_res["ok"] else "warning", phase="execute",
+                    metadata={"run": run_index + 1},
+                )
+                observations.append(tool_res["observation"])
 
         work.append({"role": "assistant", "content": echo.strip()})
         work.append({"role": "user", "content": "\n\n".join(observations)})

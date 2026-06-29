@@ -12,6 +12,8 @@ export default function Admin() {
   const [err, setErr] = useState("");
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
+  const enabledCount = status.features.filter((f) => f.enabled).length;
+  const canToggle = !status.admin_set || !!token.trim();
 
   async function load() {
     try { setStatus(await getAdmin()); } catch (e) { setErr(String(e.message || e)); }
@@ -30,6 +32,7 @@ export default function Admin() {
   }
 
   async function toggle(name, enabled) {
+    if (!canToggle) return;
     setStatus((s) => ({ ...s, features: s.features.map((f) => (f.name === name ? { ...f, enabled } : f)) }));
     setErr(""); setMsg("");
     try {
@@ -53,6 +56,12 @@ export default function Admin() {
           </div>
         </div>
 
+        <div className="admin-stats">
+          <span><b>{status.admin_set ? "Locked" : "Open"}</b><small>Admin token</small></span>
+          <span><b>{enabledCount}</b><small>Enabled</small></span>
+          <span><b>{status.features.length}</b><small>Features</small></span>
+        </div>
+
         {err && <div className="chat-banner">{err}</div>}
         {msg && <div className="admin-ok">{msg}</div>}
 
@@ -74,14 +83,14 @@ export default function Admin() {
 
         <div className="admin-features">
           {status.features.map((f) => (
-            <div key={f.name} className="admin-feature">
+            <div key={f.name} className={`admin-feature${!canToggle ? " locked" : ""}`}>
               <span><b>{f.label}</b><small>{f.name}</small></span>
               <span
                 className={`toggle${f.enabled ? " on" : ""}`}
-                role="switch" aria-checked={f.enabled} tabIndex={0}
-                title={f.enabled ? "Enabled" : "Disabled"}
+                role="switch" aria-checked={f.enabled} aria-disabled={!canToggle} tabIndex={canToggle ? 0 : -1}
+                title={!canToggle ? "Enter the admin token first" : f.enabled ? "Enabled" : "Disabled"}
                 onClick={() => toggle(f.name, !f.enabled)}
-                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(f.name, !f.enabled); } }}
+                onKeyDown={(e) => { if (canToggle && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); toggle(f.name, !f.enabled); } }}
               />
             </div>
           ))}

@@ -748,6 +748,11 @@ def create_app(session_token: str) -> FastAPI:
             raise HTTPException(status_code=404, detail="MCP server not found")
         return {"deleted": True}
 
+    @r.post("/mcp/{sid}/test")
+    async def mcp_test(sid: str) -> dict:
+        """Connect to the server and cache its tool list (the UI 'Test connection' action)."""
+        return await mcp.refresh_tools(sid)
+
     # --- admin: global feature flags (gated by an admin token once one is set) ---
     @r.get("/admin")
     async def admin_status() -> dict:

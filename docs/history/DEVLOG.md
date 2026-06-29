@@ -993,3 +993,20 @@ Next: MCP server support; then admin user + feature flags.
   fail open so a glitch never breaks chat.
 - Enforced in chat (Deep Research, ontology context, file gen, sandbox code path, web search in the
   tool loop) and reflected in the UI (rail hides tabs for turned-off features). Verified live.
+
+
+## Step 79 - MCP live connection + tools in chat (June 29, 2026)
+
+- Orrery now actually *connects* to the MCP servers you add (not just stores them). A "Test connection"
+  button in the Skills tab launches the server, lists its tools, and caches them (you see the tool
+  count). Enabled servers' tools are advertised to the chat model, which can call any of them mid-answer
+  (server::tool) - Orrery runs the call and feeds the result back, treated as untrusted context.
+- The how: Windows only allows subprocess-based servers on a different async loop than the one the
+  database needs, so instead of the heavyweight official client we speak the MCP protocol directly over
+  a plain background subprocess (JSON-RPC over stdin/stdout). No event-loop conflict. stdio servers
+  (the common npx ones) work today; http/SSE servers are the next increment.
+- Gated by the admin "MCP servers" flag. Verified live end-to-end against a real server
+  (server-everything): listed 13 tools and the model called `echo` through the chat loop.
+
+Next: http/SSE MCP transport; then the team/multi-user direction (shared-database vs shared-server) the
+user is weighing - awaiting their pick before building, since it changes the local-first boundary.
