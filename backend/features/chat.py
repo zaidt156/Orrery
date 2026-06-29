@@ -278,19 +278,34 @@ async def _generate(
 
 
 async def _rag_context(model: str, collection_id: str, query: str) -> tuple[str | None, list[str]]:
-    """Retrieve top chunks, redact for cloud models, return (context_block, sources)."""
-    try:
-        results = await rag.search(collection_id, query, k=settings.rag_top_k)
-    except Exception:  # noqa: BLE001 — a retrieval failure shouldn't break the chat
-        return None, []
-    if not results:
-        return None, []
+    """Retrieve top chunks from one collection (kept for callers that pass a single id)."""
+    return await _gather_rag(model, [collection_id], query)
+
+
+async def _gather_rag(model: str, collection_ids: list[str], query: str) -> tuple[str | None, list[str]]:
+    """Retrieve and merge top chunks across every relevant collection (selected data + project files).
+
+    Searching all of them means project files are never dropped when "use my data" is also on, and a
+    project chat always sees its own files. Results are de-duplicated and redacted for cloud models.
+    """
     is_local = ai.model_provider(model) == "ollama"
-    block = "\n\n".join(
-        f"[{r['source']}]\n{privacy.redact_for_model(r['content'], is_local)}" for r in results
-    )
-    sources = list(dict.fromkeys(r["source"] for r in results))
-    return block, sources
+    seen: set[tuple[str, str]] = set()
+    blocks: list[str] = []
+    sources: list[str] = []
+    for collection_id in dict.fromkeys(cid for cid in collection_ids if cid):  # dedupe, keep order
+        try:
+            results = await rag.search(collection_id, query, k=settings.rag_top_k)
+        except Exception:  # noqa: BLE001 — a retrieval failure on one collection shouldn't break the chat
+            continue
+        for r in results:
+            key = (r["source"], r["content"][:120])
+            if key in seen:
+                continue
+            seen.add(key)
+            blocks.append(f"[{r['source']}]\n{privacy.redact_for_model(r['content'], is_local)}")
+            if r["source"] not in sources:
+                sources.append(r["source"])
+    return ("\n\n".join(blocks) if blocks else None), sources
 
 
 _FILE_FORMAT_PATTERNS = [
@@ -867,17 +882,24 @@ async def stream_reply(
             "Loaded the current project's standing context and instructions.",
             kind="context", status="done", phase="context",
         )
-    if not collection_id and project_id:  # project chats answer from the project's uploaded files
-        collection_id = await project_store.collection_id_for(project_id)
+    # Search every relevant source: the selected "use my data" collection AND the project's own files
+    # (combined, not either/or) so project files are never dropped when data is also on.
+    rag_collections: list[str] = []
+    if collection_id:
+        rag_collections.append(collection_id)
+    if project_id:
+        project_collection = await project_store.collection_id_for(project_id)
+        if project_collection:
+            rag_collections.append(project_collection)
     rag_context = None                 # retrieved docs — passed separately as UNTRUSTED context
-    if collection_id and user_content.strip():
-        block, sources = await _rag_context(model, collection_id, user_content)
+    if rag_collections and user_content.strip():
+        block, sources = await _gather_rag(model, rag_collections, user_content)
         if block:
             rag_context = block
             yield {"sources": sources}
             yield trace.step(
-                "Searching uploaded documents",
-                f"Loaded {len(sources)} document(s) from project/collection files to answer from.",
+                "Searching your files",
+                f"Loaded {len(sources)} passage(s) from your data and project files to answer from.",
                 kind="context", status="done", phase="context", metadata={"source_count": len(sources)},
             )
 

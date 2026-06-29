@@ -916,3 +916,18 @@ Next: persist reasoning across reloads; per-segment outer reasoning headlines.
   rolled up. Verified the round-trip end to end.
 
 Next: context handling fixes for chat + data (RAG) + project files (the dangerous context-mixing issue).
+
+
+## Step 73 - Context fix: combine data + project files in retrieval (June 29, 2026)
+
+- **The bug:** data ("use my data") and project files were either/or - turning on a data collection
+  silently dropped the project's own files, and only one collection was ever searched. So files/data
+  often weren't used, and project files seemed "forgotten".
+- **The fix:** retrieval now gathers from ALL relevant collections at once - the selected data
+  collection AND the project's files - merges + de-duplicates the passages, and redacts for cloud
+  models. Project/data files are searched on every turn regardless of chat length, so they don't get
+  lost as the conversation grows. Verified live that both a data collection and project files come back
+  together.
+
+Next (if still needed): retention of ad-hoc chat attachments across very long chats; matching the
+context window to the selected model's real limit.
