@@ -258,3 +258,16 @@ class Chunk(Base):
     collection: Mapped["Collection"] = relationship(back_populates="chunks")
 
     __table_args__ = (Index("ix_chunks_tsv", "tsv", postgresql_using="gin"),)
+
+
+class UserSkill(Base):
+    """A user-authored skill playbook (like the built-in skills/*.md, but created/edited in the UI)."""
+    __tablename__ = "user_skills"
+
+    id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(120))
+    triggers: Mapped[str] = mapped_column(Text, default="")  # comma/newline separated phrases
+    body: Mapped[str] = mapped_column(Text)
+    always: Mapped[bool] = mapped_column(default=False)       # apply on every turn
+    enabled: Mapped[bool] = mapped_column(default=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

@@ -9,6 +9,7 @@ import {
   LayoutDashboard,
   MessageSquare,
   Settings as SettingsIcon,
+  Sparkles,
   Workflow,
 } from "lucide-react";
 import { getBranding, getHealth } from "./lib/api.js";
@@ -46,6 +47,7 @@ const Data = lazy(() => import("./views/Data.jsx"));
 const Dashboards = lazy(() => import("./views/Dashboards.jsx"));
 const Projects = lazy(() => import("./views/Projects.jsx"));
 const Ontology = lazy(() => import("./views/Ontology.jsx"));
+const Skills = lazy(() => import("./views/Skills.jsx"));
 const Automations = lazy(() => import("./views/Automations.jsx"));
 const Agents = lazy(() => import("./views/Agents.jsx"));
 const Media = lazy(() => import("./views/Media.jsx"));
@@ -57,6 +59,7 @@ const TABS = [
   { key: "projects", label: "Projects", Icon: FolderKanban, View: Projects },
   { key: "data", label: "Data", Icon: Database, View: Data },
   { key: "ontology", label: "Ontology", Icon: Brain, View: Ontology },
+  { key: "skills", label: "Skills", Icon: Sparkles, View: Skills },
   { key: "dash", label: "Dashboards", Icon: LayoutDashboard, View: Dashboards },
   { key: "auto", label: "Automations", Icon: Workflow, View: Automations },
   { key: "agents", label: "Agents", Icon: Bot, View: Agents },

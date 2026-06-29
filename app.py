@@ -101,6 +101,9 @@ async def _boot_and_serve() -> None:
     from backend.features import taskbrain as _taskbrain
     await _taskbrain.reconcile_orphans()  # mark last run's 'running' tasks as interrupted
 
+    from backend.features import skills as _skills
+    await _skills.refresh_user_skills()  # load the user's own enabled skills into memory
+
     api = create_app(SESSION_TOKEN)
     config = uvicorn.Config(
         api, host=settings.api_host, port=settings.api_port, log_level="info", access_log=False

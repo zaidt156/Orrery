@@ -959,3 +959,17 @@ Logged to the plan for later (not built yet):
   per-item connect toggle right in the list (search and turn on without opening), and a "Connected now"
   block listing exactly which ontologies are active as chat context (each with a quick disconnect). Makes
   it easy to connect only the one(s) you want when there are many.
+
+
+## Step 76 - User-creatable skills (June 29, 2026)
+
+- **Bring your own skills.** New Skills tab: create, upload (.md), edit, enable/disable, and delete your
+  own instruction playbooks - the same mechanism as Orrery's built-in skills. Each has trigger phrases
+  (or "always on"). Enabled user skills are merged with the built-in ones and matched against every
+  message, then injected into the model's prompt.
+- **How it works.** A new user_skills table (created via create_all); skills.refresh_user_skills() mirrors
+  enabled skills into memory so select() stays synchronous; loaded at startup + after any change. Uploads
+  reuse the built-in frontmatter parser. New /skills API (list/create/upload/update/delete).
+- Verified end to end: trigger match, off-trigger miss, disable drops out, markdown upload parses.
+
+Next: MCP server support; then admin user + feature flags.

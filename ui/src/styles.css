@@ -764,6 +764,9 @@ body{
 .project-node .project-item{flex:1;min-width:0}
 .project-node .toggle{flex:none;margin-right:5px}
 /* Ontology tab: search + connected-now block */
+.skill-body{width:100%;flex:1;min-height:260px;background:var(--bg1);border:1px solid var(--line);border-radius:10px;
+  color:var(--text);padding:11px 13px;font-family:var(--font-mono);font-size:12.5px;line-height:1.55;outline:none;resize:vertical}
+.skill-body:focus{border-color:var(--amber)}
 .ontology-search{display:flex;align-items:center;gap:7px;background:var(--bg2);border:1px solid var(--line);
   border-radius:8px;padding:6px 9px;margin-bottom:4px}
 .ontology-search svg{width:14px;height:14px;color:var(--faint);flex:none}

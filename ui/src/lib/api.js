@@ -161,6 +161,14 @@ export const addOntologyFiles = (id, files) => apiSend(`/api/ontologies/${id}/fi
 export const deleteOntologyFile = (id, source) =>
   apiSend(`/api/ontologies/${id}/files?source=${encodeURIComponent(source)}`, "DELETE");
 
+// User-authored skills — reusable instruction playbooks the user creates/uploads; enabled ones are
+// matched against each message (by trigger phrases, or always) and injected into the model's prompt.
+export const listSkills = () => apiGet("/api/skills");
+export const createSkill = (skill) => apiSend("/api/skills", "POST", skill);
+export const uploadSkill = (markdown, name) => apiSend("/api/skills/upload", "POST", { markdown, name });
+export const updateSkill = (id, patch) => apiSend(`/api/skills/${id}`, "PATCH", patch);
+export const deleteSkill = (id) => apiSend(`/api/skills/${id}`, "DELETE");
+
 export const listProjects = () => apiGet("/api/projects");
 export const createProject = (project) => apiSend("/api/projects", "POST", project);
 export const getProject = (id) => apiGet(`/api/projects/${id}`);

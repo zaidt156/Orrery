@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field, field_validator
 from backend.core import appconfig, database
 from backend.core.config import settings
 from backend.core.observability import new_request_id
-from backend.features import artifacts, chat, data, exports, feedback, filepreview, local_models, projects, rag, route_telemetry, usage
+from backend.features import artifacts, chat, data, exports, feedback, filepreview, local_models, projects, rag, route_telemetry, skills, usage
 from backend.features import files as file_library
 from backend.providers import accounts, ai, catalog
 from backend.security import secrets
@@ -191,6 +191,27 @@ class OntologyUpdate(BaseModel):
     name: str | None = None
     description: str | None = None
     connected: bool | None = None  # connect => used as standing context in every chat
+
+
+class SkillBody(BaseModel):
+    name: str = ""
+    body: str = ""
+    triggers: str = ""   # comma/newline separated phrases that trigger this skill
+    always: bool = False  # apply on every turn
+    enabled: bool = True
+
+
+class SkillUpdate(BaseModel):
+    name: str | None = None
+    body: str | None = None
+    triggers: str | None = None
+    always: bool | None = None
+    enabled: bool | None = None
+
+
+class SkillUpload(BaseModel):
+    markdown: str = ""
+    name: str = ""
 
 
 class DbConnection(BaseModel):
@@ -633,6 +654,36 @@ def create_app(session_token: str) -> FastAPI:
     @r.delete("/ontologies/{cid}/files")
     async def ontology_delete_file(cid: str, source: str) -> dict:
         return {"removed": await rag.delete_source(cid, source)}
+
+    # --- user-authored skills (created/edited/uploaded in the UI; merged with built-in skills) ---
+    @r.get("/skills")
+    async def skills_list() -> dict:
+        return {"skills": await skills.list_user_skills()}
+
+    @r.post("/skills")
+    async def skill_create(body: SkillBody) -> dict:
+        if not body.body.strip():
+            raise HTTPException(status_code=400, detail="Skill content is required")
+        return await skills.create_user_skill(body.name, body.body, body.triggers, body.always, body.enabled)
+
+    @r.post("/skills/upload")
+    async def skill_upload(body: SkillUpload) -> dict:
+        parsed = skills.parse_skill_markdown(body.markdown, body.name or "Skill")
+        if not parsed["body"].strip():
+            raise HTTPException(status_code=400, detail="The uploaded file has no skill content")
+        return await skills.create_user_skill(parsed["name"], parsed["body"], parsed["triggers"], parsed["always"])
+
+    @r.patch("/skills/{sid}")
+    async def skill_update(sid: str, body: SkillUpdate) -> dict:
+        if not await skills.update_user_skill(sid, **body.model_dump(exclude_unset=True)):
+            raise HTTPException(status_code=404, detail="Skill not found")
+        return {"updated": True}
+
+    @r.delete("/skills/{sid}")
+    async def skill_delete(sid: str) -> dict:
+        if not await skills.delete_user_skill(sid):
+            raise HTTPException(status_code=404, detail="Skill not found")
+        return {"deleted": True}
 
     # --- projects ---
     @r.get("/projects")

@@ -335,8 +335,8 @@ Implemented:
 Next:
 - [ ] MCP server support: connect Model Context Protocol servers as tools/context sources; treat their
       output as untrusted, require per-server opt-in (security.md). Surface in Settings + as chat tools.
-- [ ] User-creatable skills: let the user create, upload, edit, and enable/disable their own skill
-      playbooks (the skills/*.md system) from the UI, in addition to the built-in ones.
+- [x] User-creatable skills: Skills tab to create/upload/edit/enable/delete your own skill playbooks;
+      enabled ones are merged with the built-ins and injected per matching message.
 - [ ] Admin user + feature flags: an admin role (SSH-key / token gated) that can turn any feature on or
       off globally (chat routes, sandbox, web search, ontology, media, automations, agents, MCP).
 - [ ] Per-segment outer reasoning headlines (the multi-card 'what's going on' view).
