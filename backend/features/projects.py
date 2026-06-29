@@ -8,7 +8,7 @@ from sqlalchemy import func, select
 
 from backend.core.database import get_sessionmaker
 from backend.core.models import Conversation, Project
-from backend.features import rag
+from backend.features import rag, team
 
 MAX_NAME = 160
 MAX_DESCRIPTION = 2_000
@@ -80,10 +80,12 @@ def _conversation_dict(conv: Conversation) -> dict:
 
 
 async def list_projects() -> list[dict]:
+    owner = await team.current_owner_id()  # team mode: only this user's projects; solo: None (all)
     async with get_sessionmaker()() as s:
-        projects = (
-            await s.execute(select(Project).order_by(Project.updated_at.desc(), Project.created_at.desc()))
-        ).scalars().all()
+        pq = select(Project).order_by(Project.updated_at.desc(), Project.created_at.desc())
+        if owner is not None:
+            pq = pq.where(Project.owner_id == owner)
+        projects = (await s.execute(pq)).scalars().all()
         conversations = (
             await s.execute(
                 select(Conversation)
@@ -121,6 +123,7 @@ async def create_project(name: str, description: str = "", instructions: str = "
             name=cleaned_name,
             description=_clean_multiline(description, MAX_DESCRIPTION) or None,
             instructions=_clean_multiline(instructions, MAX_INSTRUCTIONS) or None,
+            owner_id=await team.current_owner_id(),
         )
         s.add(project)
         await s.commit()
@@ -129,9 +132,12 @@ async def create_project(name: str, description: str = "", instructions: str = "
 
 
 async def get_project(project_id: str) -> dict | None:
+    owner = await team.current_owner_id()
     async with get_sessionmaker()() as s:
         project = await s.get(Project, _uuid(project_id))
         if project is None:
+            return None
+        if owner is not None and project.owner_id != owner:  # team mode: can't open another user's project
             return None
         conversations = (
             await s.execute(
@@ -178,9 +184,12 @@ async def update_project(
 
 
 async def delete_project(project_id: str) -> bool:
+    owner = await team.current_owner_id()
     async with get_sessionmaker()() as s:
         project = await s.get(Project, _uuid(project_id))
         if project is None:
+            return False
+        if owner is not None and project.owner_id != owner:  # team mode: can't delete another user's project
             return False
         await s.delete(project)
         await s.commit()

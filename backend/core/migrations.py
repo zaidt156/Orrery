@@ -128,6 +128,9 @@ async def run_migrations() -> None:
         await conn.execute(text("ALTER TABLE collections ADD COLUMN IF NOT EXISTS connected BOOLEAN NOT NULL DEFAULT FALSE"))
         await conn.execute(text("ALTER TABLE collections ADD COLUMN IF NOT EXISTS description TEXT"))
         await conn.execute(text("ALTER TABLE mcp_servers ADD COLUMN IF NOT EXISTS tools TEXT"))
+        # Team mode: chats/projects are private to their owner (null = single-user / legacy)
+        await conn.execute(text("ALTER TABLE conversations ADD COLUMN IF NOT EXISTS owner_id VARCHAR(36)"))
+        await conn.execute(text("ALTER TABLE projects ADD COLUMN IF NOT EXISTS owner_id VARCHAR(36)"))
         label_updates = {
             "claude_plan/default": "Claude plan - adaptive thinking",
             "claude_plan/opus": "Claude plan - Opus - adaptive thinking",

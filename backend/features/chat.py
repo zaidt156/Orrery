@@ -18,7 +18,7 @@ from backend.core.config import settings
 from backend.core.database import get_sessionmaker
 from backend.core.observability import log_event
 from backend.core.models import Conversation, Message, Project
-from backend.features import admin, code_images, code_interpreter, docgen, filegen, mcp, rag, reasoning, research, route_telemetry, sandbox, skills, taskbrain, taskrouter
+from backend.features import admin, code_images, code_interpreter, docgen, filegen, mcp, rag, reasoning, research, route_telemetry, sandbox, skills, taskbrain, taskrouter, team
 from backend.features import projects as project_store
 from backend.features import files as file_library
 from backend.features.prompting import CODE_INTERPRETER_PROMPT, FORMAT_INSTRUCTIONS, build_system_prompt, strip_think as _strip_think
@@ -35,10 +35,12 @@ _log = logging.getLogger("orrery.chat")
 
 
 async def list_conversations() -> list[dict]:
+    owner = await team.current_owner_id()  # team mode: only this user's chats; solo: None (all)
     async with get_sessionmaker()() as s:
-        rows = (
-            await s.execute(select(Conversation).order_by(Conversation.updated_at.desc()))
-        ).scalars().all()
+        q = select(Conversation).order_by(Conversation.updated_at.desc())
+        if owner is not None:
+            q = q.where(Conversation.owner_id == owner)
+        rows = (await s.execute(q)).scalars().all()
         return [
             {
                 "id": str(c.id),
@@ -71,6 +73,7 @@ async def create_conversation(
             system_prompt=system_prompt or None,
             effort=effort or None,
             context_window=context_window,
+            owner_id=await team.current_owner_id(),
         )
         s.add(conv)
         await s.commit()
@@ -82,9 +85,12 @@ async def create_conversation(
 
 
 async def get_conversation(conv_id: str) -> dict | None:
+    owner = await team.current_owner_id()
     async with get_sessionmaker()() as s:
         conv = await s.get(Conversation, uuid.UUID(conv_id))
         if conv is None:
+            return None
+        if owner is not None and conv.owner_id != owner:  # team mode: can't open another user's chat
             return None
         msgs = (
             await s.execute(
@@ -175,9 +181,12 @@ async def update_conversation(
 
 
 async def delete_conversation(conv_id: str) -> bool:
+    owner = await team.current_owner_id()
     async with get_sessionmaker()() as s:
         conv = await s.get(Conversation, uuid.UUID(conv_id))
         if conv is None:
+            return False
+        if owner is not None and conv.owner_id != owner:  # team mode: can't delete another user's chat
             return False
         await s.delete(conv)
         await s.commit()

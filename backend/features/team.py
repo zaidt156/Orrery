@@ -19,10 +19,10 @@ import hashlib
 import secrets as pysecrets
 import uuid
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 
 from backend.core.database import get_sessionmaker
-from backend.core.models import TeamUser
+from backend.core.models import Conversation, Project, TeamUser
 from backend.security import secrets
 
 _UNLOCK_KEY = "team_access_key"  # keychain entry: this client's own access key
@@ -84,6 +84,14 @@ async def is_admin() -> bool:
     return bool(user and user["role"] == "admin")
 
 
+async def current_owner_id() -> str | None:
+    """Owner id to stamp on / filter private data (chats, projects): the current user in team mode, else None."""
+    if not await team_mode():
+        return None
+    user = await current_user()
+    return user["id"] if user else None
+
+
 async def status() -> dict:
     """What the UI needs to decide: locked screen, member view, or admin view."""
     if not await team_mode():
@@ -98,7 +106,14 @@ async def setup_team(admin_name: str) -> dict:
         return {"ok": False, "error": "Team access is already set up."}
     key = generate_key()
     async with get_sessionmaker()() as s:
-        s.add(TeamUser(name=(admin_name.strip() or "Admin")[:120], role="admin", key_hash=_hash_key(key)))
+        row = TeamUser(name=(admin_name.strip() or "Admin")[:120], role="admin", key_hash=_hash_key(key))
+        s.add(row)
+        await s.commit()
+        await s.refresh(row)
+        # The founder's existing single-user chats/projects become theirs (so new members don't see them).
+        admin_id = str(row.id)
+        await s.execute(update(Conversation).where(Conversation.owner_id.is_(None)).values(owner_id=admin_id))
+        await s.execute(update(Project).where(Project.owner_id.is_(None)).values(owner_id=admin_id))
         await s.commit()
     secrets.set_secret(_UNLOCK_KEY, key)  # the founder's client is now unlocked
     return {"ok": True, "key": key}

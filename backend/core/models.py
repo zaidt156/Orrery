@@ -31,6 +31,8 @@ class Conversation(Base):
     # per-chat RAG collection holding this chat's own uploaded attachments, so they stay retrievable
     # no matter how long the conversation grows (created lazily on the first attachment)
     collection_id: Mapped[uuid.UUID | None] = mapped_column(PGUUID(as_uuid=True), nullable=True)
+    # team mode: which TeamUser owns this chat (null in single-user mode); chats are private per user
+    owner_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -53,6 +55,8 @@ class Project(Base):
     instructions: Mapped[str | None] = mapped_column(Text, nullable=True)
     # RAG collection holding the project's uploaded files; chats in the project answer from it.
     collection_id: Mapped[uuid.UUID | None] = mapped_column(PGUUID(as_uuid=True), nullable=True)
+    # team mode: which TeamUser owns this project (null in single-user mode); projects are private per user
+    owner_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
