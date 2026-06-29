@@ -120,23 +120,65 @@ def chunk_text(body: str, size: int = 900, overlap: int = 150) -> list[str]:
     return out
 
 
-async def list_collections() -> list[dict]:
+def _collection_dict(c: Collection, chunks: int) -> dict:
+    return {
+        "id": str(c.id), "name": c.name, "embed_model": c.embed_model, "chunks": int(chunks or 0),
+        "kind": getattr(c, "kind", "collection"), "connected": bool(getattr(c, "connected", False)),
+        "description": getattr(c, "description", None),
+    }
+
+
+async def list_collections(kind: str = "collection") -> list[dict]:
+    """List collections of a given kind ('collection' for the Data tab, 'ontology' for the Ontology tab)."""
     async with get_sessionmaker()() as s:
-        rows = (await s.execute(select(Collection).order_by(Collection.created_at))).scalars().all()
+        rows = (await s.execute(
+            select(Collection).where(Collection.kind == kind).order_by(Collection.created_at)
+        )).scalars().all()
         out = []
         for c in rows:
             n = (await s.execute(select(func.count()).select_from(Chunk).where(Chunk.collection_id == c.id))).scalar()
-            out.append({"id": str(c.id), "name": c.name, "embed_model": c.embed_model, "chunks": int(n or 0)})
+            out.append(_collection_dict(c, n))
         return out
 
 
-async def create_collection(name: str) -> dict:
+async def create_collection(name: str, kind: str = "collection", description: str | None = None) -> dict:
     async with get_sessionmaker()() as s:
-        c = Collection(name=(name.strip() or "documents"), embed_model=EMBED_MODEL)
+        c = Collection(name=(name.strip() or "documents"), embed_model=EMBED_MODEL, kind=kind, description=(description or None))
         s.add(c)
         await s.commit()
         await s.refresh(c)
-        return {"id": str(c.id), "name": c.name, "embed_model": c.embed_model, "chunks": 0}
+        return _collection_dict(c, 0)
+
+
+async def set_connected(cid: str, connected: bool) -> bool:
+    """Connect/disconnect an ontology so its knowledge is (or isn't) used as context in every chat."""
+    async with get_sessionmaker()() as s:
+        c = await s.get(Collection, uuid.UUID(cid))
+        if c is None:
+            return False
+        c.connected = bool(connected)
+        await s.commit()
+        return True
+
+
+async def update_collection(cid: str, name: str | None = None, description: str | None = None) -> bool:
+    async with get_sessionmaker()() as s:
+        c = await s.get(Collection, uuid.UUID(cid))
+        if c is None:
+            return False
+        if name is not None and name.strip():
+            c.name = name.strip()[:120]
+        if description is not None:
+            c.description = description or None
+        await s.commit()
+        return True
+
+
+async def connected_collection_ids() -> list[str]:
+    """Collection ids of all connected ontologies — searched as context in every chat."""
+    async with get_sessionmaker()() as s:
+        rows = (await s.execute(select(Collection.id).where(Collection.connected.is_(True)))).scalars().all()
+        return [str(r) for r in rows]
 
 
 async def delete_collection(cid: str) -> bool:

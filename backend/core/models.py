@@ -28,6 +28,9 @@ class Conversation(Base):
     system_prompt: Mapped[str | None] = mapped_column(Text, nullable=True)
     effort: Mapped[str | None] = mapped_column(String(10), nullable=True)  # low|medium|high|xhigh
     context_window: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # per-chat RAG collection holding this chat's own uploaded attachments, so they stay retrievable
+    # no matter how long the conversation grows (created lazily on the first attachment)
+    collection_id: Mapped[uuid.UUID | None] = mapped_column(PGUUID(as_uuid=True), nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -228,6 +231,11 @@ class Collection(Base):
     id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(120))
     embed_model: Mapped[str] = mapped_column(String(120))
+    # "collection" = a Data-tab document set; "ontology" = a reusable knowledge base shown in the
+    # Ontology tab. "connected" ontologies are automatically used as context in every chat.
+    kind: Mapped[str] = mapped_column(String(20), default="collection")
+    connected: Mapped[bool] = mapped_column(default=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     chunks: Mapped[list["Chunk"]] = relationship(back_populates="collection", cascade="all, delete-orphan")

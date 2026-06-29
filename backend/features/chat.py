@@ -484,6 +484,7 @@ class _TurnContext:
     context_window: int
     messages: list[dict]
     title: str
+    collection_id: str | None = None  # this chat's own attachment collection (durable file memory)
 
 
 async def _prepare_turn(cid: uuid.UUID, user_content: str, attachments: list[dict]) -> _TurnContext | None:
@@ -513,9 +514,28 @@ async def _prepare_turn(cid: uuid.UUID, user_content: str, attachments: list[dic
             seed = user_content or (attachments[0].get("name") if attachments else "")
             conv.title = _title_from(seed)
         title = conv.title
+        conv_collection = str(conv.collection_id) if conv.collection_id else None
         await s.commit()
 
-    return _TurnContext(model, system_prompt, effort, project_id, context_window, messages, title)
+    # Durable file memory: index this turn's uploaded files into the chat's own collection so they
+    # stay retrievable (via RAG) no matter how long the conversation grows. Done outside the session
+    # because it embeds; failures here must never break the turn.
+    indexable = [a for a in attachments if a.get("content") and a.get("kind") in ("text", "pdf")]
+    if indexable:
+        try:
+            if not conv_collection:
+                created = await rag.create_collection(f"chat-{cid}", kind="chat")
+                conv_collection = created["id"]
+                async with get_sessionmaker()() as s2:
+                    c2 = await s2.get(Conversation, cid)
+                    if c2 is not None:
+                        c2.collection_id = uuid.UUID(conv_collection)
+                        await s2.commit()
+            await rag.add_documents(conv_collection, indexable)
+        except Exception:  # noqa: BLE001 — attachment indexing is best-effort
+            pass
+
+    return _TurnContext(model, system_prompt, effort, project_id, context_window, messages, title, conv_collection)
 
 
 def _plan_metadata(plan) -> dict:
@@ -882,8 +902,8 @@ async def stream_reply(
             "Loaded the current project's standing context and instructions.",
             kind="context", status="done", phase="context",
         )
-    # Search every relevant source: the selected "use my data" collection AND the project's own files
-    # (combined, not either/or) so project files are never dropped when data is also on.
+    # Search every relevant source together (never either/or): the selected "use my data" collection,
+    # the project's own files, THIS chat's uploaded attachments, and any connected ontologies.
     rag_collections: list[str] = []
     if collection_id:
         rag_collections.append(collection_id)
@@ -891,6 +911,12 @@ async def stream_reply(
         project_collection = await project_store.collection_id_for(project_id)
         if project_collection:
             rag_collections.append(project_collection)
+    if turn.collection_id:  # this chat's own uploaded attachments (durable file memory)
+        rag_collections.append(turn.collection_id)
+    try:
+        rag_collections.extend(await rag.connected_collection_ids())  # connected ontologies = standing knowledge
+    except Exception:  # noqa: BLE001 — ontology lookup is best-effort; never break the chat
+        pass
     rag_context = None                 # retrieved docs — passed separately as UNTRUSTED context
     if rag_collections and user_content.strip():
         block, sources = await _gather_rag(model, rag_collections, user_content)
@@ -899,7 +925,7 @@ async def stream_reply(
             yield {"sources": sources}
             yield trace.step(
                 "Searching your files",
-                f"Loaded {len(sources)} passage(s) from your data and project files to answer from.",
+                f"Loaded {len(sources)} passage(s) from your files, project, and connected knowledge.",
                 kind="context", status="done", phase="context", metadata={"source_count": len(sources)},
             )
 

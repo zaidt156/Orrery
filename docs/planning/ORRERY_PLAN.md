@@ -325,11 +325,22 @@ Implemented:
 - [x] Sources rendered inside the reasoning panel (no raw URL banner).
 - [x] Local API session token; secrets only in keychain.
 
+- [x] Context: chat searches ALL relevant sources together every turn - selected data collection,
+      project files, this chat's own uploaded attachments (indexed for durable memory), and any
+      connected ontologies. No more either/or; files/data are no longer forgotten.
+- [x] Ontology tab: reusable knowledge bases built from the user's own files; a 'connected' ontology
+      is automatically used as standing context in every chat (RAG-backed; hidden from the Data tab).
+- [x] Reasoning persisted across reloads.
+
 Next:
-- [ ] Persist the reasoning trace across reloads (currently kept in-session only) + per-segment outer
-      reasoning headlines (the multi-card "what's going on" view from the reference screenshots).
+- [ ] MCP server support: connect Model Context Protocol servers as tools/context sources; treat their
+      output as untrusted, require per-server opt-in (security.md). Surface in Settings + as chat tools.
+- [ ] User-creatable skills: let the user create, upload, edit, and enable/disable their own skill
+      playbooks (the skills/*.md system) from the UI, in addition to the built-in ones.
+- [ ] Admin user + feature flags: an admin role (SSH-key / token gated) that can turn any feature on or
+      off globally (chat routes, sandbox, web search, ontology, media, automations, agents, MCP).
+- [ ] Per-segment outer reasoning headlines (the multi-card 'what's going on' view).
 - [ ] Optional keyed web-search provider (Brave/Tavily) for higher volume/precision.
-- [ ] Cancellation/resume dispatcher coverage; typed SSE event helper (Phase 0 checklist remainder).
 
 Later phases (not started): Dashboards, Automations, Agents, Media Hub, Capability Contract schema,
 Approval gates, JSONB metadata migration.

@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useState } from "react";
 import {
   Bot,
+  Brain,
   Database,
   FolderKanban,
   HardDriveDownload,
@@ -44,6 +45,7 @@ const Chat = lazy(() => import("./views/Chat.jsx"));
 const Data = lazy(() => import("./views/Data.jsx"));
 const Dashboards = lazy(() => import("./views/Dashboards.jsx"));
 const Projects = lazy(() => import("./views/Projects.jsx"));
+const Ontology = lazy(() => import("./views/Ontology.jsx"));
 const Automations = lazy(() => import("./views/Automations.jsx"));
 const Agents = lazy(() => import("./views/Agents.jsx"));
 const Media = lazy(() => import("./views/Media.jsx"));
@@ -54,6 +56,7 @@ const TABS = [
   { key: "chat", label: "Chat", Icon: MessageSquare, View: Chat },
   { key: "projects", label: "Projects", Icon: FolderKanban, View: Projects },
   { key: "data", label: "Data", Icon: Database, View: Data },
+  { key: "ontology", label: "Ontology", Icon: Brain, View: Ontology },
   { key: "dash", label: "Dashboards", Icon: LayoutDashboard, View: Dashboards },
   { key: "auto", label: "Automations", Icon: Workflow, View: Automations },
   { key: "agents", label: "Agents", Icon: Bot, View: Agents },

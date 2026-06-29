@@ -931,3 +931,23 @@ Next: context handling fixes for chat + data (RAG) + project files (the dangerou
 
 Next (if still needed): retention of ad-hoc chat attachments across very long chats; matching the
 context window to the selected model's real limit.
+
+
+## Step 74 - Unified context + Ontology tab; roadmap: MCP, user skills, admin (June 29, 2026)
+
+- **Context, unified.** Every chat turn now searches all relevant sources together: the selected data
+  collection, the project's files, THIS chat's own uploaded attachments, and any connected ontologies -
+  merged + de-duplicated. Chat attachments are indexed into a per-chat collection (new conversations.
+  collection_id) so they stay retrievable no matter how long the chat grows. Fixes "files/data not used"
+  and "forgets files".
+- **Ontology tab (new).** Users build reusable knowledge bases from their own files. Collections now have
+  a kind ('collection' vs 'ontology') + a 'connected' flag + description (additive migration). A connected
+  ontology is automatically used as standing context in every chat; ontologies are hidden from the Data
+  tab and managed in their own tab (create, add files, connect/disconnect, delete). New /ontologies API.
+  Verified end to end (create -> add file -> connect -> retrieved in chat).
+
+Logged to the plan for later (not built yet):
+- **MCP server support** - connect Model Context Protocol servers as tools/context; untrusted output,
+  per-server opt-in.
+- **User-creatable skills** - create/upload/edit/enable user skill playbooks from the UI.
+- **Admin user + feature flags** - an admin role (SSH-key/token gated) to turn any feature on/off globally.

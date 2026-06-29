@@ -182,6 +182,17 @@ class ReasoningBody(BaseModel):
     reasoning: dict = {}  # UI snapshot: thinking text, trace steps, outer card, summary, sources
 
 
+class OntologyBody(BaseModel):
+    name: str = ""
+    description: str = ""
+
+
+class OntologyUpdate(BaseModel):
+    name: str | None = None
+    description: str | None = None
+    connected: bool | None = None  # connect => used as standing context in every chat
+
+
 class DbConnection(BaseModel):
     url: str
 
@@ -583,6 +594,45 @@ def create_app(session_token: str) -> FastAPI:
     @r.get("/collections/{cid}/search")
     async def collection_search(cid: str, q: str, k: int = 5) -> dict:
         return {"results": await rag.search(cid, q, k)}
+
+    # --- ontologies (reusable knowledge bases; "connected" ones are used as context in every chat) ---
+    @r.get("/ontologies")
+    async def ontologies_list() -> dict:
+        return {"ontologies": await rag.list_collections(kind="ontology")}
+
+    @r.post("/ontologies")
+    async def ontology_create(body: OntologyBody) -> dict:
+        return await rag.create_collection(body.name or "Ontology", kind="ontology", description=body.description)
+
+    @r.patch("/ontologies/{cid}")
+    async def ontology_update(cid: str, body: OntologyUpdate) -> dict:
+        if body.connected is not None:
+            await rag.set_connected(cid, body.connected)
+        if body.name is not None or body.description is not None:
+            await rag.update_collection(cid, name=body.name, description=body.description)
+        return {"updated": True}
+
+    @r.delete("/ontologies/{cid}")
+    async def ontology_delete(cid: str) -> dict:
+        if not await rag.delete_collection(cid):
+            raise HTTPException(status_code=404, detail="Ontology not found")
+        return {"deleted": True}
+
+    @r.get("/ontologies/{cid}/files")
+    async def ontology_files(cid: str) -> dict:
+        return {"files": await rag.documents(cid)}
+
+    @r.post("/ontologies/{cid}/files")
+    async def ontology_add_files(cid: str, body: UploadDocs) -> dict:
+        try:
+            added = await rag.add_documents(cid, [a.model_dump() for a in body.files])
+            return {"added": added, "files": await rag.documents(cid)}
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=str(e)[:160])
+
+    @r.delete("/ontologies/{cid}/files")
+    async def ontology_delete_file(cid: str, source: str) -> dict:
+        return {"removed": await rag.delete_source(cid, source)}
 
     # --- projects ---
     @r.get("/projects")

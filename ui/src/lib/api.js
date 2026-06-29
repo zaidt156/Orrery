@@ -150,6 +150,17 @@ export const createCollection = (name) => apiSend("/api/collections", "POST", { 
 export const deleteCollection = (id) => apiSend(`/api/collections/${id}`, "DELETE");
 export const uploadDocuments = (id, files) => apiSend(`/api/collections/${id}/documents`, "POST", { files });
 
+// Ontologies — reusable knowledge bases the user builds from their own files; "connected" ones are
+// automatically used as standing context in every chat.
+export const listOntologies = () => apiGet("/api/ontologies");
+export const createOntology = (name, description) => apiSend("/api/ontologies", "POST", { name, description });
+export const updateOntology = (id, patch) => apiSend(`/api/ontologies/${id}`, "PATCH", patch);
+export const deleteOntology = (id) => apiSend(`/api/ontologies/${id}`, "DELETE");
+export const listOntologyFiles = (id) => apiGet(`/api/ontologies/${id}/files`);
+export const addOntologyFiles = (id, files) => apiSend(`/api/ontologies/${id}/files`, "POST", { files });
+export const deleteOntologyFile = (id, source) =>
+  apiSend(`/api/ontologies/${id}/files?source=${encodeURIComponent(source)}`, "DELETE");
+
 export const listProjects = () => apiGet("/api/projects");
 export const createProject = (project) => apiSend("/api/projects", "POST", project);
 export const getProject = (id) => apiGet(`/api/projects/${id}`);

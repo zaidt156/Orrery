@@ -122,6 +122,11 @@ async def run_migrations() -> None:
         await conn.execute(text("ALTER TABLE messages ADD COLUMN IF NOT EXISTS context TEXT"))
         await conn.execute(text("ALTER TABLE messages ADD COLUMN IF NOT EXISTS artifacts TEXT"))
         await conn.execute(text("ALTER TABLE messages ADD COLUMN IF NOT EXISTS reasoning TEXT"))
+        await conn.execute(text("ALTER TABLE conversations ADD COLUMN IF NOT EXISTS collection_id UUID"))
+        # Ontologies are collections with a kind + a connected flag (connected => used as chat context)
+        await conn.execute(text("ALTER TABLE collections ADD COLUMN IF NOT EXISTS kind VARCHAR(20) NOT NULL DEFAULT 'collection'"))
+        await conn.execute(text("ALTER TABLE collections ADD COLUMN IF NOT EXISTS connected BOOLEAN NOT NULL DEFAULT FALSE"))
+        await conn.execute(text("ALTER TABLE collections ADD COLUMN IF NOT EXISTS description TEXT"))
         label_updates = {
             "claude_plan/default": "Claude plan - adaptive thinking",
             "claude_plan/opus": "Claude plan - Opus - adaptive thinking",
