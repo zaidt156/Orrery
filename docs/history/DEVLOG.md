@@ -951,3 +951,11 @@ Logged to the plan for later (not built yet):
   per-server opt-in.
 - **User-creatable skills** - create/upload/edit/enable user skill playbooks from the UI.
 - **Admin user + feature flags** - an admin role (SSH-key/token gated) to turn any feature on/off globally.
+
+
+## Step 75 - Ontology tab: search, per-item connect, connected-now block (June 29, 2026)
+
+- **Pick specific ontologies easily.** Added a search box to filter ontologies by name/description, a
+  per-item connect toggle right in the list (search and turn on without opening), and a "Connected now"
+  block listing exactly which ontologies are active as chat context (each with a quick disconnect). Makes
+  it easy to connect only the one(s) you want when there are many.

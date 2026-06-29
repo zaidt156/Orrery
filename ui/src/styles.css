@@ -760,7 +760,21 @@ body{
 .project-new{display:flex;align-items:center;justify-content:center;gap:7px;width:100%}
 .project-new svg,.project-toolbar .btn svg{width:14px;height:14px}
 .project-list{display:flex;flex-direction:column;gap:6px;overflow-y:auto}
-.project-node{border:1px solid transparent;border-radius:9px;padding:3px}
+.project-node{border:1px solid transparent;border-radius:9px;padding:3px;display:flex;align-items:center;gap:4px}
+.project-node .project-item{flex:1;min-width:0}
+.project-node .toggle{flex:none;margin-right:5px}
+/* Ontology tab: search + connected-now block */
+.ontology-search{display:flex;align-items:center;gap:7px;background:var(--bg2);border:1px solid var(--line);
+  border-radius:8px;padding:6px 9px;margin-bottom:4px}
+.ontology-search svg{width:14px;height:14px;color:var(--faint);flex:none}
+.ontology-search input{flex:1;min-width:0;background:none;border:none;outline:none;color:var(--text);font-size:12px}
+.ontology-connected{border:1px solid var(--amber);background:rgba(242,177,78,0.08);border-radius:9px;padding:8px 10px;margin-bottom:6px}
+.ontology-connected-label{font-family:var(--font-mono);font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--amber);margin-bottom:6px}
+.ontology-connected-chips{display:flex;flex-wrap:wrap;gap:5px}
+.ontology-chip{display:inline-flex;align-items:center;gap:4px;background:var(--bg1);border:1px solid var(--line);border-radius:999px;padding:2px 4px 2px 9px;max-width:100%}
+.ontology-chip .chip-name{background:none;border:none;color:var(--text);font-size:11px;cursor:pointer;max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ontology-chip .chip-x{background:none;border:none;color:var(--faint);cursor:pointer;font-size:13px;line-height:1;padding:0 3px;border-radius:4px}
+.ontology-chip .chip-x:hover{color:var(--text);background:var(--bg2)}
 .project-node.active{border-color:var(--line);background:#18213F66}
 .project-item{
   display:flex;align-items:center;gap:9px;width:100%;text-align:left;border:1px solid transparent;

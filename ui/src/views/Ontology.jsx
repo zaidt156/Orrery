@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Brain, FileText, Plus, Save, Trash2, Upload, X } from "lucide-react";
+import { Brain, FileText, Plus, Save, Search, Trash2, Upload, X } from "lucide-react";
 import {
   addOntologyFiles, createOntology, deleteOntology, deleteOntologyFile, listOntologies,
   listOntologyFiles, readFileAsAttachment, updateOntology,
@@ -18,7 +18,14 @@ export default function Ontology() {
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [err, setErr] = useState("");
+  const [query, setQuery] = useState("");
   const fileRef = useRef(null);
+
+  const q = query.trim().toLowerCase();
+  const filtered = q
+    ? items.filter((o) => (o.name || "").toLowerCase().includes(q) || (o.description || "").toLowerCase().includes(q))
+    : items;
+  const connectedItems = items.filter((o) => o.connected);
 
   async function load(nextActive) {
     const data = await listOntologies();
@@ -59,12 +66,17 @@ export default function Ontology() {
     catch (e) { setErr(String(e.message || e)); } finally { setBusy(false); }
   }
 
-  async function toggleConnected() {
+  // Connect/disconnect any ontology (from the list, the connected-now block, or the open one).
+  async function setItemConnected(o, next) {
+    setItems((prev) => prev.map((x) => (x.id === o.id ? { ...x, connected: next } : x)));
+    if (o.id === activeId) setConnected(next);
+    try { await updateOntology(o.id, { connected: next }); }
+    catch (e) { setErr(String(e.message || e)); await refreshList(); }
+  }
+
+  function toggleConnected() {
     if (!activeId) return;
-    const next = !connected;
-    setConnected(next);
-    try { await updateOntology(activeId, { connected: next }); await refreshList(); }
-    catch (e) { setConnected(!next); setErr(String(e.message || e)); }
+    setItemConnected({ id: activeId }, !connected);
   }
 
   async function remove() {
@@ -97,17 +109,43 @@ export default function Ontology() {
     <section className="view projects-view">
       <aside className="project-side">
         <button className="btn primary project-new" onClick={addItem} disabled={busy}><Plus /> New ontology</button>
+        <div className="ontology-search">
+          <Search />
+          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search ontologies…" />
+        </div>
+        {connectedItems.length > 0 && (
+          <div className="ontology-connected">
+            <div className="ontology-connected-label">Connected now · {connectedItems.length}</div>
+            <div className="ontology-connected-chips">
+              {connectedItems.map((o) => (
+                <span key={o.id} className="ontology-chip" title="Used as context in every chat">
+                  <button className="chip-name" onClick={() => openItem(o.id).catch((e) => setErr(String(e.message || e)))}>{o.name}</button>
+                  <button className="chip-x" title="Disconnect" onClick={() => setItemConnected(o, false)}>×</button>
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
         <div className="project-list project-tree">
-          {items.length === 0 && <div className="convo-empty">No ontologies yet</div>}
-          {items.map((o) => (
+          {filtered.length === 0 && <div className="convo-empty">{items.length ? "No matches" : "No ontologies yet"}</div>}
+          {filtered.map((o) => (
             <div key={o.id} className={`project-node${o.id === activeId ? " active" : ""}`}>
               <button className="project-item" onClick={() => openItem(o.id).catch((e) => setErr(String(e.message || e)))}>
                 <Brain />
                 <span>
                   <b>{o.name}</b>
-                  <small>{o.chunks} chunks{o.connected ? " · connected" : ""}</small>
+                  <small>{o.chunks} chunks</small>
                 </span>
               </button>
+              <span
+                className={`toggle${o.connected ? " on" : ""}`}
+                role="switch"
+                aria-checked={o.connected}
+                tabIndex={0}
+                title={o.connected ? "Connected — used in chats" : "Connect to use in chats"}
+                onClick={() => setItemConnected(o, !o.connected)}
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setItemConnected(o, !o.connected); } }}
+              />
             </div>
           ))}
         </div>
