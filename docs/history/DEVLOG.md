@@ -1028,3 +1028,20 @@ user is weighing - awaiting their pick before building, since it changes the loc
 Next: tie private data (chats/projects) to the signed-in user so each person sees only their own, while
 skills/ontologies/MCP stay shared; then the approval queue (members propose skills/MCP -> admins approve
 -> team-wide).
+
+
+## Step 81 - Team: per-user privacy + approval queue (June 29, 2026)
+
+- **Private by person.** In team mode each teammate now sees only their own chats and projects; shared
+  things (skills, ontologies, MCP servers) stay common to everyone. Setting up team access hands the
+  founder's existing chats to the founder, so new members start clean. Single-user installs are
+  untouched.
+- **Propose -> approve.** A member who creates a skill or adds an MCP server has it marked *pending* -
+  it isn't active for anyone until an admin approves it. Admins get a "Pending approval" list in the
+  Skills tab (Approve / Reject); members see their own items badged "pending". Admin-made (and
+  single-user) items are active immediately. This is the "push to admin for approval" flow.
+- Verified end-to-end: ownership isolation (a member can't see/open/delete another's chat) and the
+  approval gate (a member's skill stays inactive until approved, then goes live).
+
+This completes the team/multi-user feature (identity + keys + roles, lock screen, per-user privacy,
+and the approval queue).

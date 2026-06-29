@@ -745,6 +745,14 @@ def create_app(session_token: str) -> FastAPI:
             raise HTTPException(status_code=404, detail="Skill not found")
         return {"deleted": True}
 
+    @r.post("/skills/{sid}/approve")
+    async def skill_approve(sid: str) -> dict:
+        if not await team.is_admin():
+            raise HTTPException(status_code=403, detail="Admin access required.")
+        if not await skills.set_skill_status(sid, "approved"):
+            raise HTTPException(status_code=404, detail="Skill not found")
+        return {"approved": True}
+
     # --- MCP servers (config + storage; tool execution wired in a later step) ---
     @r.get("/mcp")
     async def mcp_list() -> dict:
@@ -770,6 +778,14 @@ def create_app(session_token: str) -> FastAPI:
     async def mcp_test(sid: str) -> dict:
         """Connect to the server and cache its tool list (the UI 'Test connection' action)."""
         return await mcp.refresh_tools(sid)
+
+    @r.post("/mcp/{sid}/approve")
+    async def mcp_approve(sid: str) -> dict:
+        if not await team.is_admin():
+            raise HTTPException(status_code=403, detail="Admin access required.")
+        if not await mcp.set_status(sid, "approved"):
+            raise HTTPException(status_code=404, detail="MCP server not found")
+        return {"approved": True}
 
     # --- admin: global feature flags (gated by an admin token once one is set) ---
     @r.get("/admin")

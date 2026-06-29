@@ -92,6 +92,13 @@ async def current_owner_id() -> str | None:
     return user["id"] if user else None
 
 
+async def creation_status() -> str:
+    """New member-authored skills/MCP need admin approval in team mode; admins (and solo) auto-approve."""
+    if not await team_mode():
+        return "approved"
+    return "approved" if await is_admin() else "pending"
+
+
 async def status() -> dict:
     """What the UI needs to decide: locked screen, member view, or admin view."""
     if not await team_mode():

@@ -174,6 +174,8 @@ export const createMcp = (server) => apiSend("/api/mcp", "POST", server);
 export const updateMcp = (id, patch) => apiSend(`/api/mcp/${id}`, "PATCH", patch);
 export const deleteMcp = (id) => apiSend(`/api/mcp/${id}`, "DELETE");
 export const testMcp = (id) => apiSend(`/api/mcp/${id}/test`, "POST");
+export const approveSkill = (id) => apiSend(`/api/skills/${id}/approve`, "POST");
+export const approveMcp = (id) => apiSend(`/api/mcp/${id}/approve`, "POST");
 export const updateSkill = (id, patch) => apiSend(`/api/skills/${id}`, "PATCH", patch);
 export const deleteSkill = (id) => apiSend(`/api/skills/${id}`, "DELETE");
 

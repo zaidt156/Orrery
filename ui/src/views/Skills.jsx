@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { LayoutGrid, Plus, Save, Search, Server, Sparkles, Trash2, Upload, WandSparkles, X } from "lucide-react";
 import {
-  createMcp, createSkill, deleteMcp, deleteSkill, generateSkill, getModels, listMcp, listSkills,
-  testMcp, updateMcp, updateSkill, uploadSkill,
+  approveMcp, approveSkill, createMcp, createSkill, deleteMcp, deleteSkill, generateSkill, getModels,
+  getTeam, listMcp, listSkills, testMcp, updateMcp, updateSkill, uploadSkill,
 } from "../lib/api.js";
 
 const emptyDraft = { name: "", triggers: "", body: "", always: false, enabled: true };
@@ -27,6 +27,7 @@ export default function Skills() {
   const emptyMcp = { name: "", transport: "stdio", command: "", url: "" };
   const [mcpForm, setMcpForm] = useState(emptyMcp);
   const [mcpOpen, setMcpOpen] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(true); // solo or team-admin can approve; default true (solo)
   const fileRef = useRef(null);
 
   const q = query.trim().toLowerCase();
@@ -35,6 +36,9 @@ export default function Skills() {
     : items;
   const enabledCount = items.filter((s) => s.enabled).length;
   const mcpEnabled = mcp.filter((s) => s.enabled).length;
+  const pendingSkills = items.filter((s) => s.status === "pending");
+  const pendingMcp = mcp.filter((s) => s.status === "pending");
+  const pendingCount = pendingSkills.length + pendingMcp.length;
 
   async function load(nextActive) {
     const data = await listSkills();
@@ -51,7 +55,23 @@ export default function Skills() {
     load("").catch((e) => setErr(String(e.message || e)));
     loadMcp();
     getModels().then((m) => setModels(m.models || [])).catch(() => {});
+    getTeam().then((t) => setIsAdmin(!t.team_mode || t.user?.role === "admin")).catch(() => {});
   }, []);
+
+  async function approveSkillItem(s) {
+    try { await approveSkill(s.id); await load(activeId); } catch (e) { setErr(String(e.message || e)); }
+  }
+  async function rejectSkillItem(s) {
+    if (!window.confirm(`Reject and delete "${s.name}"?`)) return;
+    try { await deleteSkill(s.id); await load(""); } catch (e) { setErr(String(e.message || e)); }
+  }
+  async function approveMcpItem(s) {
+    try { await approveMcp(s.id); await loadMcp(); } catch (e) { setErr(String(e.message || e)); }
+  }
+  async function rejectMcpItem(s) {
+    if (!window.confirm(`Reject and delete "${s.name}"?`)) return;
+    try { await deleteMcp(s.id); await loadMcp(); } catch (e) { setErr(String(e.message || e)); }
+  }
 
   async function addMcp() {
     if (!mcpForm.name.trim()) { setErr("Name the MCP server"); return; }
@@ -178,7 +198,7 @@ export default function Skills() {
               <button className="project-item" onClick={() => openItem(s.id)}>
                 <Sparkles />
                 <span>
-                  <b>{s.name}</b>
+                  <b>{s.name}{s.status === "pending" && <span className="pending-pill">pending</span>}</b>
                   <small>{s.always ? "always on" : (s.triggers ? `triggers: ${s.triggers}` : "no triggers")}</small>
                 </span>
               </button>
@@ -203,6 +223,31 @@ export default function Skills() {
               <span><b>{builtin.length}</b><small>Built-in</small></span>
               <span><b>{mcpEnabled}/{mcp.length}</b><small>MCP on</small></span>
             </div>
+
+            {isAdmin && pendingCount > 0 && (
+              <section className="ov-section">
+                <div className="section-label"><span>Pending approval ({pendingCount})</span></div>
+                <p className="ov-sub">Skills and MCP servers submitted by members. Approve to make them available team-wide.</p>
+                <div className="ov-list">
+                  {pendingSkills.map((s) => (
+                    <div key={s.id} className="ov-row">
+                      <Sparkles />
+                      <span className="ov-meta"><b>{s.name}</b><small>skill - {s.always ? "always on" : (s.triggers || "no triggers")}</small></span>
+                      <button className="btn ghost sm" onClick={() => rejectSkillItem(s)}>Reject</button>
+                      <button className="btn primary sm" onClick={() => approveSkillItem(s)}>Approve</button>
+                    </div>
+                  ))}
+                  {pendingMcp.map((s) => (
+                    <div key={s.id} className="ov-row">
+                      <Server />
+                      <span className="ov-meta"><b>{s.name}</b><small>MCP - {s.transport === "http" ? (s.url || "http") : (s.command || "stdio")}</small></span>
+                      <button className="btn ghost sm" onClick={() => rejectMcpItem(s)}>Reject</button>
+                      <button className="btn primary sm" onClick={() => approveMcpItem(s)}>Approve</button>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
 
             <section className="ov-section">
               <div className="section-label"><span>Built-in skills</span></div>
@@ -246,7 +291,7 @@ export default function Skills() {
                   <div key={s.id} className="ov-row">
                     <Server />
                     <span className="ov-meta">
-                      <b>{s.name}</b>
+                      <b>{s.name}{s.status === "pending" && <span className="pending-pill">pending</span>}</b>
                       <small>{(s.tools?.length ? `${s.tools.length} tool(s) - ` : "")}{s.transport === "http" ? (s.url || "http") : (s.command || "stdio")}</small>
                     </span>
                     <button className="btn ghost sm" onClick={() => testMcpServer(s)} disabled={s.testing}>{s.testing ? "Testing..." : "Test"}</button>

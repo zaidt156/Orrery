@@ -88,7 +88,10 @@ async def refresh_user_skills() -> None:
     from backend.core.models import UserSkill
     try:
         async with get_sessionmaker()() as s:
-            rows = (await s.execute(sa_select(UserSkill).where(UserSkill.enabled.is_(True)))).scalars().all()
+            # Only approved skills are active; pending (awaiting team approval) ones are not injected.
+            rows = (await s.execute(
+                sa_select(UserSkill).where(UserSkill.enabled.is_(True), UserSkill.status == "approved")
+            )).scalars().all()
         _user_skills = [
             Skill(
                 name=r.name,
@@ -124,6 +127,7 @@ def _user_skill_dict(r) -> dict:
     return {
         "id": str(r.id), "name": r.name, "triggers": r.triggers or "", "body": r.body,
         "always": bool(r.always), "enabled": bool(r.enabled),
+        "status": getattr(r, "status", "approved") or "approved", "owner_id": getattr(r, "owner_id", None),
     }
 
 
@@ -145,17 +149,46 @@ async def list_user_skills() -> list[dict]:
 
     from backend.core.database import get_sessionmaker
     from backend.core.models import UserSkill
+    from backend.features import team
+    owner = await team.current_owner_id()
+    is_admin = await team.is_admin()
     async with get_sessionmaker()() as s:
         rows = (await s.execute(sa_select(UserSkill).order_by(UserSkill.created_at))).scalars().all()
-        return [_user_skill_dict(r) for r in rows]
+    out = []
+    for r in rows:
+        d = _user_skill_dict(r)
+        mine = owner is None or d["owner_id"] == owner
+        # Show approved skills to everyone; pending ones only to their author and to admins (the queue).
+        if d["status"] == "approved" or mine or is_admin:
+            d["mine"] = mine
+            out.append(d)
+    return out
+
+
+async def set_skill_status(skill_id: str, status: str) -> bool:
+    """Approve (or send back to pending) a skill. Caller authorizes (admin)."""
+    import uuid as _uuid
+
+    from backend.core.database import get_sessionmaker
+    from backend.core.models import UserSkill
+    async with get_sessionmaker()() as s:
+        row = await s.get(UserSkill, _uuid.UUID(skill_id))
+        if row is None:
+            return False
+        row.status = "approved" if status == "approved" else "pending"
+        await s.commit()
+    await refresh_user_skills()
+    return True
 
 
 async def create_user_skill(name: str, body: str, triggers: str = "", always: bool = False, enabled: bool = True) -> dict:
     from backend.core.database import get_sessionmaker
     from backend.core.models import UserSkill
+    from backend.features import team
     async with get_sessionmaker()() as s:
         row = UserSkill(name=(name.strip() or "Skill")[:120], body=body.strip(), triggers=triggers.strip(),
-                        always=bool(always), enabled=bool(enabled))
+                        always=bool(always), enabled=bool(enabled),
+                        owner_id=await team.current_owner_id(), status=await team.creation_status())
         s.add(row)
         await s.commit()
         await s.refresh(row)

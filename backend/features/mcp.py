@@ -18,6 +18,7 @@ from sqlalchemy import select
 from backend.core import proc
 from backend.core.database import get_sessionmaker
 from backend.core.models import McpServer
+from backend.features import team
 
 _ALLOWED_TRANSPORTS = {"stdio", "http"}
 _MCP_TIMEOUT = 45  # seconds for a whole stdio session (first npx run can be slow)
@@ -113,13 +114,27 @@ def _dict(s: McpServer) -> dict:
     return {
         "id": str(s.id), "name": s.name, "transport": s.transport,
         "command": s.command or "", "url": s.url or "", "enabled": bool(s.enabled), "tools": tools,
+        "status": getattr(s, "status", "approved") or "approved", "owner_id": getattr(s, "owner_id", None),
     }
 
 
-async def list_servers() -> list[dict]:
+async def _all_servers() -> list[dict]:
     async with get_sessionmaker()() as s:
         rows = (await s.execute(select(McpServer).order_by(McpServer.created_at))).scalars().all()
         return [_dict(r) for r in rows]
+
+
+async def list_servers() -> list[dict]:
+    """For the UI: approved servers (everyone) + pending ones owned by the current user or visible to admins."""
+    owner = await team.current_owner_id()
+    is_admin = await team.is_admin()
+    out = []
+    for d in await _all_servers():
+        mine = owner is None or d["owner_id"] == owner
+        if d["status"] == "approved" or mine or is_admin:
+            d["mine"] = mine
+            out.append(d)
+    return out
 
 
 async def create_server(name: str, transport: str, command: str = "", url: str = "", enabled: bool = False) -> dict:
@@ -128,6 +143,7 @@ async def create_server(name: str, transport: str, command: str = "", url: str =
         row = McpServer(
             name=(name.strip() or "MCP server")[:120], transport=transport,
             command=(command.strip() or None), url=(url.strip() or None), enabled=bool(enabled),
+            owner_id=await team.current_owner_id(), status=await team.creation_status(),
         )
         s.add(row)
         await s.commit()
@@ -183,8 +199,19 @@ async def refresh_tools(server_id: str) -> dict:
 
 
 async def enabled_servers() -> list[dict]:
-    """Enabled servers (with their cached tools) — what chat advertises to the model."""
-    return [s for s in await list_servers() if s["enabled"] and s.get("tools")]
+    """Approved + enabled servers (with cached tools) — what chat advertises to the model, team-wide."""
+    return [s for s in await _all_servers() if s["enabled"] and s.get("tools") and s.get("status", "approved") == "approved"]
+
+
+async def set_status(server_id: str, status: str) -> bool:
+    """Approve (or send back to pending) an MCP server. Caller authorizes (admin)."""
+    async with get_sessionmaker()() as s:
+        row = await s.get(McpServer, uuid.UUID(server_id))
+        if row is None:
+            return False
+        row.status = "approved" if status == "approved" else "pending"
+        await s.commit()
+        return True
 
 
 async def call_tool_by_id(server_id: str, tool: str, args: dict) -> dict:

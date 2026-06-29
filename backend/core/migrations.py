@@ -131,6 +131,11 @@ async def run_migrations() -> None:
         # Team mode: chats/projects are private to their owner (null = single-user / legacy)
         await conn.execute(text("ALTER TABLE conversations ADD COLUMN IF NOT EXISTS owner_id VARCHAR(36)"))
         await conn.execute(text("ALTER TABLE projects ADD COLUMN IF NOT EXISTS owner_id VARCHAR(36)"))
+        # Team mode: member-authored skills/MCP need admin approval before they go team-wide
+        await conn.execute(text("ALTER TABLE user_skills ADD COLUMN IF NOT EXISTS owner_id VARCHAR(36)"))
+        await conn.execute(text("ALTER TABLE user_skills ADD COLUMN IF NOT EXISTS status VARCHAR(12) NOT NULL DEFAULT 'approved'"))
+        await conn.execute(text("ALTER TABLE mcp_servers ADD COLUMN IF NOT EXISTS owner_id VARCHAR(36)"))
+        await conn.execute(text("ALTER TABLE mcp_servers ADD COLUMN IF NOT EXISTS status VARCHAR(12) NOT NULL DEFAULT 'approved'"))
         label_updates = {
             "claude_plan/default": "Claude plan - adaptive thinking",
             "claude_plan/opus": "Claude plan - Opus - adaptive thinking",

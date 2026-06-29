@@ -279,6 +279,8 @@ class McpServer(Base):
     url: Mapped[str | None] = mapped_column(String(500), nullable=True)  # for http/sse: the endpoint
     enabled: Mapped[bool] = mapped_column(default=False)                 # explicit opt-in
     tools: Mapped[str | None] = mapped_column(Text, nullable=True)       # cached tool catalog (JSON)
+    owner_id: Mapped[str | None] = mapped_column(String(36), nullable=True)        # team: who added it
+    status: Mapped[str] = mapped_column(String(12), default="approved")  # approved | pending (team approval)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -292,6 +294,8 @@ class UserSkill(Base):
     body: Mapped[str] = mapped_column(Text)
     always: Mapped[bool] = mapped_column(default=False)       # apply on every turn
     enabled: Mapped[bool] = mapped_column(default=True)
+    owner_id: Mapped[str | None] = mapped_column(String(36), nullable=True)        # team: who authored it
+    status: Mapped[str] = mapped_column(String(12), default="approved")  # approved | pending (team approval)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
