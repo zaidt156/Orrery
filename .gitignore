@@ -24,10 +24,10 @@ coverage.xml
 htmlcov/
 pytestdebug.log
 
-# Environment files and local credentials — keep ALL env files out of the repo
+# Environment files and local credentials — commit only the safe sample file
 .env
 .env.*
-.env.example
+!.env.example
 .envrc
 .direnv/
 *.pem
