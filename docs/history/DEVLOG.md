@@ -973,3 +973,13 @@ Logged to the plan for later (not built yet):
 - Verified end to end: trigger match, off-trigger miss, disable drops out, markdown upload parses.
 
 Next: MCP server support; then admin user + feature flags.
+
+
+## Step 77 - Skills: generate-with-AI, built-in display, MCP config (June 29, 2026)
+
+- Generate-with-AI: describe a skill in plain language and the selected model writes the full playbook
+  (name, triggers, body), saved for review/edit. New /skills/generate API.
+- Built-in skills shown (read-only) in the Skills tab Overview, marked active.
+- MCP config in the same tab: add servers (stdio command or http/sse URL), enable/disable (opt-in),
+  remove. New mcp_servers table + mcp module + /mcp API. Config/storage only; connection + tool
+  execution into the chat loop is the next increment (needs a live server; untrusted output).

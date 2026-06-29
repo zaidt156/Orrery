@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { Plus, Save, Search, Sparkles, Trash2, Upload } from "lucide-react";
-import { createSkill, deleteSkill, listSkills, updateSkill, uploadSkill } from "../lib/api.js";
+import { LayoutGrid, Plus, Save, Search, Server, Sparkles, Trash2, Upload, WandSparkles, X } from "lucide-react";
+import {
+  createMcp, createSkill, deleteMcp, deleteSkill, generateSkill, getModels, listMcp, listSkills,
+  updateMcp, updateSkill, uploadSkill,
+} from "../lib/api.js";
 
 const emptyDraft = { name: "", triggers: "", body: "", always: false, enabled: true };
 
@@ -14,6 +17,15 @@ export default function Skills() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [query, setQuery] = useState("");
+  const [models, setModels] = useState([]);
+  const [genText, setGenText] = useState("");
+  const [genOpen, setGenOpen] = useState(false);
+  const [genBusy, setGenBusy] = useState(false);
+  const [builtin, setBuiltin] = useState([]);
+  const [mcp, setMcp] = useState([]);
+  const emptyMcp = { name: "", transport: "stdio", command: "", url: "" };
+  const [mcpForm, setMcpForm] = useState(emptyMcp);
+  const [mcpOpen, setMcpOpen] = useState(false);
   const fileRef = useRef(null);
 
   const q = query.trim().toLowerCase();
@@ -24,11 +36,45 @@ export default function Skills() {
   async function load(nextActive) {
     const data = await listSkills();
     setItems(data.skills);
+    setBuiltin(data.builtin || []);
     const chosen = nextActive || (data.skills.find((s) => s.id === activeId)?.id) || "";
     if (chosen) openItem(chosen, data.skills);
     else { setActiveId(""); setDraft(emptyDraft); }
   }
-  useEffect(() => { load("").catch((e) => setErr(String(e.message || e))); }, []);
+  async function loadMcp() {
+    try { const d = await listMcp(); setMcp(d.servers || []); } catch { /* ignore */ }
+  }
+  useEffect(() => {
+    load("").catch((e) => setErr(String(e.message || e)));
+    loadMcp();
+    getModels().then((m) => setModels(m.models || [])).catch(() => {});
+  }, []);
+
+  async function addMcp() {
+    if (!mcpForm.name.trim()) { setErr("Name the MCP server"); return; }
+    try { await createMcp({ ...mcpForm, enabled: false }); setMcpForm(emptyMcp); setMcpOpen(false); await loadMcp(); }
+    catch (e) { setErr(String(e.message || e)); }
+  }
+  async function toggleMcp(srv, next) {
+    setMcp((prev) => prev.map((x) => (x.id === srv.id ? { ...x, enabled: next } : x)));
+    try { await updateMcp(srv.id, { enabled: next }); } catch (e) { setErr(String(e.message || e)); await loadMcp(); }
+  }
+  async function removeMcp(srv) {
+    if (!window.confirm("Remove this MCP server?")) return;
+    try { await deleteMcp(srv.id); await loadMcp(); } catch (e) { setErr(String(e.message || e)); }
+  }
+
+  async function generate() {
+    const desc = genText.trim();
+    if (!desc) return;
+    if (!models[0]) { setErr("Connect a model first (Chat tab)."); return; }
+    setGenBusy(true); setErr("");
+    try {
+      const created = await generateSkill(desc, models[0].id);
+      setGenText(""); setGenOpen(false);
+      await load(created.id);
+    } catch (e) { setErr(String(e.message || e)); } finally { setGenBusy(false); }
+  }
 
   function openItem(id, known = items) {
     setErr(""); setActiveId(id);
@@ -85,11 +131,33 @@ export default function Skills() {
           <Upload /> Upload .md skill
         </button>
         <input ref={fileRef} type="file" accept=".md,.markdown,.txt,text/markdown,text/plain" hidden onChange={onFilePick} />
+        <button className="btn ghost sm" onClick={() => setGenOpen((o) => !o)} disabled={busy} style={{ width: "100%", justifyContent: "center" }}>
+          <WandSparkles /> Generate with AI
+        </button>
+        {genOpen && (
+          <div className="skill-gen">
+            <textarea
+              value={genText}
+              onChange={(e) => setGenText(e.target.value)}
+              rows={3}
+              placeholder="Describe the skill you want the model to write… e.g. 'A skill for writing tight, friendly release notes from a changelog.'"
+            />
+            <button className="btn primary sm" onClick={generate} disabled={genBusy || !genText.trim()} style={{ width: "100%", justifyContent: "center" }}>
+              {genBusy ? "Generating…" : "Generate skill"}
+            </button>
+          </div>
+        )}
         <div className="ontology-search">
           <Search />
           <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search skills…" />
         </div>
         <div className="project-list project-tree">
+          <div className={`project-node${!activeId ? " active" : ""}`}>
+            <button className="project-item" onClick={() => { setActiveId(""); setDraft(emptyDraft); }}>
+              <LayoutGrid />
+              <span><b>Overview</b><small>built-in skills &amp; MCP</small></span>
+            </button>
+          </div>
           {filtered.length === 0 && <div className="convo-empty">{items.length ? "No matches" : "No skills yet"}</div>}
           {filtered.map((s) => (
             <div key={s.id} className={`project-node${s.id === activeId ? " active" : ""}`}>
@@ -114,9 +182,56 @@ export default function Skills() {
 
       <main className="project-main">
         {!activeId ? (
-          <div className="project-empty">
-            <Sparkles />
-            <span>Create or upload a skill: a reusable instruction playbook the model reads before answering. Add trigger phrases (or mark it always‑on) and enable it.</span>
+          <div className="skill-overview">
+            <section className="ov-section">
+              <div className="section-label"><span>Built-in skills</span></div>
+              <p className="ov-sub">Prebuilt skills shipped with Orrery — always available, matched automatically.</p>
+              <div className="ov-list">
+                {builtin.length === 0 && <div className="project-muted">None found.</div>}
+                {builtin.map((b) => (
+                  <div key={b.name} className="ov-row">
+                    <Sparkles />
+                    <span className="ov-meta"><b>{b.name}</b><small>{b.always ? "always on" : (b.triggers || "no triggers")}</small></span>
+                    <span className="ov-badge">active</span>
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            <section className="ov-section">
+              <div className="section-label">
+                <span>MCP servers</span>
+                <button className="btn ghost sm" onClick={() => setMcpOpen((o) => !o)}><Plus /> Add server</button>
+              </div>
+              <p className="ov-sub">Connect Model Context Protocol servers as tools/context. Saved now; turning one on opts it in. Live tool execution is the next step.</p>
+              {mcpOpen && (
+                <div className="mcp-form">
+                  <input placeholder="Name" value={mcpForm.name} onChange={(e) => setMcpForm((f) => ({ ...f, name: e.target.value }))} />
+                  <select value={mcpForm.transport} onChange={(e) => setMcpForm((f) => ({ ...f, transport: e.target.value }))}>
+                    <option value="stdio">stdio — local command</option>
+                    <option value="http">http / sse — URL</option>
+                  </select>
+                  {mcpForm.transport === "stdio" ? (
+                    <input placeholder="Command, e.g. npx -y @modelcontextprotocol/server-filesystem /path" value={mcpForm.command} onChange={(e) => setMcpForm((f) => ({ ...f, command: e.target.value }))} />
+                  ) : (
+                    <input placeholder="https://your-mcp-server/sse" value={mcpForm.url} onChange={(e) => setMcpForm((f) => ({ ...f, url: e.target.value }))} />
+                  )}
+                  <button className="btn primary sm" onClick={addMcp}>Save server</button>
+                </div>
+              )}
+              <div className="ov-list">
+                {mcp.length === 0 && <div className="project-muted">No MCP servers yet.</div>}
+                {mcp.map((s) => (
+                  <div key={s.id} className="ov-row">
+                    <Server />
+                    <span className="ov-meta"><b>{s.name}</b><small>{s.transport === "http" ? (s.url || "http") : (s.command || "stdio")}</small></span>
+                    <span className={`toggle${s.enabled ? " on" : ""}`} role="switch" aria-checked={s.enabled} tabIndex={0} title={s.enabled ? "Enabled" : "Disabled"} onClick={() => toggleMcp(s, !s.enabled)} />
+                    <button className="icon-btn" title="Remove" onClick={() => removeMcp(s)}><X /></button>
+                  </div>
+                ))}
+              </div>
+            </section>
+            {err && <div className="chat-banner">{err}</div>}
           </div>
         ) : (
           <>

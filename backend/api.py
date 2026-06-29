@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field, field_validator
 from backend.core import appconfig, database
 from backend.core.config import settings
 from backend.core.observability import new_request_id
-from backend.features import artifacts, chat, data, exports, feedback, filepreview, local_models, projects, rag, route_telemetry, skills, usage
+from backend.features import artifacts, chat, data, exports, feedback, filepreview, local_models, mcp, projects, rag, route_telemetry, skills, usage
 from backend.features import files as file_library
 from backend.providers import accounts, ai, catalog
 from backend.security import secrets
@@ -212,6 +212,27 @@ class SkillUpdate(BaseModel):
 class SkillUpload(BaseModel):
     markdown: str = ""
     name: str = ""
+
+
+class SkillGenerate(BaseModel):
+    description: str = ""
+    model: str = ""
+
+
+class McpBody(BaseModel):
+    name: str = ""
+    transport: str = "stdio"  # stdio | http
+    command: str = ""
+    url: str = ""
+    enabled: bool = False
+
+
+class McpUpdate(BaseModel):
+    name: str | None = None
+    transport: str | None = None
+    command: str | None = None
+    url: str | None = None
+    enabled: bool | None = None
 
 
 class DbConnection(BaseModel):
@@ -658,7 +679,7 @@ def create_app(session_token: str) -> FastAPI:
     # --- user-authored skills (created/edited/uploaded in the UI; merged with built-in skills) ---
     @r.get("/skills")
     async def skills_list() -> dict:
-        return {"skills": await skills.list_user_skills()}
+        return {"skills": await skills.list_user_skills(), "builtin": skills.list_builtin()}
 
     @r.post("/skills")
     async def skill_create(body: SkillBody) -> dict:
@@ -673,6 +694,17 @@ def create_app(session_token: str) -> FastAPI:
             raise HTTPException(status_code=400, detail="The uploaded file has no skill content")
         return await skills.create_user_skill(parsed["name"], parsed["body"], parsed["triggers"], parsed["always"])
 
+    @r.post("/skills/generate")
+    async def skill_generate(body: SkillGenerate) -> dict:
+        if not body.description.strip():
+            raise HTTPException(status_code=400, detail="Describe the skill you want")
+        if not body.model:
+            raise HTTPException(status_code=400, detail="Pick a model to generate the skill")
+        try:
+            return await skills.generate_user_skill(body.model, body.description)
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=str(e)[:200])
+
     @r.patch("/skills/{sid}")
     async def skill_update(sid: str, body: SkillUpdate) -> dict:
         if not await skills.update_user_skill(sid, **body.model_dump(exclude_unset=True)):
@@ -683,6 +715,27 @@ def create_app(session_token: str) -> FastAPI:
     async def skill_delete(sid: str) -> dict:
         if not await skills.delete_user_skill(sid):
             raise HTTPException(status_code=404, detail="Skill not found")
+        return {"deleted": True}
+
+    # --- MCP servers (config + storage; tool execution wired in a later step) ---
+    @r.get("/mcp")
+    async def mcp_list() -> dict:
+        return {"servers": await mcp.list_servers()}
+
+    @r.post("/mcp")
+    async def mcp_create(body: McpBody) -> dict:
+        return await mcp.create_server(body.name, body.transport, body.command, body.url, body.enabled)
+
+    @r.patch("/mcp/{sid}")
+    async def mcp_update(sid: str, body: McpUpdate) -> dict:
+        if not await mcp.update_server(sid, **body.model_dump(exclude_unset=True)):
+            raise HTTPException(status_code=404, detail="MCP server not found")
+        return {"updated": True}
+
+    @r.delete("/mcp/{sid}")
+    async def mcp_delete(sid: str) -> dict:
+        if not await mcp.delete_server(sid):
+            raise HTTPException(status_code=404, detail="MCP server not found")
         return {"deleted": True}
 
     # --- projects ---

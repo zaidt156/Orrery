@@ -135,6 +135,11 @@ def parse_skill_markdown(raw: str, fallback_name: str = "Skill") -> dict:
     return {"name": skill.name, "triggers": ", ".join(skill.triggers), "body": skill.body, "always": skill.always}
 
 
+def list_builtin() -> list[dict]:
+    """The built-in (prebuilt) skills shipped with Orrery — always available, read-only."""
+    return [{"name": s.name, "triggers": ", ".join(s.triggers), "always": s.always} for s in _builtin()]
+
+
 async def list_user_skills() -> list[dict]:
     from sqlalchemy import select as sa_select
 
@@ -181,6 +186,43 @@ async def update_user_skill(skill_id: str, **fields) -> bool:
         await s.commit()
     await refresh_user_skills()
     return True
+
+
+async def generate_user_skill(model: str, description: str) -> dict:
+    """Have the model draft a full skill (name, triggers, body) from a plain-language description."""
+    import json as _json
+
+    from backend.providers import ai
+    instruction = (
+        "You are creating a reusable Orrery 'skill' — an instruction playbook an AI reads before "
+        "answering matching requests. From the user's description, output ONLY a JSON object with keys:\n"
+        '  "name": a short title,\n'
+        '  "triggers": a comma-separated list of phrases that should activate this skill (empty string '
+        'if it should always apply),\n'
+        '  "always": true or false (true = apply on every message),\n'
+        '  "body": the full playbook in Markdown — clear, specific, actionable guidance the model should '
+        "follow.\n"
+        "Return only the JSON object, no prose around it.\n\nUser description:\n" + description.strip()
+    )
+    parts: list[str] = []
+    async for delta in ai.stream_chat(model, [{"role": "user", "content": instruction}], None, "high"):
+        if not isinstance(delta, ai.ReasoningDelta):
+            parts.append(str(delta))
+    text = "".join(parts)
+    match = re.search(r"\{.*\}", text, re.DOTALL)
+    data: dict = {}
+    if match:
+        try:
+            data = _json.loads(match.group(0))
+        except (ValueError, TypeError):
+            data = {}
+    name = str(data.get("name") or "Generated skill")
+    body = str(data.get("body") or text).strip()
+    triggers = data.get("triggers") or ""
+    if isinstance(triggers, list):
+        triggers = ", ".join(str(t) for t in triggers)
+    always = bool(data.get("always"))
+    return await create_user_skill(name, body, str(triggers), always, enabled=True)
 
 
 async def delete_user_skill(skill_id: str) -> bool:

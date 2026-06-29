@@ -166,6 +166,13 @@ export const deleteOntologyFile = (id, source) =>
 export const listSkills = () => apiGet("/api/skills");
 export const createSkill = (skill) => apiSend("/api/skills", "POST", skill);
 export const uploadSkill = (markdown, name) => apiSend("/api/skills/upload", "POST", { markdown, name });
+export const generateSkill = (description, model) => apiSend("/api/skills/generate", "POST", { description, model });
+
+// MCP servers (config + storage; tool execution wired later)
+export const listMcp = () => apiGet("/api/mcp");
+export const createMcp = (server) => apiSend("/api/mcp", "POST", server);
+export const updateMcp = (id, patch) => apiSend(`/api/mcp/${id}`, "PATCH", patch);
+export const deleteMcp = (id) => apiSend(`/api/mcp/${id}`, "DELETE");
 export const updateSkill = (id, patch) => apiSend(`/api/skills/${id}`, "PATCH", patch);
 export const deleteSkill = (id) => apiSend(`/api/skills/${id}`, "DELETE");
 

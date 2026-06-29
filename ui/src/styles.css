@@ -767,6 +767,25 @@ body{
 .skill-body{width:100%;flex:1;min-height:260px;background:var(--bg1);border:1px solid var(--line);border-radius:10px;
   color:var(--text);padding:11px 13px;font-family:var(--font-mono);font-size:12.5px;line-height:1.55;outline:none;resize:vertical}
 .skill-body:focus{border-color:var(--amber)}
+/* generate-with-AI box in the sidebar */
+.skill-gen{display:flex;flex-direction:column;gap:6px;margin-bottom:4px}
+.skill-gen textarea{background:var(--bg1);border:1px solid var(--line);border-radius:8px;color:var(--text);
+  padding:8px 10px;font-family:var(--font-ui);font-size:12px;line-height:1.5;outline:none;resize:vertical}
+.skill-gen textarea:focus{border-color:var(--amber)}
+/* Skills overview: built-in skills + MCP servers */
+.skill-overview{flex:1;overflow-y:auto;padding:18px clamp(16px,3vw,30px);display:flex;flex-direction:column;gap:22px}
+.ov-section{display:flex;flex-direction:column;gap:6px}
+.ov-sub{color:var(--faint);font-size:12px;margin:0 0 4px}
+.ov-list{display:flex;flex-direction:column;gap:7px}
+.ov-row{display:flex;align-items:center;gap:10px;border:1px solid var(--line);border-radius:9px;background:var(--bg1);padding:9px 12px}
+.ov-row svg{width:16px;height:16px;color:var(--ice);flex:none}
+.ov-meta{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.ov-meta b{font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ov-meta small{font-family:var(--font-mono);font-size:10px;color:var(--faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ov-badge{flex:none;font-family:var(--font-mono);font-size:9px;letter-spacing:.05em;text-transform:uppercase;color:#54c08a;border:1px solid #54c08a55;border-radius:999px;padding:2px 7px}
+.mcp-form{display:flex;flex-direction:column;gap:7px;border:1px solid var(--line);border-radius:10px;background:var(--bg1);padding:11px;margin-bottom:8px}
+.mcp-form input,.mcp-form select{background:var(--bg2);border:1px solid var(--line);border-radius:7px;color:var(--text);padding:7px 9px;font-size:12px;outline:none}
+.mcp-form input:focus,.mcp-form select:focus{border-color:var(--amber)}
 .ontology-search{display:flex;align-items:center;gap:7px;background:var(--bg2);border:1px solid var(--line);
   border-radius:8px;padding:6px 9px;margin-bottom:4px}
 .ontology-search svg{width:14px;height:14px;color:var(--faint);flex:none}

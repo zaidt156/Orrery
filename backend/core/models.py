@@ -260,6 +260,23 @@ class Chunk(Base):
     __table_args__ = (Index("ix_chunks_tsv", "tsv", postgresql_using="gin"),)
 
 
+class McpServer(Base):
+    """A Model Context Protocol server the user connects as a tool/context source (configured in the UI).
+
+    Config + storage only at this stage; actual tool execution is wired in a later step. Treat any
+    connected server's output as untrusted, and require explicit per-server opt-in (enabled).
+    """
+    __tablename__ = "mcp_servers"
+
+    id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(120))
+    transport: Mapped[str] = mapped_column(String(20), default="stdio")  # stdio | http
+    command: Mapped[str | None] = mapped_column(Text, nullable=True)     # for stdio: the launch command
+    url: Mapped[str | None] = mapped_column(String(500), nullable=True)  # for http/sse: the endpoint
+    enabled: Mapped[bool] = mapped_column(default=False)                 # explicit opt-in
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class UserSkill(Base):
     """A user-authored skill playbook (like the built-in skills/*.md, but created/edited in the UI)."""
     __tablename__ = "user_skills"
