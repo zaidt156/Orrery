@@ -63,14 +63,19 @@ async def feature_enabled(name: str) -> bool:
         return True
 
 
-async def set_flags(flags: dict, token: str) -> bool:
-    if admin_is_set() and not verify_admin(token):
-        return False
+async def apply_flags(flags: dict) -> None:
+    """Merge + persist flag changes. Caller is responsible for authorization."""
     current = await appconfig.get_setting(_FLAGS_KEY, {}) or {}
     for name in FEATURES:
         if name in flags:
             current[name] = bool(flags[name])
     await appconfig.set_setting(_FLAGS_KEY, current)
+
+
+async def set_flags(flags: dict, token: str) -> bool:
+    if admin_is_set() and not verify_admin(token):
+        return False
+    await apply_flags(flags)
     return True
 
 

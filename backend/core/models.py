@@ -289,3 +289,20 @@ class UserSkill(Base):
     always: Mapped[bool] = mapped_column(default=False)       # apply on every turn
     enabled: Mapped[bool] = mapped_column(default=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class TeamUser(Base):
+    """A member of a shared (team) Orrery, identified by an access key. Only present when team mode is on.
+
+    The access key is a high-entropy secret shown once at creation; only its hash is stored here (never
+    the plaintext, never logged — security.md §1). The *role* is the source of truth for privileges and
+    lives in this row, not encoded in the key, so a key cannot be forged into admin.
+    """
+    __tablename__ = "team_users"
+
+    id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(120))
+    role: Mapped[str] = mapped_column(String(10), default="member")  # admin | member
+    key_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)  # sha256 hex of the key
+    disabled: Mapped[bool] = mapped_column(default=False)  # revoked: locked out next launch
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

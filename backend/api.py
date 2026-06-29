@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field, field_validator
 from backend.core import appconfig, database
 from backend.core.config import settings
 from backend.core.observability import new_request_id
-from backend.features import admin, artifacts, chat, data, exports, feedback, filepreview, local_models, mcp, projects, rag, route_telemetry, skills, usage
+from backend.features import admin, artifacts, chat, data, exports, feedback, filepreview, local_models, mcp, projects, rag, route_telemetry, skills, team, usage
 from backend.features import files as file_library
 from backend.providers import accounts, ai, catalog
 from backend.security import secrets
@@ -243,6 +243,24 @@ class AdminToken(BaseModel):
 class AdminFlags(BaseModel):
     flags: dict = {}
     token: str = ""
+
+
+class TeamSetup(BaseModel):
+    name: str = ""
+
+
+class TeamUnlock(BaseModel):
+    key: str = ""
+
+
+class TeamUserBody(BaseModel):
+    name: str = ""
+    role: str = "member"
+
+
+class TeamUserUpdate(BaseModel):
+    role: str | None = None
+    disabled: bool | None = None
 
 
 class DbConnection(BaseModel):
@@ -766,9 +784,66 @@ def create_app(session_token: str) -> FastAPI:
 
     @r.put("/admin/features")
     async def admin_set_features(body: AdminFlags) -> dict:
-        if not await admin.set_flags(body.flags, body.token):
+        # In team mode an admin *user* is authorized by their role; otherwise fall back to the token.
+        if await team.is_admin():
+            await admin.apply_flags(body.flags)
+        elif not await admin.set_flags(body.flags, body.token):
             raise HTTPException(status_code=403, detail="Admin token required to change features.")
         return await admin.status()
+
+    # --- team access: identity, keys, roles (shared-database multi-user) ---
+    @r.get("/team")
+    async def team_status() -> dict:
+        return await team.status()
+
+    @r.post("/team/setup")
+    async def team_setup(body: TeamSetup) -> dict:
+        res = await team.setup_team(body.name)
+        if not res["ok"]:
+            raise HTTPException(status_code=409, detail=res["error"])
+        return res
+
+    @r.post("/team/unlock")
+    async def team_unlock(body: TeamUnlock) -> dict:
+        res = await team.unlock(body.key)
+        if not res["ok"]:
+            raise HTTPException(status_code=403, detail=res["error"])
+        return res
+
+    @r.post("/team/signout")
+    async def team_signout() -> dict:
+        team.sign_out()
+        return {"ok": True}
+
+    @r.get("/team/users")
+    async def team_users() -> dict:
+        if not await team.is_admin():
+            raise HTTPException(status_code=403, detail="Admin access required.")
+        return {"users": await team.list_users()}
+
+    @r.post("/team/users")
+    async def team_create_user(body: TeamUserBody) -> dict:
+        if not await team.is_admin():
+            raise HTTPException(status_code=403, detail="Admin access required.")
+        return await team.create_user(body.name, body.role)
+
+    @r.patch("/team/users/{uid}")
+    async def team_update_user(uid: str, body: TeamUserUpdate) -> dict:
+        if not await team.is_admin():
+            raise HTTPException(status_code=403, detail="Admin access required.")
+        res = await team.set_user(uid, role=body.role, disabled=body.disabled)
+        if not res["ok"]:
+            raise HTTPException(status_code=409, detail=res["error"])
+        return res
+
+    @r.delete("/team/users/{uid}")
+    async def team_delete_user(uid: str) -> dict:
+        if not await team.is_admin():
+            raise HTTPException(status_code=403, detail="Admin access required.")
+        res = await team.delete_user(uid)
+        if not res["ok"]:
+            raise HTTPException(status_code=409, detail=res["error"])
+        return res
 
     # --- projects ---
     @r.get("/projects")
