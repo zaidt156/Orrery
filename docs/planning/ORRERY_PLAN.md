@@ -333,12 +333,21 @@ Implemented:
 - [x] Reasoning persisted across reloads.
 
 Next:
-- [ ] MCP server support: connect Model Context Protocol servers as tools/context sources; treat their
-      output as untrusted, require per-server opt-in (security.md). Surface in Settings + as chat tools.
+- [x] MCP server support: configured in the Skills tab; live stdio JSON-RPC client (Test connection
+      caches tools) exposed to the chat tool loop via orrery-tool; output treated as untrusted;
+      per-server opt-in; admin 'mcp' flag. TODO: http/SSE transport.
 - [x] User-creatable skills: Skills tab to create/upload/edit/enable/delete your own skill playbooks;
       enabled ones are merged with the built-ins and injected per matching message.
-- [ ] Admin user + feature flags: an admin role (SSH-key / token gated) that can turn any feature on or
-      off globally (chat routes, sandbox, web search, ontology, media, automations, agents, MCP).
+- [x] Admin user + feature flags: an Admin tab; a token (OS keychain) gates global on/off of code
+      interpreter, web search, Deep Research, ontology, file gen, media, automations, agents, MCP.
+      Enforced in chat; the rail hides tabs for off features. (Single instance — see team decision below.)
+- [ ] **Team / multi-user direction (DECISION PENDING).** The user wants a 20-person / 2-admin setup
+      where admins manage skills/ontologies/MCP/flags for everyone, connected over the LAN. Recommended:
+      the **shared-Postgres** model — all clients point at one team Postgres (the existing "bring your own
+      database"), so admin-managed resources are shared automatically; the admin token gates edits;
+      add a per-user identity + ownership on private data (chats/projects); each user keeps their OWN
+      model keys in their OWN keychain (never shared). Alternatives: a shared Orrery server (LAN-bound
+      backend + accounts — bigger, breaks localhost-only) or config-pack sync. Confirm before building.
 - [ ] Per-segment outer reasoning headlines (the multi-card 'what's going on' view).
 - [ ] Optional keyed web-search provider (Brave/Tavily) for higher volume/precision.
 
