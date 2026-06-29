@@ -18,7 +18,7 @@ from backend.core.config import settings
 from backend.core.database import get_sessionmaker
 from backend.core.observability import log_event
 from backend.core.models import Conversation, Message, Project
-from backend.features import code_images, code_interpreter, docgen, filegen, rag, reasoning, research, route_telemetry, sandbox, skills, taskbrain, taskrouter
+from backend.features import admin, code_images, code_interpreter, docgen, filegen, rag, reasoning, research, route_telemetry, sandbox, skills, taskbrain, taskrouter
 from backend.features import projects as project_store
 from backend.features import files as file_library
 from backend.features.prompting import CODE_INTERPRETER_PROMPT, FORMAT_INSTRUCTIONS, build_system_prompt, strip_think as _strip_think
@@ -799,19 +799,24 @@ async def _route_model_reply(
     plan: taskrouter.TaskPlan,
     trace: ReasoningTrace,
     route_event_id: str | None,
+    allow_code: bool = True,
+    allow_web: bool = True,
 ) -> AsyncIterator[dict]:
     """Stream the normal model reply, optionally using the universal sandbox tool loop."""
     budget_system = "\n\n".join(part for part in (gen_system, trusted_context, rag_context) if part)
     limited_messages = _limit_messages(messages, context_window, budget_system)
     outcome = "completed"
 
-    if sandbox.image_ready():
+    if sandbox.image_ready() and allow_code:
         user_text = _latest_user_text(limited_messages)
         gen_effort = filegen.quality_effort(model, effort) if _wants_high_effort(user_text) else effort
         # No generic "Thinking" step — the model's live reasoning streams into the panel directly.
+        feature_rules = CODE_INTERPRETER_PROMPT
+        if not allow_web:
+            feature_rules += "\n\nWeb search is currently disabled — do not use an orrery-search block."
         formatted_prompt = build_system_prompt(
             app_rules=FORMAT_INSTRUCTIONS,
-            feature_rules=CODE_INTERPRETER_PROMPT,
+            feature_rules=feature_rules,
             skills_block=skills.skills_prompt(user_text),
             user_preferences=gen_system,
             trusted_context=trusted_context,
@@ -822,7 +827,7 @@ async def _route_model_reply(
             return await _persist_assistant(cid, text, model, arts)
 
         async for event in code_interpreter.run(
-            model, formatted_prompt, limited_messages, gen_effort, trace=trace, persist=_persist,
+            model, formatted_prompt, limited_messages, gen_effort, trace=trace, persist=_persist, allow_web=allow_web,
         ):
             if "error" in event:
                 outcome = "failed"
@@ -866,10 +871,12 @@ async def stream_reply(
 
     yield {"title": turn.title}
 
+    flags = await admin.get_flags()  # admin feature toggles (gate capabilities globally)
+
     # Deep Research: an explicit /research command runs the decompose -> gather -> cited-report
     # workflow instead of a normal chat turn.
     research_q = _research_query(user_content)
-    if research_q is not None:
+    if research_q is not None and flags.get("deep_research", True):
         trace = ReasoningTrace()
         yield trace.outer(
             "Deep Research",
@@ -913,10 +920,11 @@ async def stream_reply(
             rag_collections.append(project_collection)
     if turn.collection_id:  # this chat's own uploaded attachments (durable file memory)
         rag_collections.append(turn.collection_id)
-    try:
-        rag_collections.extend(await rag.connected_collection_ids())  # connected ontologies = standing knowledge
-    except Exception:  # noqa: BLE001 — ontology lookup is best-effort; never break the chat
-        pass
+    if flags.get("ontology", True):
+        try:
+            rag_collections.extend(await rag.connected_collection_ids())  # connected ontologies = standing knowledge
+        except Exception:  # noqa: BLE001 — ontology lookup is best-effort; never break the chat
+            pass
     rag_context = None                 # retrieved docs — passed separately as UNTRUSTED context
     if rag_collections and user_content.strip():
         block, sources = await _gather_rag(model, rag_collections, user_content)
@@ -946,7 +954,7 @@ async def stream_reply(
             yield event
         return
 
-    if plan.route == "file":
+    if plan.route == "file" and flags.get("file_gen", True):
         route_state = _RouteResult()
         async for event in _route_file(
             cid, model, user_content, gen_system, effort, rag_context, trusted_context,
@@ -959,6 +967,7 @@ async def stream_reply(
     async for event in _route_model_reply(
         cid, model, gen_system, messages, effort, context_window, trusted_context, rag_context,
         plan, trace, route_event_id,
+        allow_code=flags.get("chat_code", True), allow_web=flags.get("web_search", True),
     ):
         yield event
     return

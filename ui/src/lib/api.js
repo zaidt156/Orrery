@@ -176,6 +176,11 @@ export const deleteMcp = (id) => apiSend(`/api/mcp/${id}`, "DELETE");
 export const updateSkill = (id, patch) => apiSend(`/api/skills/${id}`, "PATCH", patch);
 export const deleteSkill = (id) => apiSend(`/api/skills/${id}`, "DELETE");
 
+// Admin feature flags
+export const getAdmin = () => apiGet("/api/admin");
+export const setAdminToken = (token, current) => apiSend("/api/admin/token", "POST", { token, current });
+export const setAdminFeatures = (flags, token) => apiSend("/api/admin/features", "PUT", { flags, token });
+
 export const listProjects = () => apiGet("/api/projects");
 export const createProject = (project) => apiSend("/api/projects", "POST", project);
 export const getProject = (id) => apiGet(`/api/projects/${id}`);

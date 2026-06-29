@@ -132,6 +132,7 @@ async def run(
     trace,
     persist: Callable[[str, list[dict] | None], Awaitable[str]],
     max_runs: int = MAX_RUNS,
+    allow_web: bool = True,
 ) -> AsyncIterator[dict]:
     """Drive the tool loop (run code / search web -> observe -> continue), then persist the answer.
 
@@ -230,6 +231,10 @@ async def run(
                 echo += f"\n\n```orrery-run\n{body}\n```"
                 observations.append(_sandbox_observation(result, produced))
             else:  # search
+                if not allow_web:
+                    echo += f"\n\n```orrery-search\n{body.strip()}\n```"
+                    observations.append("[web search is disabled by the administrator]")
+                    continue
                 query = next((line.strip() for line in body.splitlines() if line.strip()), "")
                 yield trace.step("Searching the web", query or "(empty query)",
                                  kind="tool", status="running", phase="gather", metadata={"run": run_index + 1})

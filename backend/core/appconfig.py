@@ -16,6 +16,7 @@ _ALLOWED_SETTINGS: dict[str, type] = {
     "branding": dict,
     "spend_cap": dict,
     "privacy_mode": str,
+    "feature_flags": dict,  # admin on/off toggles per capability
 }
 
 

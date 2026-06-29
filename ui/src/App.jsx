@@ -9,10 +9,11 @@ import {
   LayoutDashboard,
   MessageSquare,
   Settings as SettingsIcon,
+  ShieldCheck,
   Sparkles,
   Workflow,
 } from "lucide-react";
-import { getBranding, getHealth } from "./lib/api.js";
+import { getAdmin, getBranding, getHealth } from "./lib/api.js";
 import { Logo } from "./components/icons.jsx";
 
 function BrandHeader() {
@@ -53,18 +54,21 @@ const Agents = lazy(() => import("./views/Agents.jsx"));
 const Media = lazy(() => import("./views/Media.jsx"));
 const LocalModels = lazy(() => import("./views/LocalModels.jsx"));
 const Settings = lazy(() => import("./views/Settings.jsx"));
+const Admin = lazy(() => import("./views/Admin.jsx"));
 
+// `feature` ties a tab to an admin flag — when that feature is turned off, the tab is hidden.
 const TABS = [
   { key: "chat", label: "Chat", Icon: MessageSquare, View: Chat },
   { key: "projects", label: "Projects", Icon: FolderKanban, View: Projects },
   { key: "data", label: "Data", Icon: Database, View: Data },
-  { key: "ontology", label: "Ontology", Icon: Brain, View: Ontology },
+  { key: "ontology", label: "Ontology", Icon: Brain, View: Ontology, feature: "ontology" },
   { key: "skills", label: "Skills", Icon: Sparkles, View: Skills },
   { key: "dash", label: "Dashboards", Icon: LayoutDashboard, View: Dashboards },
-  { key: "auto", label: "Automations", Icon: Workflow, View: Automations },
-  { key: "agents", label: "Agents", Icon: Bot, View: Agents },
-  { key: "media", label: "Media Hub", Icon: Images, View: Media },
+  { key: "auto", label: "Automations", Icon: Workflow, View: Automations, feature: "automations" },
+  { key: "agents", label: "Agents", Icon: Bot, View: Agents, feature: "agents" },
+  { key: "media", label: "Media Hub", Icon: Images, View: Media, feature: "media" },
   { key: "local", label: "Local Models", Icon: HardDriveDownload, View: LocalModels },
+  { key: "admin", label: "Admin", Icon: ShieldCheck, View: Admin },
   { key: "settings", label: "Settings", Icon: SettingsIcon, View: Settings },
 ];
 
@@ -75,6 +79,7 @@ export default function App() {
     TABS.some((t) => t.key === INITIAL_TAB) ? INITIAL_TAB : "chat"
   );
   const [db, setDb] = useState("checking"); // checking | ok | error | down
+  const [features, setFeatures] = useState(null); // null until loaded → show all tabs
 
   useEffect(() => {
     let alive = true;
@@ -84,13 +89,21 @@ export default function App() {
         .catch(() => alive && setDb("down"));
     check();
     const id = setInterval(check, 15000);
+    const loadFeatures = () =>
+      getAdmin()
+        .then((s) => alive && setFeatures(Object.fromEntries((s.features || []).map((f) => [f.name, f.enabled]))))
+        .catch(() => {});
+    loadFeatures();
+    window.addEventListener("orrery-features-changed", loadFeatures);
     return () => {
       alive = false;
       clearInterval(id);
+      window.removeEventListener("orrery-features-changed", loadFeatures);
     };
   }, []);
 
-  const ActiveView = TABS.find((t) => t.key === active).View;
+  const visibleTabs = TABS.filter((t) => !t.feature || !features || features[t.feature] !== false);
+  const ActiveView = (visibleTabs.find((t) => t.key === active) || visibleTabs[0]).View;
   const pulseClass = db === "ok" ? "" : db === "error" ? "amber" : db === "down" ? "red" : "amber";
   const dbTitle =
     db === "ok" ? "Database connected"
@@ -104,7 +117,7 @@ export default function App() {
       <div className="app-body">
         <nav className="rail" aria-label="Main navigation">
           <div className="logo" title="Orrery"><Logo /></div>
-          {TABS.map(({ key, label, Icon }) => (
+          {visibleTabs.map(({ key, label, Icon }) => (
             <button
               key={key}
               className={`tab${key === active ? " active" : ""}`}

@@ -983,3 +983,13 @@ Next: MCP server support; then admin user + feature flags.
 - MCP config in the same tab: add servers (stdio command or http/sse URL), enable/disable (opt-in),
   remove. New mcp_servers table + mcp module + /mcp API. Config/storage only; connection + tool
   execution into the chat loop is the next increment (needs a live server; untrusted output).
+
+
+## Step 78 - Admin user + feature flags (June 29, 2026)
+
+- New Admin tab: an admin sets a token (OS keychain) and turns capabilities on/off for everyone -
+  code interpreter, web search, Deep Research, ontologies, file generation, Media Hub, Automations,
+  Agents, MCP. Once a token is set, changing flags requires it; flags live in app config and reads
+  fail open so a glitch never breaks chat.
+- Enforced in chat (Deep Research, ontology context, file gen, sandbox code path, web search in the
+  tool loop) and reflected in the UI (rail hides tabs for turned-off features). Verified live.

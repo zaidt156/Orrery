@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field, field_validator
 from backend.core import appconfig, database
 from backend.core.config import settings
 from backend.core.observability import new_request_id
-from backend.features import artifacts, chat, data, exports, feedback, filepreview, local_models, mcp, projects, rag, route_telemetry, skills, usage
+from backend.features import admin, artifacts, chat, data, exports, feedback, filepreview, local_models, mcp, projects, rag, route_telemetry, skills, usage
 from backend.features import files as file_library
 from backend.providers import accounts, ai, catalog
 from backend.security import secrets
@@ -233,6 +233,16 @@ class McpUpdate(BaseModel):
     command: str | None = None
     url: str | None = None
     enabled: bool | None = None
+
+
+class AdminToken(BaseModel):
+    token: str = ""
+    current: str = ""
+
+
+class AdminFlags(BaseModel):
+    flags: dict = {}
+    token: str = ""
 
 
 class DbConnection(BaseModel):
@@ -737,6 +747,23 @@ def create_app(session_token: str) -> FastAPI:
         if not await mcp.delete_server(sid):
             raise HTTPException(status_code=404, detail="MCP server not found")
         return {"deleted": True}
+
+    # --- admin: global feature flags (gated by an admin token once one is set) ---
+    @r.get("/admin")
+    async def admin_status() -> dict:
+        return await admin.status()
+
+    @r.post("/admin/token")
+    async def admin_set_token(body: AdminToken) -> dict:
+        if not admin.set_admin_token(body.token, body.current):
+            raise HTTPException(status_code=403, detail="Could not set token (wrong current token, or empty).")
+        return {"ok": True}
+
+    @r.put("/admin/features")
+    async def admin_set_features(body: AdminFlags) -> dict:
+        if not await admin.set_flags(body.flags, body.token):
+            raise HTTPException(status_code=403, detail="Admin token required to change features.")
+        return await admin.status()
 
     # --- projects ---
     @r.get("/projects")
