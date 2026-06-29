@@ -283,6 +283,10 @@ def create_app(session_token: str) -> FastAPI:
     """Build the FastAPI application bound to this session's auth token."""
     api = FastAPI(title="Orrery", docs_url=None, redoc_url=None, openapi_url=None)
 
+    @api.exception_handler(PermissionError)
+    async def _permission_error(_request, exc: PermissionError):
+        return JSONResponse({"detail": str(exc) or "Access denied"}, status_code=403)
+
     @api.middleware("http")
     async def _harden(request, call_next):
         length = request.headers.get("content-length")
@@ -338,6 +342,10 @@ def create_app(session_token: str) -> FastAPI:
         client disconnects (navigates away), so the reply always completes and is saved."""
         queue = chat.start_detached(conv_id, source)
         return _sse(chat.observe(queue))
+
+    async def _require_conversation_access(conv_id: str) -> None:
+        if not await chat.can_access_conversation(conv_id):
+            raise HTTPException(status_code=404, detail="Conversation not found")
 
     @r.get("/health")
     async def health() -> dict:
@@ -990,6 +998,7 @@ def create_app(session_token: str) -> FastAPI:
 
     @r.post("/conversations/{cid}/messages")
     async def send_message(cid: str, body: NewMessage) -> StreamingResponse:
+        await _require_conversation_access(cid)
         attachments = [a.model_dump() for a in body.attachments]
         return _sse_run(cid, chat.stream_reply(cid, body.content, attachments, body.collection_id))
 
@@ -999,22 +1008,26 @@ def create_app(session_token: str) -> FastAPI:
 
     @r.post("/conversations/{cid}/code-image")
     async def generate_code_image(cid: str, body: NewMessage) -> StreamingResponse:
+        await _require_conversation_access(cid)
         if body.attachments:
             raise HTTPException(status_code=400, detail="Code-rendered images do not accept attachments yet")
         return _sse_run(cid, chat.stream_code_image(cid, body.content))
 
     @r.post("/conversations/{cid}/regenerate")
     async def regenerate_message(cid: str) -> StreamingResponse:
+        await _require_conversation_access(cid)
         return _sse_run(cid, chat.regenerate(cid))
 
     @r.post("/conversations/{cid}/stop")
     async def stop_generation(cid: str) -> dict:
+        await _require_conversation_access(cid)
         chat.cancel_run(cid)
         return {"stopped": True}
 
     @r.get("/conversations/{cid}/resume")
     async def resume_generation(cid: str) -> StreamingResponse:
         # Re-attach to a generation that's still running in the background (client navigated away).
+        await _require_conversation_access(cid)
         return _sse(chat.resume(cid))
 
     @r.get("/tasks")
@@ -1033,6 +1046,7 @@ def create_app(session_token: str) -> FastAPI:
 
     @r.get("/conversations/{cid}/messages/{mid}/export/{export_format}")
     async def export_reply(cid: str, mid: str, export_format: str) -> Response:
+        await _require_conversation_access(cid)
         if export_format not in exports.SUPPORTED_FORMATS:
             raise HTTPException(status_code=404, detail="Unsupported export format")
         try:
@@ -1052,6 +1066,7 @@ def create_app(session_token: str) -> FastAPI:
 
     @r.get("/conversations/{cid}/messages/{mid}/preview/{export_format}")
     async def preview_reply(cid: str, mid: str, export_format: str) -> dict:
+        await _require_conversation_access(cid)
         if export_format not in exports.SUPPORTED_FORMATS:
             raise HTTPException(status_code=404, detail="Unsupported export format")
         try:

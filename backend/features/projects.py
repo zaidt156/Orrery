@@ -79,6 +79,10 @@ def _conversation_dict(conv: Conversation) -> dict:
     }
 
 
+def _owned_by(row, owner_id: str | None) -> bool:
+    return owner_id is None or getattr(row, "owner_id", None) == owner_id
+
+
 async def list_projects() -> list[dict]:
     owner = await team.current_owner_id()  # team mode: only this user's projects; solo: None (all)
     async with get_sessionmaker()() as s:
@@ -86,11 +90,12 @@ async def list_projects() -> list[dict]:
         if owner is not None:
             pq = pq.where(Project.owner_id == owner)
         projects = (await s.execute(pq)).scalars().all()
+        cq = select(Conversation).where(Conversation.project_id.is_not(None))
+        if owner is not None:
+            cq = cq.where(Conversation.owner_id == owner)
         conversations = (
             await s.execute(
-                select(Conversation)
-                .where(Conversation.project_id.is_not(None))
-                .order_by(Conversation.project_id, Conversation.updated_at.desc())
+                cq.order_by(Conversation.project_id, Conversation.updated_at.desc())
             )
         ).scalars().all()
         grouped: dict[str, list[dict]] = {}
@@ -99,11 +104,7 @@ async def list_projects() -> list[dict]:
         counts = {
             str(project_id): count
             for project_id, count in (
-                await s.execute(
-                    select(Conversation.project_id, func.count(Conversation.id))
-                    .where(Conversation.project_id.is_not(None))
-                    .group_by(Conversation.project_id)
-                )
+                await s.execute(cq.with_only_columns(Conversation.project_id, func.count(Conversation.id)).group_by(Conversation.project_id))
             ).all()
         }
         out = []
@@ -118,12 +119,13 @@ async def create_project(name: str, description: str = "", instructions: str = "
     cleaned_name = _clean(name, MAX_NAME)
     if not cleaned_name:
         cleaned_name = "Untitled project"
+    owner = await team.current_owner_id()
     async with get_sessionmaker()() as s:
         project = Project(
             name=cleaned_name,
             description=_clean_multiline(description, MAX_DESCRIPTION) or None,
             instructions=_clean_multiline(instructions, MAX_INSTRUCTIONS) or None,
-            owner_id=await team.current_owner_id(),
+            owner_id=owner,
         )
         s.add(project)
         await s.commit()
@@ -137,13 +139,14 @@ async def get_project(project_id: str) -> dict | None:
         project = await s.get(Project, _uuid(project_id))
         if project is None:
             return None
-        if owner is not None and project.owner_id != owner:  # team mode: can't open another user's project
+        if not _owned_by(project, owner):  # team mode: can't open another user's project
             return None
+        cq = select(Conversation).where(Conversation.project_id == project.id)
+        if owner is not None:
+            cq = cq.where(Conversation.owner_id == owner)
         conversations = (
             await s.execute(
-                select(Conversation)
-                .where(Conversation.project_id == project.id)
-                .order_by(Conversation.updated_at.desc())
+                cq.order_by(Conversation.updated_at.desc())
             )
         ).scalars().all()
         data = _project_dict(project, len(conversations))
@@ -160,9 +163,12 @@ async def update_project(
     description: str | None = None,
     instructions: str | None = None,
 ) -> dict | None:
+    owner = await team.current_owner_id()
     async with get_sessionmaker()() as s:
         project = await s.get(Project, _uuid(project_id))
         if project is None:
+            return None
+        if not _owned_by(project, owner):
             return None
         if name is not None:
             cleaned_name = _clean(name, MAX_NAME)
@@ -177,7 +183,10 @@ async def update_project(
         await s.refresh(project)
         count = (
             await s.execute(
-                select(func.count(Conversation.id)).where(Conversation.project_id == project.id)
+                select(func.count(Conversation.id)).where(
+                    Conversation.project_id == project.id,
+                    *((Conversation.owner_id == owner,) if owner is not None else ()),
+                )
             )
         ).scalar_one()
         return _project_dict(project, count)
@@ -189,7 +198,7 @@ async def delete_project(project_id: str) -> bool:
         project = await s.get(Project, _uuid(project_id))
         if project is None:
             return False
-        if owner is not None and project.owner_id != owner:  # team mode: can't delete another user's project
+        if not _owned_by(project, owner):  # team mode: can't delete another user's project
             return False
         await s.delete(project)
         await s.commit()
@@ -197,14 +206,17 @@ async def delete_project(project_id: str) -> bool:
 
 
 async def set_conversation_project(conversation_id: str, project_id: str | None) -> dict | None:
+    owner = await team.current_owner_id()
     async with get_sessionmaker()() as s:
         conv = await s.get(Conversation, _uuid(conversation_id))
         if conv is None:
             return None
+        if not _owned_by(conv, owner):
+            return None
         project = None
         if project_id:
             project = await s.get(Project, _uuid(project_id))
-            if project is None:
+            if project is None or not _owned_by(project, owner):
                 return None
             conv.project_id = project.id
             project.updated_at = datetime.datetime.now(datetime.timezone.utc)
@@ -218,9 +230,12 @@ async def set_conversation_project(conversation_id: str, project_id: str | None)
 
 async def ensure_collection(project_id: str) -> str | None:
     """Return the project's RAG collection id, creating one on first file upload."""
+    owner = await team.current_owner_id()
     async with get_sessionmaker()() as s:
         project = await s.get(Project, _uuid(project_id))
         if project is None:
+            return None
+        if not _owned_by(project, owner):
             return None
         if project.collection_id:
             return str(project.collection_id)
@@ -230,6 +245,8 @@ async def ensure_collection(project_id: str) -> str | None:
         project = await s.get(Project, _uuid(project_id))
         if project is None:
             return col["id"]
+        if not _owned_by(project, owner):
+            return None
         project.collection_id = _uuid(col["id"])
         await s.commit()
     return col["id"]
@@ -238,9 +255,12 @@ async def ensure_collection(project_id: str) -> str | None:
 async def collection_id_for(project_id: uuid.UUID | str | None) -> str | None:
     if not project_id:
         return None
+    owner = await team.current_owner_id()
     async with get_sessionmaker()() as s:
         project = await s.get(Project, _uuid(str(project_id)))
-        return str(project.collection_id) if project and project.collection_id else None
+        if project is None or not _owned_by(project, owner):
+            return None
+        return str(project.collection_id) if project.collection_id else None
 
 
 async def add_files(project_id: str, files: list[dict]) -> dict:
@@ -267,9 +287,12 @@ async def delete_file(project_id: str, source: str) -> bool:
 async def trusted_context(project_id: uuid.UUID | str | None) -> str | None:
     if not project_id:
         return None
+    owner = await team.current_owner_id()
     async with get_sessionmaker()() as s:
         project = await s.get(Project, _uuid(str(project_id)))
         if project is None:
+            return None
+        if not _owned_by(project, owner):
             return None
         parts = [f"Project: {project.name}"]
         if project.description:

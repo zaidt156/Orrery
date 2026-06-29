@@ -85,11 +85,30 @@ async def is_admin() -> bool:
 
 
 async def current_owner_id() -> str | None:
-    """Owner id to stamp on / filter private data (chats, projects): the current user in team mode, else None."""
+    """Owner id to stamp/filter private data.
+
+    Solo mode returns None because there is no per-user owner filter. Team mode must return a real
+    TeamUser id; a locked/revoked client is not equivalent to solo mode and must fail closed.
+    """
     if not await team_mode():
         return None
     user = await current_user()
-    return user["id"] if user else None
+    if not user:
+        raise PermissionError("Team access key required.")
+    return user["id"]
+
+
+async def owner_scope() -> tuple[bool, str | None]:
+    """Non-raising owner scope for callers that need to distinguish solo/team/locked.
+
+    - (False, None) = single-user mode, no filtering (show all).
+    - (True, "<id>") = team mode, show only this user's rows.
+    - (True, None)  = team mode but the client is unidentified (locked / revoked key).
+    """
+    if not await team_mode():
+        return (False, None)
+    user = await current_user()
+    return (True, user["id"] if user else None)
 
 
 async def creation_status() -> str:

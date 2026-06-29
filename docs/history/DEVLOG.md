@@ -1045,3 +1045,16 @@ skills/ontologies/MCP stay shared; then the approval queue (members propose skil
 
 This completes the team/multi-user feature (identity + keys + roles, lock screen, per-user privacy,
 and the approval queue).
+
+
+## Step 82 - Team privacy hardening: locked clients fail closed (June 29, 2026)
+
+- Fixed a real access-control bug in the team privacy layer: `current_owner_id()` used to return `None`
+  for both solo mode and a locked/revoked team client. Some callers treated `None` as "no owner filter",
+  which could expose private rows if a client made direct API calls while locked.
+- `current_owner_id()` now fails closed in team mode when there is no valid access key, and the API maps
+  that to a 403 instead of relying on the UI lock screen. Conversation/project reads, writes, streaming
+  starts, resume/stop, exports/previews, project attachment, project files, and reasoning saves now
+  preflight or re-check ownership before touching private data.
+- Added regression tests for locked team clients, cross-owner conversation access, cross-owner project
+  attachment, and the API permission response. Verified the full test suite: 176 passed.

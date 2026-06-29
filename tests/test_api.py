@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from backend.api import Branding, NewConversation, create_app
-from backend.features import exports, route_telemetry
+from backend.features import chat, exports, route_telemetry
 from backend.providers import accounts
 from backend.security import secrets
 
@@ -35,6 +35,18 @@ def test_security_headers_present():
 
 def test_wrong_token_rejected():
     assert _client().get("/api/health", headers={"X-Orrery-Token": "nope"}).status_code == 401
+
+
+def test_permission_error_returns_403(monkeypatch):
+    async def locked_conversations():
+        raise PermissionError("Team access key required.")
+
+    monkeypatch.setattr(chat, "list_conversations", locked_conversations)
+
+    r = _client().get("/api/conversations", headers={"X-Orrery-Token": TOKEN})
+
+    assert r.status_code == 403
+    assert r.json()["detail"] == "Team access key required."
 
 
 def test_context_window_has_safe_bounds():
@@ -154,7 +166,11 @@ def test_reply_export_returns_download(monkeypatch):
     async def fake_export(*args):
         return exports.ExportResult(b"%PDF-test", "application/pdf", "reply.pdf")
 
+    async def fake_access(*args):
+        return True
+
     monkeypatch.setattr(exports, "export_message", fake_export)
+    monkeypatch.setattr(chat, "can_access_conversation", fake_access)
     r = _client().get(
         "/api/conversations/c1/messages/m1/export/pdf",
         headers={"X-Orrery-Token": TOKEN},

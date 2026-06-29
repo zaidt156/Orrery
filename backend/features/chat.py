@@ -34,6 +34,25 @@ from backend.security import privacy
 _log = logging.getLogger("orrery.chat")
 
 
+def _owned_by(row, owner_id: str | None) -> bool:
+    return owner_id is None or getattr(row, "owner_id", None) == owner_id
+
+
+async def can_access_conversation(conv_id: str) -> bool:
+    """True when the current solo/team user can access this conversation.
+
+    Raises PermissionError for a locked team client via team.current_owner_id().
+    """
+    try:
+        cid = uuid.UUID(conv_id)
+    except ValueError:
+        return False
+    owner = await team.current_owner_id()
+    async with get_sessionmaker()() as s:
+        conv = await s.get(Conversation, cid)
+        return bool(conv is not None and _owned_by(conv, owner))
+
+
 async def list_conversations() -> list[dict]:
     owner = await team.current_owner_id()  # team mode: only this user's chats; solo: None (all)
     async with get_sessionmaker()() as s:
@@ -60,11 +79,12 @@ async def create_conversation(
     context_window: int = DEFAULT_CONTEXT_WINDOW,
     project_id: str | None = None,
 ) -> dict:
+    owner = await team.current_owner_id()
     async with get_sessionmaker()() as s:
         project_uuid = None
         if project_id:
             project = await s.get(Project, uuid.UUID(project_id))
-            if project is None:
+            if project is None or not _owned_by(project, owner):
                 raise ValueError("Project not found")
             project_uuid = project.id
         conv = Conversation(
@@ -73,7 +93,7 @@ async def create_conversation(
             system_prompt=system_prompt or None,
             effort=effort or None,
             context_window=context_window,
-            owner_id=await team.current_owner_id(),
+            owner_id=owner,
         )
         s.add(conv)
         await s.commit()
@@ -131,9 +151,13 @@ async def save_reasoning(conv_id: str, message_id: str, reasoning: dict) -> bool
         payload = json.dumps(reasoning)[:200_000]  # bounded; this is UI metadata, not the answer
     except (TypeError, ValueError):
         return False
+    owner = await team.current_owner_id()
     async with get_sessionmaker()() as s:
         message = await s.get(Message, uuid.UUID(message_id))
         if message is None or str(message.conversation_id) != str(uuid.UUID(conv_id)):
+            return False
+        conv = await s.get(Conversation, message.conversation_id)
+        if conv is None or not _owned_by(conv, owner):
             return False
         message.reasoning = payload
         await s.commit()
@@ -152,9 +176,12 @@ async def update_conversation(
     context_window=_UNSET,
     project_id=_UNSET,
 ) -> dict | None:
+    owner = await team.current_owner_id()
     async with get_sessionmaker()() as s:
         conv = await s.get(Conversation, uuid.UUID(conv_id))
         if conv is None:
+            return None
+        if not _owned_by(conv, owner):
             return None
         if model is not _UNSET and model:
             conv.model = model
@@ -167,7 +194,7 @@ async def update_conversation(
         if project_id is not _UNSET:
             if project_id:
                 project = await s.get(Project, uuid.UUID(project_id))
-                if project is None:
+                if project is None or not _owned_by(project, owner):
                     return None
                 conv.project_id = project.id
             else:
@@ -332,8 +359,11 @@ def _detect_formats(text: str) -> list[str]:
 
 
 async def _conv_title(cid: uuid.UUID) -> str:
+    owner = await team.current_owner_id()
     async with get_sessionmaker()() as s:
         conv = await s.get(Conversation, cid)
+        if conv is not None and not _owned_by(conv, owner):
+            raise PermissionError("Conversation access denied.")
         return (conv.title if conv and conv.title else None) or "Orrery file"
 
 
@@ -498,9 +528,12 @@ class _TurnContext:
 
 async def _prepare_turn(cid: uuid.UUID, user_content: str, attachments: list[dict]) -> _TurnContext | None:
     """Load the conversation + history and persist the incoming user message. None if missing."""
+    owner = await team.current_owner_id()
     async with get_sessionmaker()() as s:
         conv = await s.get(Conversation, cid)
         if conv is None:
+            return None
+        if not _owned_by(conv, owner):
             return None
         model, system_prompt, effort = conv.model, conv.system_prompt, conv.effort
         project_id = conv.project_id
@@ -1048,9 +1081,13 @@ async def _deliver_code_image(
 async def stream_code_image(conv_id: str, user_content: str) -> AsyncIterator[dict]:
     """Generate a sanitized SVG artifact through the selected text model."""
     cid = uuid.UUID(conv_id)
+    owner = await team.current_owner_id()
     async with get_sessionmaker()() as s:
         conv = await s.get(Conversation, cid)
         if conv is None:
+            yield {"error": "Conversation not found."}
+            return
+        if not _owned_by(conv, owner):
             yield {"error": "Conversation not found."}
             return
         model, system_prompt, effort = conv.model, conv.system_prompt, conv.effort
@@ -1078,10 +1115,14 @@ async def stream_code_image(conv_id: str, user_content: str) -> AsyncIterator[di
 async def regenerate(conv_id: str) -> AsyncIterator[dict]:
     """Re-answer the last user turn: drop trailing assistant message(s), re-stream."""
     cid = uuid.UUID(conv_id)
+    owner = await team.current_owner_id()
 
     async with get_sessionmaker()() as s:
         conv = await s.get(Conversation, cid)
         if conv is None:
+            yield {"error": "Conversation not found."}
+            return
+        if not _owned_by(conv, owner):
             yield {"error": "Conversation not found."}
             return
         model, system_prompt, effort = conv.model, conv.system_prompt, conv.effort
