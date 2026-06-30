@@ -140,7 +140,7 @@ export function CodeImageArtifact({ artifact, onPreview, onError }) {
   );
 }
 
-const PREVIEWABLE_FILE = /\.(pdf|png|jpe?g|gif|webp|svg|pptx|xlsx|docx|csv|md|markdown|txt|html?|json)$/i;
+const PREVIEWABLE_FILE = /\.(pdf|png|jpe?g|gif|webp|svg|pptx|xlsx|docx|csv|md|markdown|txt|html?|json|wav|mp3|mp4|webm)$/i;
 
 function formatBytes(n) {
   if (!n) return "";
@@ -167,6 +167,7 @@ function fileTypeLabel(name = "") {
   if (["xls", "xlsx", "csv", "tsv"].includes(ext)) return "Spreadsheet";
   if (["ppt", "pptx"].includes(ext)) return "Presentation";
   if (["png", "jpg", "jpeg", "gif", "webp", "svg"].includes(ext)) return "Image";
+  if (["mp4", "webm"].includes(ext)) return "Video";
   if (["zip", "tar", "gz"].includes(ext)) return "Archive";
   if (["json", "yaml", "yml", "xml"].includes(ext)) return "Data";
   if (["html", "htm", "js", "jsx", "ts", "tsx", "py", "css", "md", "sql"].includes(ext)) return "Code";
@@ -321,11 +322,11 @@ function SourceLinks({ urls }) {
   );
 }
 
-// Two-layer reasoning panel, like a high-end AI workspace:
+// Two-layer work-trace panel, like a high-end AI workspace:
 //   • collapsed = a one-line activity headline;
-//   • expanded = the model's live reasoning + a trace line of what it actually did
+//   • expanded = clean public progress + a trace line of what Orrery actually did
 //     (searched the web, ran Python, produced files) and the sources it used.
-// Auto-opens while streaming so you watch it think; collapses — but stays — once the answer is done.
+// Auto-opens while streaming; collapses — but stays — once the answer is done.
 export function ReasoningPanel({ outer, trace, thinking, summary, sources, streaming }) {
   const [open, setOpen] = useState(false);
   const steps = trace || [];

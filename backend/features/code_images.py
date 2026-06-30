@@ -299,11 +299,7 @@ async def generate_svg(
     system_prompt: str | None = None,
     effort: str | None = None,
 ) -> AsyncIterator[dict]:
-    """Stream the model's reasoning, then yield the sanitized SVG.
-
-    Yields {"reasoning_delta": text} live while the model thinks (so the image route shows real
-    reasoning like every other route), then a final {"svg": <sanitized svg string>}.
-    """
+    """Strip hidden reasoning, then yield the sanitized SVG."""
     instructions = f"{_REASONING_DIRECTIVE}\n\n{SVG_SYSTEM_PROMPT}"
 
     if system_prompt:
@@ -326,7 +322,7 @@ Return only the SVG document.
 
     for attempt in range(3):
         parts: list[str] = []
-        think = ThinkStream()  # split the model's <think> reasoning from the SVG output
+        think = ThinkStream()  # strip hidden <think> reasoning from the SVG output
 
         turn = base_turn
 

@@ -16,7 +16,7 @@ from backend.features import filegen
 
 _CREATE = re.compile(
     r"\b(create|make|generate|build|draw|design|render|produce|compose|export|"
-    r"prepare|draft|read|speak|say|narrate|give\s+me|i\s+(?:want|need|would\s+like)|show\s+me)\b",
+    r"prepare|draft|write|read|speak|say|narrate|give\s+me|i\s+(?:want|need|would\s+like)|show\s+me)\b",
     re.IGNORECASE,
 )
 _VISUAL_NOUN = re.compile(
@@ -109,20 +109,13 @@ def plan(user_text: str, *, has_attachments: bool = False) -> TaskPlan:
 
     if _looks_like_audio_request(text):
         return TaskPlan(
-            route="audio",
-            label="Audio or voice",
-            detail=(
-                "Route sound-file creation through the sandbox when a downloadable audio file is requested; "
-                "voice playback/transcription settings are a separate provider feature."
-            ),
+            route="file",
+            label="Audio artifact",
+            detail="Create a downloadable audio artifact through the sandbox and validate the output.",
             confidence=0.78,
             skills=("audio", "sandbox"),
-            output_mode="audio",
+            output_mode="file",
             sandbox_preferred=True,
-            unavailable_reason=(
-                "Voice playback and transcription providers are not connected yet. "
-                "Downloadable WAV sound files are supported through file generation."
-            ),
         )
 
     if _looks_like_project_request(text):

@@ -177,11 +177,11 @@ async def run(
             async for delta in ai.stream_chat(model, work, formatted_prompt, effort, usage_out):
                 if isinstance(delta, ai.ReasoningDelta):
                     for ev in think.feed_reasoning(str(delta)):
-                        yield ev  # stream the model's raw reasoning live
+                        yield ev  # optional debug reasoning event
                     continue
                 answer, revs = think.feed(delta)
                 for ev in revs:
-                    yield ev  # inline <think> reasoning, streamed live
+                    yield ev  # optional debug reasoning event
                 if not answer:
                     continue
                 visible, found = run_stream.feed(answer)

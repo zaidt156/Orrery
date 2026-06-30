@@ -270,22 +270,23 @@ class ThinkStream:
     backend-authored route/tool/validation steps. (`max_steps` is accepted for back-compat and ignored.)
     """
 
-    def __init__(self, max_steps: int | None = None):
+    def __init__(self, max_steps: int | None = None, *, emit_raw: bool = False):
         self._buf = ""
         self._in_think = False
         self.stats = HiddenReasoningStats()
+        self.emit_raw = emit_raw
 
     @staticmethod
     def _find_tag(buffer: str, tag: str) -> int:
         return buffer.lower().find(tag)
 
     def feed_reasoning(self, text: str) -> list[dict]:
-        """Stream the model's raw reasoning from a separate provider channel (reasoning_content/thinking)."""
+        """Count provider reasoning deltas; emit only when an explicit debug caller opts in."""
         if not text:
             return []
         self.stats.chunks += 1
         self.stats.chars += len(text)
-        return [stream_events.reasoning_delta(text)]
+        return [stream_events.reasoning_delta(text)] if self.emit_raw else []
 
     def feed(self, delta: str) -> tuple[str, list[dict]]:
         """Return (answer_text_to_emit, reasoning_events). Inline <think> content is streamed as raw reasoning."""
@@ -323,7 +324,7 @@ class ThinkStream:
                 answer.append(self._buf[:start])
             self._buf = self._buf[start + len(_THINK_OPEN):]
             self._in_think = True
-        revents = [stream_events.reasoning_delta("".join(reasoning))] if reasoning else []
+        revents = [stream_events.reasoning_delta("".join(reasoning))] if reasoning and self.emit_raw else []
         return "".join(answer), revents
 
     def finish(self) -> tuple[str, list[dict]]:
@@ -340,7 +341,7 @@ class ThinkStream:
             answer = self._buf
         self._buf = ""
         self._in_think = False
-        revents = [stream_events.reasoning_delta("".join(reasoning))] if reasoning else []
+        revents = [stream_events.reasoning_delta("".join(reasoning))] if reasoning and self.emit_raw else []
         return answer, revents
 
 

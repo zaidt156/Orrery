@@ -116,6 +116,8 @@ export default function Chat() {
     try {
       const { url, mime } = await previewGeneratedFile(file.id);
       if ((mime || "").startsWith("image/")) setArtifact({ image: url, title: file.name });
+      else if ((mime || "").startsWith("video/")) setArtifact({ media: url, mediaType: "video", title: file.name });
+      else if ((mime || "").startsWith("audio/")) setArtifact({ media: url, mediaType: "audio", title: file.name });
       else setArtifact({ url, title: file.name, sandbox: (mime || "").startsWith("text/html") });
     } catch (e) {
       setBanner(String(e.message || e));
@@ -841,6 +843,10 @@ export default function Chat() {
           </div>
           {artifact.image ? (
             <div className="artifact-frame artifact-image"><img src={artifact.image} alt="SVG preview" /></div>
+          ) : artifact.mediaType === "video" ? (
+            <div className="artifact-frame artifact-media"><video src={artifact.media} controls playsInline /></div>
+          ) : artifact.mediaType === "audio" ? (
+            <div className="artifact-frame artifact-media"><audio src={artifact.media} controls /></div>
           ) : artifact.sandbox ? (
             <iframe
               className="artifact-frame"

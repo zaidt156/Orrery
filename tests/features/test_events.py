@@ -1,4 +1,5 @@
 from backend.features import events
+from backend.features.reasoning_trace import ThinkStream
 
 
 def test_stream_event_helpers_preserve_legacy_shapes():
@@ -24,3 +25,21 @@ def test_message_usage_and_missing_key_events_are_centralized():
         "message_usage": {"in": 0, "out": 12, "pricing_known": False}
     }
     assert events.missing_key("openai") == {"error": "No API key for openai. Add it in Settings."}
+
+
+def test_think_stream_strips_hidden_reasoning_by_default():
+    stream = ThinkStream()
+
+    answer, emitted = stream.feed("<think>private scratchpad</think>Hello")
+    tail, tail_events = stream.finish()
+
+    assert emitted == []
+    assert tail_events == []
+    assert answer + tail == "Hello"
+    assert stream.stats.seen
+
+
+def test_think_stream_raw_reasoning_requires_explicit_debug_opt_in():
+    stream = ThinkStream(emit_raw=True)
+
+    assert stream.feed_reasoning("debug") == [{"reasoning_delta": "debug"}]

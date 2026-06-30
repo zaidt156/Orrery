@@ -59,7 +59,7 @@ FORMAT_INSTRUCTIONS = (
 
     "FILES:\n"
     "When the user asks you to create or 'give me' a downloadable file — PDF, Word, Excel, PowerPoint, CSV, "
-    "Markdown, text, HTML, or JSON — do exactly TWO things and nothing else:\n"
+    "Markdown, text, HTML, JSON, audio, video, image, or archive — do exactly TWO things and nothing else:\n"
     "1. Write ONE short sentence in plain language saying what you made and what it contains.\n"
     "2. Then output exactly ONE fenced code block tagged orrery-doc containing a single JSON object that designs "
     "the file's real structure.\n\n"
@@ -148,16 +148,15 @@ _UNTRUSTED_HEADER = (
 )
 
 
-# Universal reasoning directive — included in EVERY built system prompt so the model's real thinking is
-# shown on every route (chat, file, deck, research, …) regardless of whether the model natively emits
-# reasoning tokens. ThinkStream extracts the <think> block, streams it to the panel, and removes it from
-# the final answer, so this is safe alongside strict-output rules (the answer/code/spec comes after </think>).
+# Universal reasoning directive — included in EVERY built system prompt so models plan carefully without
+# dumping raw chain-of-thought into the visible answer. ThinkStream strips any <think> blocks and provider
+# reasoning deltas; the UI receives safe backend-authored trace steps instead.
 _REASONING_DIRECTIVE = (
-    "Reasoning visibility: before your final output, think through the task inside <think> and </think> "
-    "tags — genuine, concise, step-by-step reasoning about THIS request (what you're doing, key decisions, "
-    "checks, and how you'll use any tools or produce any file). Orrery streams that to the user as your live "
-    "thinking and strips it from the final answer, so reason naturally and specifically. After the closing "
-    "</think>, produce the actual answer or required output exactly as the rules below specify."
+    "Reasoning discipline: think carefully before producing the final output, but do not reveal hidden "
+    "chain-of-thought, scratchpad notes, private deliberation, or raw planning. If you include <think> tags "
+    "because a local reasoning model expects them, keep that content private and concise; Orrery strips it "
+    "from the final answer. The visible response must contain only the requested answer, code block, or file "
+    "spec required by the rules below."
 )
 
 
@@ -213,6 +212,9 @@ FILE_SYSTEM_PROMPT = (
     "- For PDF/Word: use headings, sections, tables where useful, page numbers or document metadata when appropriate, readable margins, and professional typography.\n"
     "- For Excel/CSV: create clean headers, typed rows, formatting, widths, freeze panes, filters, formulas only when useful, and neutralize formula-like user text when it should remain text.\n"
     "- For WAV/audio files: use the Python standard library wave/math/struct modules to synthesize a real playable WAV when no audio library is available. Keep levels controlled to avoid clipping.\n"
+    "- For spoken narration or text-to-speech files: the sandbox includes offline espeak-ng. You may call it from Python with subprocess to create a WAV, then validate duration and non-empty output. Do not imitate a real person's voice.\n"
+    "- For video/animation: the sandbox includes ffmpeg, imageio, imageio-ffmpeg, matplotlib, Pillow, and numpy. Generate frames offline, encode MP4/WebM/GIF, and keep file size reasonable. Never fetch media from the network.\n"
+    "- For HTML/web pages/apps: create a single self-contained .html file with inline CSS/JS, responsive layout, and no external CDN/script/image/font references. The user should be able to preview it directly in Orrery.\n"
     "Safety requirements:\n"
     "- Do not create, alter, imitate, backdate, or forge official, medical, academic, legal, banking, employment, immigration, or identity documents in a way that could deceive.\n"
     "- If the user asks for an official-document template or sample, make it clearly fictional/sample/watermarked and not usable as a real document.\n"
@@ -220,9 +222,9 @@ FILE_SYSTEM_PROMPT = (
     "- Save every deliverable into the ./out directory (it already exists), with clear filenames and correct extensions.\n"
     "- Build real, complete, polished files that fully satisfy the request - never placeholders, stubs, or 'TODO' content.\n"
     "- Reopen or validate each generated file in code before finishing when the library supports it. If validation fails, fix the file before printing success.\n"
-    "- Available libraries: python-docx, openpyxl, XlsxWriter, python-pptx, reportlab, fpdf2, pandas, numpy, matplotlib (use matplotlib.use('Agg')), Pillow, markdown, beautifulsoup4, lxml, odfpy, plus the Python standard library including wave/math/struct for audio.\n"
+    "- Available libraries/tools: python-docx, openpyxl, XlsxWriter, python-pptx, reportlab, fpdf2, pandas, numpy, matplotlib (use matplotlib.use('Agg')), Pillow, imageio, imageio-ffmpeg, markdown, beautifulsoup4, lxml, odfpy, ffmpeg, espeak-ng, plus the Python standard library including wave/math/struct for audio.\n"
     "- No network access of any kind; everything must work fully offline.\n"
-    "- Images/visuals: the sandbox is OFFLINE — NEVER download images or fetch URLs (it will fail and "
+    "- Images/video/visuals: the sandbox is OFFLINE — NEVER download images, videos, scripts, fonts, or fetch URLs (it will fail and "
     "waste the attempt). Create visuals in code instead: matplotlib charts, Pillow-drawn graphics/"
     "diagrams/icons, or python-pptx shapes and color blocks. If the user asks for photos you cannot "
     "draw, use tasteful shape/gradient graphics or clearly labeled placeholders and PROCEED — never let "

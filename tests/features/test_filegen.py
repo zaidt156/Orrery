@@ -41,6 +41,10 @@ def _make_wav() -> bytes:
     return buf.getvalue()
 
 
+def _make_mp4_header() -> bytes:
+    return b"\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00mp42isom" + (b"\x00" * 2048)
+
+
 def test_quality_effort_promotes_file_jobs():
     assert filegen.quality_effort("openai/gpt-test", None) == "high"
     assert filegen.quality_effort("openai/gpt-test", "low") == "high"
@@ -52,9 +56,16 @@ def test_needs_code_and_requested_formats():
     assert filegen.needs_code("Create a PNG chart from this data")
     assert not filegen.needs_code("Write a Word document about onboarding")
     assert filegen.requested_formats("make me a pdf and a pptx") == ["pdf", "pptx"]
+    assert filegen.wants_file("Create an HTML webpage for a product demo")
+    assert filegen.needs_code("Create an HTML webpage for a product demo")
+    assert filegen.requested_formats("Create an HTML webpage") == ["html"]
+    assert filegen.wants_file("Make a short MP4 video animation")
+    assert filegen.needs_code("Make a short MP4 video animation")
+    assert filegen.requested_formats("Make a short video") == ["mp4"]
     assert filegen.wants_file("Create a WAV audio file for a notification sound")
     assert filegen.needs_code("Create a WAV audio file for a notification sound")
     assert filegen.requested_formats("Create a WAV audio file") == ["wav"]
+    assert filegen.wants_file("Write a poem and create audio narration")
 
 
 def test_official_document_safety():
@@ -93,6 +104,31 @@ def test_approve_accepts_real_wav():
     approval = filegen._approve_files([audio], "Create a WAV audio file for a notification sound")
     assert approval.ok
     assert approval.files and approval.files[0].name == "notification.wav"
+
+
+def test_approve_accepts_self_contained_html():
+    html = b"""<!doctype html><html><head><style>body{font-family:sans-serif}</style></head>
+    <body><main><h1>Product Demo</h1><p>This complete page explains the product with real content.</p>
+    <button onclick=\"document.body.dataset.clicked='yes'\">Try it</button></main></body></html>"""
+    approval = filegen._approve_files([sandbox.SandboxFile("demo.html", html)], "Create an HTML webpage")
+    assert approval.ok
+    assert "has_styles" in approval.manifest[0]["checks"]
+    assert "has_interaction" in approval.manifest[0]["checks"]
+
+
+def test_approve_rejects_html_with_external_references():
+    html = b"""<!doctype html><html><body><h1>Demo</h1><script src=\"https://cdn.example/app.js\"></script>
+    <p>This page depends on a CDN and should not pass.</p></body></html>"""
+    approval = filegen._approve_files([sandbox.SandboxFile("demo.html", html)], "Create an HTML webpage")
+    assert not approval.ok
+    assert "external" in approval.reason.lower() or "unsafe" in approval.reason.lower()
+
+
+def test_approve_accepts_mp4_header_video():
+    video = sandbox.SandboxFile("motion.mp4", _make_mp4_header())
+    approval = filegen._approve_files([video], "Create a short MP4 video")
+    assert approval.ok
+    assert "has_mp4_header" in approval.manifest[0]["checks"]
 
 
 @pytest.mark.anyio

@@ -1074,3 +1074,24 @@ and the approval queue).
 
 Next: finish the remaining dispatcher hardening by covering cancellation and the full sandbox miss ->
 docgen -> plain-reply fallback chain.
+
+
+## Step 84 - Broader sandbox artifacts + cleaner thinking trace (June 30, 2026)
+
+- Expanded sandbox-backed artifact generation beyond documents/slides/sheets/images/audio basics:
+  HTML/web pages, self-contained web apps, video/MP4/WebM, WebP, Markdown, text, JSON, audio, images,
+  archives, decks, sheets, PDFs, and Word files are now recognized as file outputs and routed through
+  the validated sandbox path when code is needed.
+- Upgraded the sandbox image with offline audio/video tooling (`ffmpeg`, `espeak-ng`,
+  `imageio`, `imageio-ffmpeg`) so strong models have real Python-accessible tools for narration/audio
+  and generated video without web access.
+- Added backend validators for self-contained HTML, JSON, WebP/image formats, basic MP4/WebM signatures,
+  and kept WAV/MP3/archive/document validators in the same approval gate. HTML with external scripts,
+  CDNs, file URLs, or unsafe references is rejected before preview.
+- Audio requests such as narration now route to the file-generation sandbox instead of the old
+  unavailable voice-status path. Generated audio/video files can be previewed directly from the file card.
+- Cleaned up visible thinking: hidden provider reasoning and `<think>` scratchpad text are stripped by
+  default; the reasoning panel now relies on public work-trace events such as writing artifact code,
+  running the sandbox, validating output, repair attempts, files, and done.
+
+Next: structured input/workspace/output directories plus explicit manifest capture for every sandbox run.

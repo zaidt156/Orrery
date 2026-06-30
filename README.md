@@ -43,7 +43,8 @@ environment.
 - Ontologies and reusable knowledge structures for stronger context control.
 - Effort modes and context-window controls, including high-limit options for deeper work.
 - Sandboxed file generation for PDFs, Word documents, spreadsheets, PowerPoint decks, CSV files,
-  charts, SVG/image-style outputs, and other requested artifacts.
+  charts, HTML/web pages, audio, video/MP4/WebM, SVG/image-style outputs, archives, and other
+  requested artifacts.
 - Skills: reusable instruction playbooks that guide chat, file generation, research, coding, images,
   projects, spreadsheets, presentations, and sandboxed work.
 - Admin controls for small teams, including feature toggles and approval flow for team-created
@@ -222,7 +223,8 @@ docker build -t orrery-sandbox:latest sandbox
 ```
 
 The sandbox has no network, a read-only root filesystem, dropped Linux capabilities, memory/CPU/PID
-limits, and a per-run output folder. Model-written code never runs inside the Orrery process.
+limits, and a per-run output folder. Model-written code never runs inside the Orrery process. Rebuild
+this image after pulling updates that change `sandbox/Dockerfile`, especially for audio/video support.
 
 If the sandbox image is missing, normal chat still works, but code-execution-based file generation is
 limited until the image is built.

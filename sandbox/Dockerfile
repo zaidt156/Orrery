@@ -3,6 +3,10 @@
 # read-only root + a single writable /work mount (see backend/features/sandbox.py).
 FROM python:3.12-slim
 
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ffmpeg espeak-ng \
+    && rm -rf /var/lib/apt/lists/*
+
 # Broad file/data/plot toolkit so the model can build essentially any artifact.
 RUN pip install --no-cache-dir \
         python-pptx==1.0.2 \
@@ -15,6 +19,8 @@ RUN pip install --no-cache-dir \
         numpy==2.1.3 \
         matplotlib==3.9.2 \
         Pillow==11.0.0 \
+        imageio==2.36.0 \
+        imageio-ffmpeg==0.5.1 \
         markdown==3.7 \
         beautifulsoup4==4.12.3 \
         lxml==5.3.0 \

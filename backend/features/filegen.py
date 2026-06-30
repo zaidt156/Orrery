@@ -15,6 +15,7 @@ import ast
 import asyncio
 import csv
 import io
+import json
 import re
 import wave
 import zipfile
@@ -37,12 +38,14 @@ _CODE_FENCE = re.compile(r"```(?:python|py)?\s*\n([\s\S]*?)```", re.IGNORECASE)
 _FILE_INTENT = re.compile(
     r"\b(pdf|docx|word\s+doc(?:ument)?|excel|xlsx|spreadsheet|workbook|powerpoint|pptx|"
     r"presentation|slide\s*deck|slides?|deck|csv|chart|graph|plot|diagram|infographic|"
-    r"invoice|resume|cv|brochure|flyer|certificate|audio file|sound file|sound effect|"
-    r"\.(?:pdf|docx?|xlsx?|pptx?|csv|png|jpe?g|gif|svg|zip|wav|mp3))\b",
+    r"invoice|resume|cv|brochure|flyer|certificate|html|web\s?page|webpage|website|"
+    r"landing page|single[-\s]?page app|audio|sound|sound file|sound effect|voiceover|"
+    r"voice-over|narration|text[-\s]?to[-\s]?speech|tts|speech|video|movie|animation|"
+    r"\.(?:pdf|docx?|xlsx?|pptx?|csv|png|jpe?g|gif|webp|svg|zip|wav|mp3|mp4|webm|html?|md|txt|json))\b",
     re.IGNORECASE,
 )
 _CREATE_VERB = re.compile(
-    r"\b(create|make|generate|build|give\s+me|need|want|produce|export|draft|design|prepare|"
+    r"\b(create|make|generate|build|write|compose|give\s+me|need|want|produce|export|draft|design|prepare|"
     r"put\s+together|write\s+me|turn\s+.*\binto|as\s+an?)\b",
     re.IGNORECASE,
 )
@@ -52,10 +55,12 @@ _CREATE_VERB = re.compile(
 # docgen remains the fast fallback. Plain Word/Excel/PDF docs still route to docgen first.
 _NEEDS_CODE = re.compile(
     r"\b(powerpoint|pptx|presentation|slide\s*deck|slides?|deck|"
+    r"html|web\s?page|webpage|website|landing page|single[-\s]?page app|interactive|"
     r"chart|graph|plot|diagram|figure|visuali[sz]|infographic|image|picture|photo|logo|icon|"
+    r"video|movie|animation|mp4|webm|"
     r"audio|sound|soundtrack|sound effect|sfx|tone|beep|voiceover|voice-over|narration|wav|mp3|"
     r"calculat|comput|analy[sz]|statistic|regression|simulat|forecast|matplotlib|seaborn|"
-    r"\.(png|jpe?g|gif|svg|zip|tar))\b",
+    r"\.(png|jpe?g|gif|webp|svg|zip|tar|html?|mp4|webm))\b",
     re.IGNORECASE,
 )
 
@@ -68,10 +73,17 @@ _FORMAT_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("png", re.compile(r"\bpng\b|\.png\b", re.I)),
     ("jpg", re.compile(r"\bjpe?g\b|\.jpe?g\b", re.I)),
     ("gif", re.compile(r"\bgif\b|\.gif\b", re.I)),
+    ("webp", re.compile(r"\bwebp\b|\.webp\b", re.I)),
     ("svg", re.compile(r"\bsvg\b|\.svg\b", re.I)),
     ("wav", re.compile(r"\b(wav|sound effect|sfx|tone|beep)\b|\.wav\b", re.I)),
     ("mp3", re.compile(r"\bmp3\b|\.mp3\b", re.I)),
+    ("mp4", re.compile(r"\b(mp4|video|movie)\b|\.mp4\b", re.I)),
+    ("webm", re.compile(r"\bwebm\b|\.webm\b", re.I)),
     ("zip", re.compile(r"\bzip\b|\.zip\b", re.I)),
+    ("html", re.compile(r"\b(html|web\s?page|webpage|website|landing page|single[-\s]?page app)\b|\.html?\b", re.I)),
+    ("md", re.compile(r"\b(markdown|md)\b|\.md\b", re.I)),
+    ("txt", re.compile(r"\b(text file|txt)\b|\.txt\b", re.I)),
+    ("json", re.compile(r"\bjson\b|\.json\b", re.I)),
 )
 
 _EXTENSION_TO_FORMAT = {
@@ -88,9 +100,12 @@ _EXTENSION_TO_FORMAT = {
     "jpg": "jpg",
     "jpeg": "jpg",
     "gif": "gif",
+    "webp": "webp",
     "svg": "svg",
     "wav": "wav",
     "mp3": "mp3",
+    "mp4": "mp4",
+    "webm": "webm",
     "zip": "zip",
     "md": "md",
     "txt": "txt",
@@ -103,6 +118,11 @@ _PLACEHOLDER_RE = re.compile(
     r"\[title\]|\[date\]|\[name\]|\[company\])\b",
     re.IGNORECASE,
 )
+_REMOTE_HTML_REF_RE = re.compile(
+    r"""(?:src|href)\s*=\s*['"]\s*(?:https?:|//|file:|javascript:)""",
+    re.IGNORECASE,
+)
+_HTML_SCRIPT_REMOTE_RE = re.compile(r"<script\b[^>]*\bsrc\s*=", re.IGNORECASE)
 
 _SMALL_ARTIFACT_OK = re.compile(
     r"\b(one\s+page|1\s+page|one\s+slide|1\s+slide|single\s+slide|thumbnail|icon|logo|"
@@ -348,6 +368,58 @@ def _validate_image(data: bytes, fmt: str) -> tuple[str, list[str]]:
     return "", [f"opens_as_image:{fmt}", f"dimensions:{width}x{height}"]
 
 
+def _validate_html(data: bytes) -> tuple[str, list[str]]:
+    from html.parser import HTMLParser
+
+    text = _decode_text(data)
+    tags: set[str] = set()
+    visible_parts: list[str] = []
+    has_inline_style = False
+    has_interaction = False
+
+    class PageParser(HTMLParser):
+        def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+            nonlocal has_inline_style, has_interaction
+            tag = tag.lower()
+            tags.add(tag)
+            attrs_dict = {name.lower(): value or "" for name, value in attrs}
+            if tag == "style" or "style" in attrs_dict:
+                has_inline_style = True
+            if tag in {"script", "button", "input", "canvas", "select", "textarea"}:
+                has_interaction = True
+            if any(name.startswith("on") for name in attrs_dict):
+                has_interaction = True
+
+        def handle_data(self, data: str) -> None:
+            if data.strip():
+                visible_parts.append(data)
+
+    parser = PageParser()
+    parser.feed(text)
+    checks = ["parses_as_html"]
+    body_text = " ".join(" ".join(visible_parts).split())
+
+    if not (tags & {"html", "body", "main", "section"}):
+        raise ValueError("HTML does not contain a recognizable page structure.")
+    if len(body_text) < 60 and not has_interaction:
+        raise ValueError("HTML page has too little visible content.")
+    if _REMOTE_HTML_REF_RE.search(text) or _HTML_SCRIPT_REMOTE_RE.search(text):
+        raise ValueError("HTML includes external or unsafe references; generated pages must be self-contained.")
+    if body_text:
+        checks.append(f"text_chars:{len(body_text)}")
+    if has_inline_style:
+        checks.append("has_styles")
+    if has_interaction:
+        checks.append("has_interaction")
+    return text, checks
+
+
+def _validate_json(data: bytes) -> tuple[str, list[str]]:
+    text = _decode_text(data)
+    json.loads(text)
+    return text, ["parses_as_json"]
+
+
 def _validate_svg(data: bytes) -> tuple[str, list[str]]:
     import xml.etree.ElementTree as ET
 
@@ -385,6 +457,20 @@ def _validate_mp3(data: bytes) -> tuple[str, list[str]]:
     if not (data.startswith(b"ID3") or data[:2] in {b"\xff\xfb", b"\xff\xf3", b"\xff\xf2"}):
         raise ValueError("MP3 file does not have a recognizable MP3 header.")
     return "", ["has_mp3_header"]
+
+
+def _validate_video(data: bytes, fmt: str) -> tuple[str, list[str]]:
+    if len(data) < 1_024:
+        raise ValueError(f"{fmt.upper()} file is too small to be a useful video.")
+    if fmt == "mp4":
+        if b"ftyp" not in data[:64]:
+            raise ValueError("MP4 file does not have a recognizable ftyp header.")
+        return "", ["has_mp4_header", f"bytes:{len(data)}"]
+    if fmt == "webm":
+        if not data.startswith(b"\x1a\x45\xdf\xa3"):
+            raise ValueError("WebM file does not have a recognizable EBML header.")
+        return "", ["has_webm_header", f"bytes:{len(data)}"]
+    raise ValueError(f"Unsupported video format: {fmt}")
 
 
 def _validate_zip(data: bytes) -> tuple[str, list[str]]:
@@ -433,7 +519,7 @@ def _extract_and_validate(file: sandbox.SandboxFile, request: str) -> FileCheck:
             if row_count < 1 or width < 1:
                 check.issues.append("CSV has no usable rows/columns.")
             _check_text_quality(check, text, request, minimum_chars=20, require_text=False)
-        elif fmt in {"png", "jpg", "gif"}:
+        elif fmt in {"png", "jpg", "gif", "webp"}:
             _text, checks = _validate_image(file.data, fmt)
             check.checks.extend(checks)
         elif fmt == "svg":
@@ -446,12 +532,23 @@ def _extract_and_validate(file: sandbox.SandboxFile, request: str) -> FileCheck:
         elif fmt == "mp3":
             _text, checks = _validate_mp3(file.data)
             check.checks.extend(checks)
+        elif fmt in {"mp4", "webm"}:
+            _text, checks = _validate_video(file.data, fmt)
+            check.checks.extend(checks)
         elif fmt == "zip":
             text, checks = _validate_zip(file.data)
             check.checks.extend(checks)
             if not text.strip():
                 check.issues.append("ZIP archive is empty.")
-        elif fmt in {"md", "txt", "html", "json"}:
+        elif fmt == "html":
+            text, checks = _validate_html(file.data)
+            check.checks.extend(checks)
+            _check_text_quality(check, text, request, minimum_chars=80)
+        elif fmt == "json":
+            text, checks = _validate_json(file.data)
+            check.checks.extend(checks)
+            _check_text_quality(check, text, request, minimum_chars=20, require_text=False)
+        elif fmt in {"md", "txt"}:
             text = _decode_text(file.data)
             check.checks.append(f"decodes_as_{fmt}")
             _check_text_quality(check, text, request, minimum_chars=80)
@@ -556,12 +653,16 @@ async def run(
             else f"Fixing the generated file ({attempt + 1}/{max_attempts})…"
         )
         yield reasoning_event(
-            "Preparing generation" if attempt == 0 else "Repairing generation",
+            "Writing artifact code" if attempt == 0 else "Repairing artifact code",
             (
-                "Choosing the file-building approach and generating Python for the sandbox."
+                f"Attempt {attempt + 1}/{max_attempts}: generating Python that builds the requested artifact in the sandbox."
                 if attempt == 0
-                else "Using the previous validation/runtime failure to improve the generated file."
+                else f"Attempt {attempt + 1}/{max_attempts}: using the previous runtime or validation failure to improve the generated file."
             ),
+            kind="script",
+            status="running",
+            phase="generate",
+            metadata={"attempt": attempt + 1, "max_attempts": max_attempts},
         )
 
         parts: list[str] = []
@@ -609,6 +710,10 @@ async def run(
         yield reasoning_event(
             "Running sandbox",
             "Executing the code in the locked-down offline sandbox and collecting output files.",
+            kind="tool",
+            status="running",
+            phase="execute",
+            metadata={"attempt": attempt + 1},
         )
 
         outcome = await asyncio.to_thread(sandbox.run_code, _guard(code))
@@ -617,6 +722,10 @@ async def run(
             yield reasoning_event(
                 "Validating output",
                 "Opening the generated files, checking requested formats, scanning for placeholders, and enforcing basic quality gates.",
+                kind="validation",
+                status="running",
+                phase="validate",
+                metadata={"attempt": attempt + 1},
             )
             # validation parses real Office/PDF/image files — do it off the event loop
             approval = await asyncio.to_thread(_approve_files, outcome.files, request)

@@ -309,10 +309,9 @@ no inline DB I/O in the orchestrator. That is "production-ready, not fragile."
 Tracks the enhanced v4 plan against the real codebase. Updated as features land.
 
 Implemented:
-- [x] Reasoning panel shows the model's REAL reasoning, streamed live (provider reasoning channel +
-      inline <think>), plus a trace line of what it actually did (web search, code run, files) and the
-      sources it used; it stays rolled-up after the answer instead of vanishing. (Raw reasoning is shown
-      by the user's choice; the childish "Loaded skills" step was removed.)
+- [x] Reasoning panel shows a clean public work trace (route, context, tool, validation, files, sources)
+      while hidden model scratchpad / provider reasoning is stripped from the visible stream. The panel
+      stays rolled-up after the answer instead of vanishing.
 - [x] Code interpreter: the model writes and runs Python in the hardened sandbox (```orrery-run);
       stdout + produced files come back and drive the answer.
 - [x] Universal web search: the model searches when it wants (```orrery-search) on ANY model/connection
@@ -321,6 +320,9 @@ Implemented:
 - [x] Deep Reasoning Mode selector (Quick/Standard/Deep/Max -> effort + file-repair budget).
 - [x] File generation prefers the sandbox -> an actual downloadable file shown as a rich card (thumbnail
       + Type/EXT/size + Preview/Download, "Download all" for multiple). Deterministic docgen is the fallback.
+- [x] Sandbox artifact generation now recognizes and validates HTML/web pages, audio, video/MP4/WebM,
+      WebP, Markdown, text, JSON, archives, documents, slides, sheets, images, and WAV/MP3-style outputs;
+      audio/video/html can be previewed directly from generated file cards.
 - [x] Project workspaces: per-project files -> RAG, project-scoped chats, trusted project context.
 - [x] stream_reply split into route handlers + dispatcher tests; route telemetry (sanitized).
 - [x] Chat stream event shapes centralized in `backend.features.events`, preserving the current UI wire format.

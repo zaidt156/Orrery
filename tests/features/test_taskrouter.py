@@ -31,11 +31,20 @@ def test_routes_standalone_image_to_svg_artifact():
     assert "image" in plan.skills
 
 
-def test_routes_voice_without_file_to_audio_status():
+def test_routes_voice_to_sandbox_file_generation():
     plan = taskrouter.plan("Create a voice narration for this introduction")
 
-    assert plan.route == "audio"
-    assert plan.unavailable_reason
+    assert plan.route == "file"
+    assert plan.output_mode == "file"
+    assert plan.uses_sandbox
+
+
+def test_routes_video_to_sandbox_file_generation():
+    plan = taskrouter.plan("Create a short MP4 video animation for a product launch")
+
+    assert plan.route == "file"
+    assert plan.output_mode == "file"
+    assert plan.uses_sandbox
 
 
 def test_routes_project_workspace_requests():

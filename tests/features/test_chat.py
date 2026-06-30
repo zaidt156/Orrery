@@ -310,7 +310,7 @@ async def test_stream_reply_dispatches_project_create_route(monkeypatch):
 
 
 @pytest.mark.anyio
-async def test_stream_reply_dispatches_audio_unavailable_route(monkeypatch):
+async def test_stream_reply_dispatches_audio_to_file_route(monkeypatch):
     calls = []
 
     async def fake_prepare_turn(*args, **kwargs):
@@ -322,15 +322,17 @@ async def test_stream_reply_dispatches_audio_unavailable_route(monkeypatch):
     async def fake_record_plan(*args, **kwargs):
         return "route-1"
 
-    async def fake_route_audio_unavailable(*args, **kwargs):
-        calls.append(args[2])
-        yield {"delta": args[2]}
+    async def fake_route_file(*args, **kwargs):
+        calls.append("file")
+        state = args[-1]
+        state.handled = True
+        yield {"files": [{"kind": "file", "name": "narration.wav"}]}
         yield {"done": True}
 
     monkeypatch.setattr(chat, "_prepare_turn", fake_prepare_turn)
     monkeypatch.setattr(chat.project_store, "trusted_context", fake_trusted_context)
     monkeypatch.setattr(chat.route_telemetry, "record_plan", fake_record_plan)
-    monkeypatch.setattr(chat, "_route_audio_unavailable", fake_route_audio_unavailable)
+    monkeypatch.setattr(chat, "_route_file", fake_route_file)
 
     events = [
         event
@@ -340,8 +342,8 @@ async def test_stream_reply_dispatches_audio_unavailable_route(monkeypatch):
         )
     ]
 
-    assert calls and "Voice playback" in calls[0]
-    assert {"delta": calls[0]} in events
+    assert calls == ["file"]
+    assert {"files": [{"kind": "file", "name": "narration.wav"}]} in events
     assert events[-1] == {"done": True}
 
 
