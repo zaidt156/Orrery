@@ -11,9 +11,10 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from pathlib import Path
 
-_SKILLS_DIR = Path(__file__).resolve().parent.parent.parent / "skills"
+from backend.core.paths import resource_path
+
+_SKILLS_DIR = resource_path("skills")
 _cache: list["Skill"] | None = None
 
 

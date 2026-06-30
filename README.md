@@ -71,9 +71,8 @@ When a release is published, download the Windows package from the
 [GitHub Releases page](https://github.com/zaidt156/Orrery/releases):
 
 - `Orrery-Windows.zip`: recommended package with `Orrery.exe`, database compose file, sandbox
-  Dockerfile, and Windows notes.
-- `Orrery.exe`: standalone executable for users who already have PostgreSQL and the sandbox image
-  configured.
+  Dockerfile, `run-orrery.bat`, Windows notes, and the required PyInstaller `_internal` runtime
+  folder.
 
 The first public builds are preview builds. If a release asset is not attached yet, run Orrery from
 source using the steps below or ask a maintainer to publish a tagged release.
@@ -97,19 +96,17 @@ Install these before running the released `.exe`:
 From the extracted `Orrery-Windows.zip` folder:
 
 ```powershell
-# Start the included local PostgreSQL + pgvector database.
-copy .env.example .env
-docker compose up -d
-
-# Build the sandbox image used for model-written code and rich file generation.
-docker build -t orrery-sandbox:latest sandbox
-
-# Start the app.
-.\Orrery.exe
+# First-run launcher: copies .env.example, starts Docker Compose,
+# builds the sandbox image, then starts Orrery.
+.\run-orrery.bat
 ```
 
-On first launch, if no database URL is saved in the Windows keychain, Orrery asks for a PostgreSQL
-connection string. For the included Docker database, use:
+Do not copy `Orrery.exe` out by itself. The Windows build is a PyInstaller `onedir` app and requires
+the `_internal` folder beside the executable. If you run the executable directly from PowerShell, use
+`.\Orrery.exe`; PowerShell does not run current-folder programs by name only.
+
+On first launch, if no database URL is saved in the Windows keychain and `.env` is not present,
+Orrery asks for a PostgreSQL connection string. For the included Docker database, use:
 
 ```text
 postgresql+psycopg://orrery:orrery_dev_password@127.0.0.1:5432/orrery
@@ -255,16 +252,23 @@ git tag v0.1.0
 git push origin v0.1.0
 ```
 
-3. The `Build Windows Release` workflow builds:
+3. The `Build Windows Release` workflow builds and publishes `Orrery-Windows.zip`.
 
-- `Orrery.exe`
-- `Orrery-Windows.zip`
-
-4. On version tags, the workflow attaches both files to the GitHub Release automatically.
+4. On version tags, the workflow attaches the zip to the GitHub Release automatically.
 
 You can also run the workflow manually from `Actions -> Build Windows Release`. Manual runs upload
-the files as workflow artifacts but do not create a public release unless the run is from a version
+the zip as a workflow artifact but do not create a public release unless the run is from a version
 tag.
+
+To reproduce the same package locally on Windows:
+
+```powershell
+.\scripts\build-windows-onedir.ps1
+```
+
+The script validates that `Orrery.exe`, `_internal\python312.dll`, the built UI, bundled skills,
+Docker compose file, sandbox Dockerfile, launcher, and Windows notes are all present before creating
+`release\Orrery-Windows.zip`. Do not publish `dist\Orrery\Orrery.exe` by itself.
 
 ## Test And Verify
 

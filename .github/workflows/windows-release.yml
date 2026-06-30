@@ -32,22 +32,34 @@ jobs:
           cache-dependency-path: ui/package-lock.json
 
       - name: Build frontend
+        shell: pwsh
         working-directory: ui
         run: |
+          $ErrorActionPreference = "Stop"
           npm ci
+          if ($LASTEXITCODE -ne 0) { throw "npm ci failed with exit code $LASTEXITCODE" }
           npm run build
+          if ($LASTEXITCODE -ne 0) { throw "npm run build failed with exit code $LASTEXITCODE" }
 
       - name: Install Python dependencies
+        shell: pwsh
         run: |
+          $ErrorActionPreference = "Stop"
           python -m pip install --upgrade pip
+          if ($LASTEXITCODE -ne 0) { throw "pip upgrade failed with exit code $LASTEXITCODE" }
           pip install -r requirements.txt
+          if ($LASTEXITCODE -ne 0) { throw "requirements install failed with exit code $LASTEXITCODE" }
           pip install pyinstaller
+          if ($LASTEXITCODE -ne 0) { throw "pyinstaller install failed with exit code $LASTEXITCODE" }
 
       - name: Build Orrery.exe
+        shell: pwsh
         run: |
+          $ErrorActionPreference = "Stop"
           pyinstaller `
             --noconfirm `
             --clean `
+            --onedir `
             --name Orrery `
             --console `
             --icon assets\desktop\orrery.ico `
@@ -60,17 +72,112 @@ jobs:
             --collect-all fastembed `
             --collect-all webview `
             --collect-submodules keyring.backends `
-            --hidden-import win32timezone `
             app.py
+          if ($LASTEXITCODE -ne 0) { throw "PyInstaller failed with exit code $LASTEXITCODE" }
 
       - name: Create release package
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force release\Orrery-Windows\sandbox | Out-Null
-          Copy-Item dist\Orrery\Orrery.exe release\Orrery-Windows\Orrery.exe
-          Copy-Item docker-compose.yml release\Orrery-Windows\docker-compose.yml
-          Copy-Item .env.example release\Orrery-Windows\.env.example
-          Copy-Item sandbox\Dockerfile release\Orrery-Windows\sandbox\Dockerfile
+          $ErrorActionPreference = "Stop"
+          $distRoot = "dist\Orrery"
+          $releaseRoot = "release\Orrery-Windows"
+
+          $requiredDist = @(
+            "$distRoot\Orrery.exe",
+            "$distRoot\_internal",
+            "$distRoot\_internal\python312.dll",
+            "$distRoot\_internal\ui\dist",
+            "$distRoot\_internal\skills",
+            "$distRoot\_internal\assets"
+          )
+          foreach ($path in $requiredDist) {
+            if (-not (Test-Path $path)) {
+              throw "PyInstaller output is incomplete. Missing: $path"
+            }
+          }
+
+          New-Item -ItemType Directory -Force $releaseRoot | Out-Null
+          Copy-Item "$distRoot\*" $releaseRoot -Recurse -Force
+          New-Item -ItemType Directory -Force "$releaseRoot\sandbox" | Out-Null
+          Copy-Item docker-compose.yml "$releaseRoot\docker-compose.yml" -Force
+          Copy-Item .env.example "$releaseRoot\.env.example" -Force
+          Copy-Item sandbox\Dockerfile "$releaseRoot\sandbox\Dockerfile" -Force
+
+          @'
+          @echo off
+          setlocal
+          cd /d "%~dp0"
+
+          echo Orrery Windows Preview
+          echo ======================
+          echo.
+
+          if not exist "Orrery.exe" (
+            echo Missing Orrery.exe. Extract the full Orrery-Windows.zip package and try again.
+            pause
+            exit /b 1
+          )
+
+          if not exist "_internal\python312.dll" (
+            echo Missing _internal\python312.dll.
+            echo This package is incomplete. Download Orrery-Windows.zip again and extract the full folder.
+            pause
+            exit /b 1
+          )
+
+          if not exist ".env" (
+            if exist ".env.example" (
+              copy ".env.example" ".env" >nul
+            )
+          )
+
+          where docker >nul 2>nul
+          if errorlevel 1 (
+            echo Docker was not found in PATH.
+            echo Start PostgreSQL with pgvector yourself, or install Docker Desktop and run this launcher again.
+            echo.
+          ) else (
+            echo Starting included PostgreSQL database...
+            docker compose up -d
+            if errorlevel 1 goto setup_failed
+
+            echo Checking PostgreSQL readiness...
+            set PG_READY=0
+            for /l %%i in (1,1,30) do (
+              docker exec orrery-postgres pg_isready -U orrery -d orrery >nul 2>nul
+              if not errorlevel 1 (
+                set PG_READY=1
+                goto postgres_ready
+              )
+              timeout /t 2 /nobreak >nul
+            )
+            :postgres_ready
+            if not "%PG_READY%"=="1" goto setup_failed
+
+            echo Building sandbox image for file generation...
+            docker build -t orrery-sandbox:latest sandbox
+            if errorlevel 1 goto setup_failed
+            echo.
+          )
+
+          echo Starting Orrery...
+          echo.
+          ".\Orrery.exe"
+          set EXITCODE=%ERRORLEVEL%
+          if not "%EXITCODE%"=="0" (
+            echo.
+            echo Orrery exited with code %EXITCODE%.
+            echo If you started this by double-clicking, run run-orrery.bat from PowerShell to keep the full log visible.
+            pause
+          )
+          exit /b %EXITCODE%
+
+          :setup_failed
+          echo.
+          echo Setup failed. Check Docker Desktop, then run run-orrery.bat again.
+          pause
+          exit /b 1
+          '@ | Set-Content "$releaseRoot\run-orrery.bat" -Encoding ascii
 
           @'
           Orrery Windows Preview
@@ -83,35 +190,48 @@ jobs:
           - PostgreSQL with pgvector, either your own server or the included docker-compose.yml
 
           Quick start:
-          1. Copy .env.example to .env.
-          2. Run: docker compose up -d
-          3. Run: docker build -t orrery-sandbox:latest sandbox
-          4. Run: Orrery.exe
-          5. If prompted for a database URL, use:
+          1. Extract the full Orrery-Windows.zip folder. Do not copy only Orrery.exe.
+          2. Double-click run-orrery.bat, or run this from PowerShell:
+             .\run-orrery.bat
+          3. If prompted for a database URL, use:
              postgresql+psycopg://orrery:orrery_dev_password@127.0.0.1:5432/orrery
 
           Notes:
+          - Orrery.exe is a PyInstaller onedir executable. It requires the _internal folder beside it.
+          - In PowerShell, run .\Orrery.exe or .\run-orrery.bat. PowerShell does not run current-folder programs by name only.
+          - run-orrery.bat copies .env.example to .env on first run, starts Docker Compose, builds the sandbox image, then launches Orrery.
           - API keys and database URLs are stored in the Windows keychain.
           - Orrery binds its API to localhost and uses a per-session token.
           - The preview executable uses a console window so first-run database prompts and startup
             errors are visible.
           '@ | Set-Content release\Orrery-Windows\README-WINDOWS.txt -Encoding utf8
 
-          Compress-Archive -Path release\Orrery-Windows\* -DestinationPath release\Orrery-Windows.zip -Force
-          Copy-Item release\Orrery-Windows\Orrery.exe release\Orrery.exe
+          $requiredRelease = @(
+            "$releaseRoot\Orrery.exe",
+            "$releaseRoot\_internal\python312.dll",
+            "$releaseRoot\_internal\ui\dist",
+            "$releaseRoot\docker-compose.yml",
+            "$releaseRoot\.env.example",
+            "$releaseRoot\sandbox\Dockerfile",
+            "$releaseRoot\run-orrery.bat",
+            "$releaseRoot\README-WINDOWS.txt"
+          )
+          foreach ($path in $requiredRelease) {
+            if (-not (Test-Path $path)) {
+              throw "Release package is incomplete. Missing: $path"
+            }
+          }
+
+          Compress-Archive -Path $releaseRoot -DestinationPath release\Orrery-Windows.zip -Force
 
       - name: Upload workflow artifacts
         uses: actions/upload-artifact@v4
         with:
           name: Orrery-Windows
-          path: |
-            release/Orrery.exe
-            release/Orrery-Windows.zip
+          path: release/Orrery-Windows.zip
 
       - name: Attach files to GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            release/Orrery.exe
-            release/Orrery-Windows.zip
+          files: release/Orrery-Windows.zip

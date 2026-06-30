@@ -12,13 +12,13 @@ import logging
 import re
 import time
 import uuid
-from pathlib import Path
 
 from backend.core.config import settings
+from backend.core.paths import runtime_path
 
 log = logging.getLogger("orrery.files")
 
-_DIR = Path(__file__).resolve().parent.parent.parent / "tmp" / "generated"
+_DIR = runtime_path("tmp", "generated")
 _SAFE = re.compile(r"[^A-Za-z0-9._-]+")
 MAX_FILE_BYTES = 25_000_000
 

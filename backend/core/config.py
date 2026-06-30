@@ -1,15 +1,15 @@
 from __future__ import annotations
 
-import pathlib
-
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-PROJECT_ROOT = pathlib.Path(__file__).resolve().parents[2]
+from backend.core import paths
+
+PROJECT_ROOT = paths.project_root()
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=str(PROJECT_ROOT / ".env"),
+        env_file=str(paths.runtime_path(".env")),
         env_file_encoding="utf-8",
         extra="ignore",
     )

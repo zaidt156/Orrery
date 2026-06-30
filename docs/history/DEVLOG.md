@@ -1095,3 +1095,24 @@ docgen -> plain-reply fallback chain.
   running the sandbox, validating output, repair attempts, files, and done.
 
 Next: structured input/workspace/output directories plus explicit manifest capture for every sandbox run.
+
+
+## Step 85 - Windows release package fixed (July 1, 2026)
+
+- Fixed the Windows release packaging bug that uploaded only `Orrery.exe` from a PyInstaller onedir
+  build. That exe needs the bundled `_internal` folder beside it, including `python312.dll`, so the old
+  GitHub asset could not start after download.
+- The GitHub release workflow now builds an explicit onedir package, copies the full `dist/Orrery`
+  folder into `Orrery-Windows`, validates the Python runtime, bundled UI, bundled skills, assets,
+  Docker compose file, sandbox Dockerfile, launcher, and Windows notes, then publishes only
+  `Orrery-Windows.zip`.
+- Added `run-orrery.bat` to the release package so Windows users can start the included PostgreSQL
+  service, build the sandbox image, and launch the app from one entry point. The docs now warn not to
+  copy or publish the executable by itself.
+- Added a local `scripts/build-windows-onedir.ps1` builder that reproduces the GitHub package and
+  performs the same completeness checks before creating `release/Orrery-Windows.zip`.
+- Packaged resource paths now understand the difference between bundled read-only files and writable
+  runtime files, so the frozen app can find its UI, skills, model manifest, icon, `.env`, WebView data,
+  and generated-file directory in the right places.
+- Test discovery now ignores generated `build`, `dist`, and `release` folders so bundled third-party
+  tests inside local release packages do not pollute the Orrery test suite.

@@ -6,7 +6,6 @@ import logging
 import secrets as pysecrets
 import sys
 import threading
-from pathlib import Path
 
 import uvicorn
 import webview
@@ -17,6 +16,7 @@ if sys.platform == "win32":
 
 from backend.core import database
 from backend.core.config import settings
+from backend.core.paths import resource_path, runtime_path
 from backend.security.secrets import redact_url
 
 from backend.core.observability import install as _install_logging
@@ -26,8 +26,8 @@ log = logging.getLogger("orrery")
 
 # fresh per-session token so other local processes can't drive the API
 SESSION_TOKEN = pysecrets.token_urlsafe(32)
-APP_ICON = Path(__file__).resolve().parent / "assets" / "desktop" / "orrery.ico"
-WEBVIEW_DATA_DIR = Path(__file__).resolve().parent / "tmp" / "webview2"
+APP_ICON = resource_path("assets", "desktop", "orrery.ico")
+WEBVIEW_DATA_DIR = runtime_path("tmp", "webview2")
 
 _ready = threading.Event()
 _boot_error: list[BaseException] = []

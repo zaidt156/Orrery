@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import pathlib
 import asyncio
 import hmac
 from typing import Literal
@@ -15,12 +14,13 @@ from pydantic import BaseModel, Field, field_validator
 from backend.core import appconfig, database
 from backend.core.config import settings
 from backend.core.observability import new_request_id
+from backend.core.paths import resource_path
 from backend.features import admin, artifacts, chat, data, exports, feedback, filepreview, local_models, mcp, projects, rag, route_telemetry, skills, team, usage
 from backend.features import files as file_library
 from backend.providers import accounts, ai, catalog
 from backend.security import secrets
 
-_UI_DIST = pathlib.Path(__file__).resolve().parent.parent / "ui" / "dist"
+_UI_DIST = resource_path("ui", "dist")
 
 
 class _FreshHtmlStatic(StaticFiles):

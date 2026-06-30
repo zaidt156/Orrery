@@ -10,6 +10,8 @@ ENV/
 *.egg-info/
 build/
 dist/
+release/
+*.spec
 *.whl
 
 # Python tooling and test output

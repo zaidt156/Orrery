@@ -9,11 +9,12 @@ from __future__ import annotations
 
 import json
 import logging
-import pathlib
+
+from backend.core.paths import resource_path
 
 log = logging.getLogger("orrery.manifest")
 
-_MANIFEST_PATH = pathlib.Path(__file__).with_name("model_manifest.json")
+_MANIFEST_PATH = resource_path("backend", "providers", "model_manifest.json")
 
 DEFAULT_MANIFEST: dict = {
     "claude_plan": {
