@@ -18,7 +18,7 @@ from backend.core.config import settings
 from backend.core.database import get_sessionmaker
 from backend.core.observability import log_event
 from backend.core.models import Conversation, Message, Project
-from backend.features import admin, code_images, code_interpreter, docgen, filegen, mcp, rag, reasoning, research, route_telemetry, sandbox, skills, taskbrain, taskrouter, team
+from backend.features import admin, code_images, code_interpreter, docgen, events as stream_events, filegen, mcp, rag, reasoning, research, route_telemetry, sandbox, skills, taskbrain, taskrouter, team
 from backend.features import projects as project_store
 from backend.features import files as file_library
 from backend.features.prompting import CODE_INTERPRETER_PROMPT, FORMAT_INSTRUCTIONS, build_system_prompt, strip_think as _strip_think
@@ -27,7 +27,7 @@ from backend.features.chat_context import (
     _effective_context_window, _history_text, _latest_user_text, _limit_messages,
     _message_artifacts, _title_from, _wants_high_effort,
 )
-from backend.features.reasoning_trace import ReasoningTrace, ThinkStream, reasoning_event
+from backend.features.reasoning_trace import ReasoningTrace, ThinkStream
 from backend.providers import ai
 from backend.security import privacy
 
@@ -279,38 +279,38 @@ async def _generate(
                 yield ev
             if answer:
                 parts.append(answer)
-                yield {"delta": answer}
+                yield stream_events.delta(answer)
         tail, events = think.finish()
         for ev in events:
             yield ev
         if tail:
             parts.append(tail)
-            yield {"delta": tail}
+            yield stream_events.delta(tail)
     except ai.MissingKeyError as exc:
-        yield {"error": f"No API key for {exc.provider}. Add it in Settings."}
+        yield stream_events.missing_key(exc.provider)
         return
     except Exception as exc:  # noqa: BLE001 — already sanitized by ai.stream_chat
         log_event(_log, "chat_generate_failed", model=model, error=type(exc).__name__)
-        yield {"error": str(exc)}
+        yield stream_events.error(str(exc))
         return
     finally:
         if parts:  # runs on normal completion AND on client-cancel (GeneratorExit)
             message_id = await _persist_assistant(cid, _strip_think("".join(parts)), model)
     if message_id:
-        yield {"message_id": message_id}
+        yield stream_events.message_id(message_id)
     if usage_out.get("tokens_out") or usage_out.get("tokens_in"):
         # exact per-message token count (API/custom routes report it); the UI shows a live
         # estimate during streaming and replaces it with this exact count on completion
-        yield {"message_usage": {
-            "in": usage_out.get("tokens_in") or 0,
-            "out": usage_out.get("tokens_out") or 0,
-            "pricing_known": usage_out.get("pricing_known", True),
-        }}
+        yield stream_events.message_usage(
+            usage_out.get("tokens_in"),
+            usage_out.get("tokens_out"),
+            usage_out.get("pricing_known", True),
+        )
     if usage_out.get("cost") is not None and (usage_out.get("tokens_out") or usage_out.get("tokens_in")):
         from backend.features import usage as usage_mod
         await usage_mod.record(usage_out["provider"], usage_out["model"], usage_out["tokens_in"], usage_out["tokens_out"], usage_out["cost"])
-        yield {"usage": await usage_mod.summary()}  # live meter update
-    yield {"done": True}
+        yield stream_events.usage(await usage_mod.summary())  # live meter update
+    yield stream_events.done()
 
 
 async def _rag_context(model: str, collection_id: str, query: str) -> tuple[str | None, list[str]]:
@@ -378,7 +378,7 @@ async def _deliver_docspec(
 ) -> AsyncIterator[dict]:
     """Reliable fallback when code-execution misses: ask for a structured spec, then build the
     file deterministically with docgen and deliver it. Yields nothing if no spec comes back."""
-    yield {"status": "Creating the file structure…"}
+    yield stream_events.status("Creating the file structure…")
     instructions = build_system_prompt(
         app_rules=FORMAT_INSTRUCTIONS,
         user_preferences=system_prompt,
@@ -422,10 +422,10 @@ async def _deliver_docspec(
     idx = content.lower().find("```orrery-doc")
     summary = (content[:idx] if idx >= 0 else content).strip()[:300] or "Here is your file."
     message_id = await _persist_assistant(cid, summary, model, produced)
-    yield {"delta": summary}
-    yield {"files": produced}
-    yield {"message_id": message_id}
-    yield {"done": True}
+    yield stream_events.delta(summary)
+    yield stream_events.files(produced)
+    yield stream_events.message_id(message_id)
+    yield stream_events.done()
 
 
 # --- detached runs: keep generating + persisting even if the client navigates away ---
@@ -460,7 +460,7 @@ def start_detached(conv_id: str, source: AsyncIterator[dict]) -> asyncio.Queue:
             raise
         except Exception as exc:  # noqa: BLE001 — surface a sanitized error
             status = "failed"
-            queue.put_nowait({"error": str(exc)})
+            queue.put_nowait(stream_events.error(str(exc)))
         finally:
             queue.put_nowait(_RUN_DONE)
             if _run_queues.get(conv_id) is queue:
@@ -493,12 +493,12 @@ async def resume(conv_id: str) -> AsyncIterator[dict]:
     running, signal done immediately so the client just reloads the (saved) conversation."""
     queue = _run_queues.get(conv_id)
     if queue is None:
-        yield {"done": True}
+        yield stream_events.done()
         return
-    yield {"resumed": True}
+    yield stream_events.resumed()
     async for event in observe(queue):
         yield event
-    yield {"done": True}
+    yield stream_events.done()
 
 
 def cancel_run(conv_id: str) -> None:
@@ -729,13 +729,13 @@ async def _route_project_create(
     await project_store.set_conversation_project(str(cid), project["id"])
     message = f"Created project **{project['name']}** and attached this chat to it."
     message_id = await _persist_assistant(cid, message, model)
-    yield {"project": project}
-    yield {"delta": message}
+    yield stream_events.project(project)
+    yield stream_events.delta(message)
     if message_id:
-        yield {"message_id": message_id}
+        yield stream_events.message_id(message_id)
     yield trace.done("Created the project and attached this chat to it.")
     yield trace.summary()
-    yield {"done": True}
+    yield stream_events.done()
     await route_telemetry.record_outcome(route_event_id, "completed")
 
 
@@ -749,11 +749,11 @@ async def _route_audio_unavailable(
     """Return a clear status when voice/audio providers are not configured."""
     message_id = await _persist_assistant(cid, message, model)
     yield trace.warning("Audio route unavailable", "Voice playback/transcription providers are not configured yet.")
-    yield {"delta": message}
+    yield stream_events.delta(message)
     if message_id:
-        yield {"message_id": message_id}
+        yield stream_events.message_id(message_id)
     yield trace.summary()
-    yield {"done": True}
+    yield stream_events.done()
     await route_telemetry.record_outcome(route_event_id, "unavailable", "voice provider not configured")
 
 
@@ -800,12 +800,12 @@ async def _route_file(
             if produced:
                 summary = result.get("summary") or "Here is your file."
                 message_id = await _persist_assistant(cid, summary, model, produced)
-                yield {"delta": summary}
-                yield {"files": produced}
-                yield {"message_id": message_id}
+                yield stream_events.delta(summary)
+                yield stream_events.files(produced)
+                yield stream_events.message_id(message_id)
                 yield trace.done("Generated, validated, stored, and attached the requested file output.")
                 yield trace.summary()
-                yield {"done": True}
+                yield stream_events.done()
                 await route_telemetry.record_outcome(route_event_id, "sandbox_success")
                 state.handled = True
                 state.outcome = "sandbox_success"
@@ -843,7 +843,7 @@ async def _route_file(
         "File route fallback",
         "The file builder could not produce an approved artifact, so Orrery will answer in normal chat instead.",
     )
-    yield {"status": ""}
+    yield stream_events.status("")
 
 
 async def _route_model_reply(
@@ -925,14 +925,14 @@ async def stream_reply(
 
     turn = await _prepare_turn(cid, user_content, attachments)
     if turn is None:
-        yield {"error": "Conversation not found."}
+        yield stream_events.error("Conversation not found.")
         return
     model, system_prompt, effort = turn.model, turn.system_prompt, turn.effort
     project_id = turn.project_id
     context_window = turn.context_window
     messages = turn.messages
 
-    yield {"title": turn.title}
+    yield stream_events.title(turn.title)
 
     flags = await admin.get_flags()  # admin feature toggles (gate capabilities globally)
 
@@ -993,7 +993,7 @@ async def stream_reply(
         block, sources = await _gather_rag(model, rag_collections, user_content)
         if block:
             rag_context = block
-            yield {"sources": sources}
+            yield stream_events.sources(sources)
             yield trace.step(
                 "Searching your files",
                 f"Loaded {len(sources)} passage(s) from your files, project, and connected knowledge.",
@@ -1045,7 +1045,7 @@ async def _deliver_code_image(
     effort: str | None,
 ) -> AsyncIterator[dict]:
     """Generate, persist, and stream a sanitized SVG artifact (with the model's live reasoning)."""
-    yield {"status": "Rendering a safe SVG image..."}
+    yield stream_events.status("Rendering a safe SVG image...")
     svg = None
     try:
         async for ev in code_images.generate_svg(model, user_content, system_prompt, filegen.quality_effort(model, effort)):
@@ -1054,14 +1054,14 @@ async def _deliver_code_image(
             else:
                 yield ev  # reasoning_delta — the model's live thinking
     except ai.MissingKeyError as exc:
-        yield {"error": f"No API key for {exc.provider}. Add it in Settings."}
+        yield stream_events.missing_key(exc.provider)
         return
     except Exception as exc:  # noqa: BLE001 - provider errors are sanitized upstream
-        yield {"error": str(exc)}
+        yield stream_events.error(str(exc))
         return
 
     if not svg:
-        yield {"error": "Could not generate the image."}
+        yield stream_events.error("Could not generate the image.")
         return
 
     artifact = {
@@ -1072,10 +1072,10 @@ async def _deliver_code_image(
     }
     message = "Created a code-rendered SVG image from your prompt."
     message_id = await _persist_assistant(cid, message, model, [artifact])
-    yield {"artifact": artifact}
-    yield {"delta": message}
-    yield {"message_id": message_id}
-    yield {"done": True}
+    yield stream_events.artifact(artifact)
+    yield stream_events.delta(message)
+    yield stream_events.message_id(message_id)
+    yield stream_events.done()
 
 
 async def stream_code_image(conv_id: str, user_content: str) -> AsyncIterator[dict]:
@@ -1085,10 +1085,10 @@ async def stream_code_image(conv_id: str, user_content: str) -> AsyncIterator[di
     async with get_sessionmaker()() as s:
         conv = await s.get(Conversation, cid)
         if conv is None:
-            yield {"error": "Conversation not found."}
+            yield stream_events.error("Conversation not found.")
             return
         if not _owned_by(conv, owner):
-            yield {"error": "Conversation not found."}
+            yield stream_events.error("Conversation not found.")
             return
         model, system_prompt, effort = conv.model, conv.system_prompt, conv.effort
         history = (
@@ -1107,7 +1107,7 @@ async def stream_code_image(conv_id: str, user_content: str) -> AsyncIterator[di
         new_title = conv.title
         await s.commit()
 
-    yield {"title": new_title}
+    yield stream_events.title(new_title)
     async for ev in _deliver_code_image(cid, model, user_content, system_prompt, effort):
         yield ev
 
@@ -1120,10 +1120,10 @@ async def regenerate(conv_id: str) -> AsyncIterator[dict]:
     async with get_sessionmaker()() as s:
         conv = await s.get(Conversation, cid)
         if conv is None:
-            yield {"error": "Conversation not found."}
+            yield stream_events.error("Conversation not found.")
             return
         if not _owned_by(conv, owner):
-            yield {"error": "Conversation not found."}
+            yield stream_events.error("Conversation not found.")
             return
         model, system_prompt, effort = conv.model, conv.system_prompt, conv.effort
         project_id = conv.project_id
@@ -1141,7 +1141,7 @@ async def regenerate(conv_id: str) -> AsyncIterator[dict]:
         await s.commit()
 
         if not history or history[-1].role != "user":
-            yield {"error": "Nothing to regenerate."}
+            yield stream_events.error("Nothing to regenerate.")
             return
         messages = [{"role": m.role, "content": m.context or m.content} for m in history]
 

@@ -1058,3 +1058,19 @@ and the approval queue).
   preflight or re-check ownership before touching private data.
 - Added regression tests for locked team clients, cross-owner conversation access, cross-owner project
   attachment, and the API permission response. Verified the full test suite: 176 passed.
+
+
+## Step 83 - Stream event protocol cleanup (June 30, 2026)
+
+- Centralized chat/SSE event construction in `backend.features.events` so `delta`, `status`, `error`,
+  `done`, `files`, `sources`, `message_id`, usage, project, artifact, SVG, result, and reasoning-delta
+  payloads come from one explicit helper instead of scattered raw dictionaries.
+- Kept the existing wire format exactly the same for the UI: events still use the current top-level
+  keys, so this is a protocol hardening change, not a frontend-breaking migration.
+- Moved the main chat generator, detached resume/error path, research, code interpreter, file generation,
+  SVG generation, and reasoning delta streams onto the shared helpers. Added tests that lock the helper
+  shapes plus dispatcher coverage for missing conversations, resume-without-run, and detached stream
+  generator errors. Verified the full suite: 181 passed.
+
+Next: finish the remaining dispatcher hardening by covering cancellation and the full sandbox miss ->
+docgen -> plain-reply fallback chain.

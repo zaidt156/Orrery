@@ -24,6 +24,8 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
+from backend.features import events as stream_events
+
 _THINK_OPEN = "<think>"
 _THINK_CLOSE = "</think>"
 _MAX_TAG = max(len(_THINK_OPEN), len(_THINK_CLOSE))
@@ -283,7 +285,7 @@ class ThinkStream:
             return []
         self.stats.chunks += 1
         self.stats.chars += len(text)
-        return [{"reasoning_delta": text}]
+        return [stream_events.reasoning_delta(text)]
 
     def feed(self, delta: str) -> tuple[str, list[dict]]:
         """Return (answer_text_to_emit, reasoning_events). Inline <think> content is streamed as raw reasoning."""
@@ -321,7 +323,7 @@ class ThinkStream:
                 answer.append(self._buf[:start])
             self._buf = self._buf[start + len(_THINK_OPEN):]
             self._in_think = True
-        revents = [{"reasoning_delta": "".join(reasoning)}] if reasoning else []
+        revents = [stream_events.reasoning_delta("".join(reasoning))] if reasoning else []
         return "".join(answer), revents
 
     def finish(self) -> tuple[str, list[dict]]:
@@ -338,7 +340,7 @@ class ThinkStream:
             answer = self._buf
         self._buf = ""
         self._in_think = False
-        revents = [{"reasoning_delta": "".join(reasoning)}] if reasoning else []
+        revents = [stream_events.reasoning_delta("".join(reasoning))] if reasoning else []
         return answer, revents
 
 

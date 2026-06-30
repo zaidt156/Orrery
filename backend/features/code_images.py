@@ -5,6 +5,7 @@ import re
 import xml.etree.ElementTree as ET
 from collections.abc import AsyncIterator
 
+from backend.features import events as stream_events
 from backend.features.prompting import SVG_SYSTEM_PROMPT, _REASONING_DIRECTIVE
 from backend.features.reasoning_trace import ThinkStream
 from backend.providers import ai
@@ -360,9 +361,9 @@ Return only the SVG document.
             parts.append(tail)
 
         try:
-            yield {"svg": sanitize_svg("".join(parts), prompt=request)}
+            yield stream_events.svg(sanitize_svg("".join(parts), prompt=request))
             return
         except UnsafeSvgError as exc:
             last_error = exc
 
-    yield {"svg": fallback_svg(request or str(last_error or "Generated image"))}
+    yield stream_events.svg(fallback_svg(request or str(last_error or "Generated image")))

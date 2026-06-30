@@ -22,6 +22,7 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from pathlib import PurePosixPath
 
+from backend.features import events as stream_events
 from backend.features import reasoning, sandbox, skills
 from backend.features.prompting import FILE_SYSTEM_PROMPT, build_system_prompt
 from backend.features.reasoning_trace import ThinkStream, reasoning_event
@@ -533,7 +534,7 @@ async def run(
     """Yield progress events and a final {'result': {...}} with approved files or an error."""
     safety_error = _official_document_error(request)
     if safety_error:
-        yield {"result": {"ok": False, "error": safety_error}}
+        yield stream_events.result({"ok": False, "error": safety_error})
         return
 
     file_effort = quality_effort(model, effort)
@@ -549,13 +550,11 @@ async def run(
     max_attempts = reasoning.file_retries(effort)  # Quick=1 … Max=4 repair attempts
 
     for attempt in range(max_attempts):
-        yield {
-            "status": (
-                "Designing the document…"
-                if attempt == 0
-                else f"Fixing the generated file ({attempt + 1}/{max_attempts})…"
-            )
-        }
+        yield stream_events.status(
+            "Designing the document…"
+            if attempt == 0
+            else f"Fixing the generated file ({attempt + 1}/{max_attempts})…"
+        )
         yield reasoning_event(
             "Preparing generation" if attempt == 0 else "Repairing generation",
             (
@@ -584,10 +583,10 @@ async def run(
             if tail:
                 parts.append(tail)
         except ai.MissingKeyError as exc:
-            yield {"result": {"ok": False, "error": f"No API key for {exc.provider}. Add it in Settings."}}
+            yield stream_events.result({"ok": False, "error": f"No API key for {exc.provider}. Add it in Settings."})
             return
         except Exception as exc:  # noqa: BLE001 — provider errors already sanitized upstream
-            yield {"result": {"ok": False, "error": str(exc)}}
+            yield stream_events.result({"ok": False, "error": str(exc)})
             return
 
         reply = "".join(parts)
@@ -606,7 +605,7 @@ async def run(
             ]
             continue
 
-        yield {"status": "Building the file…"}
+        yield stream_events.status("Building the file…")
         yield reasoning_event(
             "Running sandbox",
             "Executing the code in the locked-down offline sandbox and collecting output files.",
@@ -614,7 +613,7 @@ async def run(
 
         outcome = await asyncio.to_thread(sandbox.run_code, _guard(code))
         if outcome.ok and outcome.files:
-            yield {"status": "Checking the output…"}
+            yield stream_events.status("Checking the output…")
             yield reasoning_event(
                 "Validating output",
                 "Opening the generated files, checking requested formats, scanning for placeholders, and enforcing basic quality gates.",
@@ -622,15 +621,13 @@ async def run(
             # validation parses real Office/PDF/image files — do it off the event loop
             approval = await asyncio.to_thread(_approve_files, outcome.files, request)
             if approval.ok:
-                yield {
-                    "result": {
-                        "ok": True,
-                        "files": approval.files,
-                        "code": code,
-                        "summary": _summary(approval.files),
-                        "manifest": approval.manifest,
-                    }
-                }
+                yield stream_events.result({
+                    "ok": True,
+                    "files": approval.files,
+                    "code": code,
+                    "summary": _summary(approval.files),
+                    "manifest": approval.manifest,
+                })
                 return
 
             last_error = approval.reason
@@ -664,10 +661,8 @@ async def run(
             },
         ]
 
-    yield {
-        "result": {
-            "ok": False,
-            "error": "I couldn't build a production-quality file after several attempts.",
-            "logs": last_error,
-        }
-    }
+    yield stream_events.result({
+        "ok": False,
+        "error": "I couldn't build a production-quality file after several attempts.",
+        "logs": last_error,
+    })

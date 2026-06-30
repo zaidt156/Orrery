@@ -20,6 +20,7 @@ import json
 import mimetypes
 from collections.abc import AsyncIterator, Awaitable, Callable
 
+from backend.features import events as stream_events
 from backend.features import files as file_library
 from backend.features import mcp, sandbox, websearch
 from backend.features.prompting import strip_think
@@ -188,7 +189,7 @@ async def run(
                 if visible:
                     iter_visible.append(visible)
                     visible_parts.append(visible)
-                    yield {"delta": visible}
+                    yield stream_events.delta(visible)
             tail, tail_revs = think.finish()
             for ev in tail_revs:
                 yield ev
@@ -198,13 +199,13 @@ async def run(
                 if visible:
                     iter_visible.append(visible)
                     visible_parts.append(visible)
-                    yield {"delta": visible}
+                    yield stream_events.delta(visible)
             tail_visible, tail_blocks = run_stream.finish()
             blocks.extend(tail_blocks)
             if tail_visible:
                 iter_visible.append(tail_visible)
                 visible_parts.append(tail_visible)
-                yield {"delta": tail_visible}
+                yield stream_events.delta(tail_visible)
             usage["in"] += usage_out.get("tokens_in") or 0
             usage["out"] += usage_out.get("tokens_out") or 0
             if usage_out.get("cost") is not None:
@@ -214,10 +215,10 @@ async def run(
                 usage["model"] = usage_out.get("model")
             usage["pricing_known"] = usage_out.get("pricing_known", usage["pricing_known"])
         except ai.MissingKeyError as exc:
-            yield {"error": f"No API key for {exc.provider}. Add it in Settings."}
+            yield stream_events.missing_key(exc.provider)
             return
         except Exception as exc:  # noqa: BLE001 — provider errors already sanitized upstream
-            yield {"error": str(exc)}
+            yield stream_events.error(str(exc))
             return
 
         actionable = [(k, b) for k, b in blocks if b.strip()]
@@ -242,7 +243,7 @@ async def run(
                 produced = _store_files(result)
                 if produced:
                     all_files.extend(produced)
-                    yield {"files": produced}
+                    yield stream_events.files(produced)
                 yield trace.step(
                     "Code finished" if result.ok else "Code run had issues",
                     f"exit {result.exit_code}, {len(produced)} file(s)" + (" — timed out" if result.timed_out else ""),
@@ -262,7 +263,7 @@ async def run(
                 results = await websearch.search(query) if query else []
                 urls = [r["url"] for r in results if r.get("url")][:8]
                 if urls:
-                    yield {"sources": urls}
+                    yield stream_events.sources(urls)
                 yield trace.step(
                     "Web results" if results else "No web results",
                     f"{len(results)} result(s) for: {query}",
@@ -289,11 +290,11 @@ async def run(
         final_text = "Here is the result." if all_files else "I wasn't able to produce an answer."
     message_id = await persist(final_text, all_files or None)
     if message_id:
-        yield {"message_id": message_id}
+        yield stream_events.message_id(message_id)
     if usage["in"] or usage["out"]:
-        yield {"message_usage": {"in": usage["in"], "out": usage["out"], "pricing_known": usage["pricing_known"]}}
+        yield stream_events.message_usage(usage["in"], usage["out"], usage["pricing_known"])
     if usage["have_cost"] and (usage["in"] or usage["out"]):
         from backend.features import usage as usage_mod
         await usage_mod.record(usage["provider"], usage["model"], usage["in"], usage["out"], usage["cost"])
-        yield {"usage": await usage_mod.summary()}
-    yield {"done": True}
+        yield stream_events.usage(await usage_mod.summary())
+    yield stream_events.done()

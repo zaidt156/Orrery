@@ -1,8 +1,9 @@
+import asyncio
 import uuid
 
 import pytest
 
-from backend.features import chat
+from backend.features import chat, events as stream_events
 
 
 def test_title_from():
@@ -342,3 +343,66 @@ async def test_stream_reply_dispatches_audio_unavailable_route(monkeypatch):
     assert calls and "Voice playback" in calls[0]
     assert {"delta": calls[0]} in events
     assert events[-1] == {"done": True}
+
+
+@pytest.mark.anyio
+async def test_stream_reply_missing_conversation_returns_error(monkeypatch):
+    async def fake_prepare_turn(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(chat, "_prepare_turn", fake_prepare_turn)
+
+    events = [
+        event
+        async for event in chat.stream_reply(
+            "00000000-0000-0000-0000-000000000001",
+            "hello",
+        )
+    ]
+
+    assert events == [stream_events.error("Conversation not found.")]
+
+
+@pytest.mark.anyio
+async def test_resume_without_running_task_signals_done():
+    events = [
+        event
+        async for event in chat.resume("00000000-0000-0000-0000-0000000000ff")
+    ]
+
+    assert events == [stream_events.done()]
+
+
+@pytest.mark.anyio
+async def test_detached_run_surfaces_generator_errors(monkeypatch):
+    statuses = []
+
+    async def fake_conv_title(*args, **kwargs):
+        return "Test chat"
+
+    async def fake_start(*args, **kwargs):
+        return "task-1"
+
+    async def fake_finish(task_id, status):
+        statuses.append((task_id, status))
+
+    async def broken_source():
+        yield stream_events.delta("before")
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(chat, "_conv_title", fake_conv_title)
+    monkeypatch.setattr(chat.taskbrain, "start", fake_start)
+    monkeypatch.setattr(chat.taskbrain, "finish", fake_finish)
+
+    queue = chat.start_detached(
+        "00000000-0000-0000-0000-0000000000ee",
+        broken_source(),
+    )
+    events = [event async for event in chat.observe(queue)]
+    for _ in range(10):
+        if statuses:
+            break
+        await asyncio.sleep(0)
+
+    assert events == [stream_events.delta("before"), stream_events.error("boom")]
+    assert statuses == [("task-1", "failed")]

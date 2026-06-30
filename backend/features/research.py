@@ -15,6 +15,7 @@ import json
 import re
 from collections.abc import AsyncIterator, Awaitable, Callable
 
+from backend.features import events as stream_events
 from backend.features import rag, websearch
 from backend.features.prompting import FORMAT_INSTRUCTIONS, RESEARCH_PROMPT, build_system_prompt, strip_think
 from backend.features.reasoning_trace import ThinkStream
@@ -128,7 +129,7 @@ async def run(
     if sources:
         # de-duplicate for the user-facing source list shown in the trace
         unique_sources = list(dict.fromkeys(sources))
-        yield {"sources": unique_sources}
+        yield stream_events.sources(unique_sources)
 
     yield trace.step("Writing report",
                      f"Synthesizing a cited report from {total_passages} passage(s) across {len(subqs)} sub-question(s).",
@@ -156,33 +157,33 @@ async def run(
                 yield ev
             if answer:
                 parts.append(answer)
-                yield {"delta": answer}
+                yield stream_events.delta(answer)
         tail, tail_revs = think.finish()
         for ev in tail_revs:
             yield ev
         if tail:
             parts.append(tail)
-            yield {"delta": tail}
+            yield stream_events.delta(tail)
     except ai.MissingKeyError as exc:
-        yield {"error": f"No API key for {exc.provider}. Add it in Settings."}
+        yield stream_events.missing_key(exc.provider)
         return
     except Exception as exc:  # noqa: BLE001 — provider errors already sanitized upstream
-        yield {"error": str(exc)}
+        yield stream_events.error(str(exc))
         return
 
     final_text = strip_think("".join(parts)).strip() or "I couldn't produce a report for that."
     message_id = await persist(final_text, None)
     if message_id:
-        yield {"message_id": message_id}
+        yield stream_events.message_id(message_id)
     if usage_out.get("tokens_in") or usage_out.get("tokens_out"):
-        yield {"message_usage": {
-            "in": usage_out.get("tokens_in") or 0,
-            "out": usage_out.get("tokens_out") or 0,
-            "pricing_known": usage_out.get("pricing_known", True),
-        }}
+        yield stream_events.message_usage(
+            usage_out.get("tokens_in"),
+            usage_out.get("tokens_out"),
+            usage_out.get("pricing_known", True),
+        )
     if usage_out.get("cost") is not None and (usage_out.get("tokens_out") or usage_out.get("tokens_in")):
         from backend.features import usage as usage_mod
         await usage_mod.record(usage_out["provider"], usage_out["model"],
                                usage_out["tokens_in"], usage_out["tokens_out"], usage_out["cost"])
-        yield {"usage": await usage_mod.summary()}
-    yield {"done": True}
+        yield stream_events.usage(await usage_mod.summary())
+    yield stream_events.done()

@@ -285,11 +285,12 @@ sandboxed `filegen` when code/visuals/audio/computation; project → workspace).
 3. [x] Split `stream_reply` into a thin dispatcher + one handler per route — `_route_model_reply`, `_route_file`,
    `_route_image`, `_route_audio_unavailable`, `_route_project_create`, `_route_research` — each a small single-responsibility async generator.
    Verbatim move, no logic change; the full suite stays green.
-4. [ ] Centralize SSE event shapes (a typed `events` helper) so the stream protocol is explicit and consistent.
+4. [x] Centralize SSE event shapes (a typed `events` helper) so the stream protocol is explicit and consistent.
 
 ### Phase C — Lock it down
 5. [ ] Integration tests for the dispatcher: each route → correct executor + events; fallback chain
-   (sandbox miss → docgen → plain reply); error, cancellation, and resume paths. Cheap once seams exist.
+   (sandbox miss → docgen → plain reply); error, cancellation, and resume paths. Route/fallback coverage
+   exists, and error + resume edges are now covered; cancellation + full sandbox/docgen/plain chain still need hardening.
 6. Audit every external `await` (DB / ai / sandbox) for graceful degradation (most already guarded).
 7. CI gate: `compileall` + import smoke tests + full suite on every change.
 
@@ -322,6 +323,7 @@ Implemented:
       + Type/EXT/size + Preview/Download, "Download all" for multiple). Deterministic docgen is the fallback.
 - [x] Project workspaces: per-project files -> RAG, project-scoped chats, trusted project context.
 - [x] stream_reply split into route handlers + dispatcher tests; route telemetry (sanitized).
+- [x] Chat stream event shapes centralized in `backend.features.events`, preserving the current UI wire format.
 - [x] Sources rendered inside the reasoning panel (no raw URL banner).
 - [x] Local API session token; secrets only in keychain.
 
