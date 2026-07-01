@@ -86,8 +86,14 @@ if not exist "_internal\python312.dll" (
   pause
   exit /b 1
 )
-if not exist "_internal\pythonnet\runtime\Python.Runtime.dll" (
-  echo Missing pythonnet desktop runtime.
+if not exist "_internal\PySide6" (
+  echo Missing Qt desktop runtime.
+  echo This package is incomplete. Download Orrery-Windows.zip again and extract the full folder.
+  pause
+  exit /b 1
+)
+if not exist "_internal\pptx" (
+  echo Missing PowerPoint generation support.
   echo This package is incomplete. Download Orrery-Windows.zip again and extract the full folder.
   pause
   exit /b 1

@@ -84,14 +84,16 @@ source using the steps below or ask a maintainer to publish a tagged release.
 Install these before running the released `.exe`:
 
 1. Windows 10/11.
-2. Microsoft Edge WebView2 Runtime. It is already present on most Windows 10/11 installs.
-3. Docker Desktop, if you want the included PostgreSQL container or sandboxed file generation.
-4. PostgreSQL with pgvector. The release zip includes `docker-compose.yml` for a local pgvector
+2. Docker Desktop, if you want the included PostgreSQL container or sandboxed file generation.
+3. PostgreSQL with pgvector. The release zip includes `docker-compose.yml` for a local pgvector
    database.
-5. Optional: Ollama for local models.
-6. Optional: first-party provider CLIs for account-plan routes, such as Claude Code, Codex CLI, or
+4. Optional: Ollama for local models.
+5. Optional: first-party provider CLIs for account-plan routes, such as Claude Code, Codex CLI, or
    Gemini CLI. These routes are advanced and opt-in. Orrery launches the official CLI and does not
    scrape browser sessions or copy provider tokens.
+
+The Windows desktop web runtime is bundled with the package through Qt WebEngine; you should not need
+to install Microsoft Edge WebView2 separately for the Orrery window.
 
 ### Run The Windows Release
 

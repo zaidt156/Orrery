@@ -160,12 +160,15 @@ def _app_icon() -> str | None:
     return None
 
 
-def _packaging_probe() -> None:
-    """Fast frozen-build health check used by the Windows release script.
+def _desktop_gui() -> str | None:
+    return "qt" if sys.platform == "win32" else None
 
-    This intentionally does not start the database, API server, or WebView window. It loads the
-    same pythonnet/WinForms layer pywebview needs on Windows so a broken packaged runtime fails
-    before a release zip is published.
+
+def _packaging_probe() -> None:
+    """Fast frozen-build health check used by the release scripts.
+
+    This intentionally does not start the database, API server, or WebView window. It imports the
+    same desktop backend the packaged app uses so a broken zip fails before it reaches users.
     """
     print("Orrery packaging probe: checking desktop runtime...")
     required = [
@@ -177,11 +180,11 @@ def _packaging_probe() -> None:
     if missing:
         raise RuntimeError("Packaged resource check failed. Missing: " + ", ".join(missing))
     if sys.platform == "win32":
-        import pythonnet
+        import webview.platforms.qt as _qt_backend
+        from qtpy.QtWebEngineWidgets import QWebEngineView  # noqa: F401
 
-        pythonnet.load()
-        import clr  # noqa: F401
-        import webview.platforms.winforms  # noqa: F401
+        if getattr(_qt_backend, "renderer", "") != "qtwebengine":
+            raise RuntimeError("Windows package must use Qt WebEngine desktop runtime.")
     elif sys.platform == "darwin":
         import webview.platforms.cocoa  # noqa: F401
     print("Orrery packaging probe: ok")
@@ -217,6 +220,7 @@ def main() -> None:
         js_api=_js_api,
     )
     webview.start(
+        gui=_desktop_gui(),
         icon=_app_icon(),
         storage_path=str(WEBVIEW_DATA_DIR),
         private_mode=True,

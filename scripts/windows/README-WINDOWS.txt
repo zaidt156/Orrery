@@ -24,9 +24,9 @@ Quick start:
 5. After setup, use run-orrery.bat for normal launches.
 
 Requirements:
-- Microsoft Edge WebView2 Runtime.
 - PostgreSQL with pgvector, either your own server or the included Docker Compose database.
 - Docker Desktop if you want the included PostgreSQL database or sandboxed file generation.
+- The desktop web runtime is bundled in the package through Qt WebEngine.
 
 Default included database URL:
 postgresql+psycopg://orrery:orrery_dev_password@127.0.0.1:5432/orrery

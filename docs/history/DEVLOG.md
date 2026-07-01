@@ -1172,3 +1172,18 @@ Next: structured input/workspace/output directories plus explicit manifest captu
   users.
 - Documentation now distinguishes Windows preview packaging from macOS preview packaging. Remaining
   release work: sign/notarize macOS builds and validate architecture coverage on GitHub's macOS runners.
+
+
+## Step 90 - Windows release: Qt desktop runtime (July 1, 2026)
+
+- Replaced the Windows packaged desktop backend with Qt WebEngine so the release no longer depends on
+  the fragile pythonnet/.NET WinForms bridge that failed with `Python.Runtime.Loader.Initialize` after
+  extraction.
+- The packaged health probe now loads the same Qt WebEngine backend Orrery uses at runtime. The local
+  builder runs that probe from both `dist/Orrery` and the final `release/Orrery-Windows` folder before
+  creating the zip.
+- Fixed the release dependency lock for PowerPoint generation. `python-pptx`, Pillow, XlsxWriter, QtPy,
+  PySide6, and shiboken6 are now pinned so the Windows package keeps file-generation support instead of
+  failing with `No module named 'pptx'`.
+- Updated the Windows setup checks and docs: the package validates bundled Qt and PowerPoint support, and
+  users no longer need Microsoft Edge WebView2 for the Orrery desktop window.

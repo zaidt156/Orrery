@@ -7,6 +7,8 @@
 
 # Desktop window (pure Python; Tauri comes later per roadmap.md Phase 8)
 pywebview>=5.3
+PySide6>=6.10; sys_platform == "win32"
+qtpy>=2.4; sys_platform == "win32"
 pyobjc>=10; sys_platform == "darwin"
 
 # Backend / API — localhost only, SSE streaming

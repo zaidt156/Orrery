@@ -118,8 +118,6 @@ Write-Host "Installing from $RequirementsFile..."
 Invoke-Checked ".venv\Scripts\python.exe" "-m" "pip" "install" "-r" $RequirementsFile
 Invoke-Checked ".venv\Scripts\python.exe" "-m" "pip" "install" "pyinstaller"
 
-$PythonnetHookDir = (& ".venv\Scripts\python.exe" -c "import pathlib, pythonnet; print(pathlib.Path(pythonnet.__file__).resolve().parent / '_pyinstaller')")
-if ($LASTEXITCODE -ne 0) { throw "Could not resolve pythonnet PyInstaller hook path" }
 $WebviewHookDir = (& ".venv\Scripts\python.exe" -c "import pathlib, webview; print(pathlib.Path(webview.__file__).resolve().parent / '__pyinstaller')")
 if ($LASTEXITCODE -ne 0) { throw "Could not resolve pywebview PyInstaller hook path" }
 
@@ -131,7 +129,6 @@ Invoke-Checked ".venv\Scripts\pyinstaller.exe" `
     "--name" "Orrery" `
     "--console" `
     "--icon" "assets\desktop\orrery.ico" `
-    "--additional-hooks-dir" $PythonnetHookDir `
     "--additional-hooks-dir" $WebviewHookDir `
     "--add-data" "assets;assets" `
     "--add-data" "ui\dist;ui\dist" `
@@ -140,14 +137,30 @@ Invoke-Checked ".venv\Scripts\pyinstaller.exe" `
     "--add-data" "backend\providers\model_manifest.json;backend\providers" `
     "--collect-all" "litellm" `
     "--collect-all" "fastembed" `
-    "--collect-all" "webview" `
-    "--collect-all" "pythonnet" `
-    "--collect-all" "clr_loader" `
+    "--collect-all" "pptx" `
     "--collect-data" "procrastinate" `
     "--copy-metadata" "procrastinate" `
     "--copy-metadata" "pywebview" `
-    "--copy-metadata" "pythonnet" `
-    "--copy-metadata" "clr_loader" `
+    "--copy-metadata" "PySide6" `
+    "--copy-metadata" "PySide6_Addons" `
+    "--copy-metadata" "PySide6_Essentials" `
+    "--copy-metadata" "shiboken6" `
+    "--copy-metadata" "qtpy" `
+    "--copy-metadata" "python-pptx" `
+    "--hidden-import" "PySide6.QtWebEngineWidgets" `
+    "--hidden-import" "PySide6.QtWebEngineCore" `
+    "--hidden-import" "PySide6.QtWebChannel" `
+    "--hidden-import" "PySide6.QtNetwork" `
+    "--exclude-module" "webview.platforms.winforms" `
+    "--exclude-module" "webview.platforms.edgechromium" `
+    "--exclude-module" "webview.platforms.mshtml" `
+    "--exclude-module" "webview.platforms.android" `
+    "--exclude-module" "webview.platforms.gtk" `
+    "--exclude-module" "webview.platforms.cocoa" `
+    "--exclude-module" "webview.platforms.cef" `
+    "--exclude-module" "pythonnet" `
+    "--exclude-module" "clr" `
+    "--exclude-module" "clr_loader" `
     "--collect-submodules" "keyring.backends" `
     "app.py"
 
@@ -163,10 +176,12 @@ Assert-Exists "$DistRoot\_internal\skills" "Bundled skills folder is missing"
 Assert-Exists "$DistRoot\_internal\assets" "Bundled assets folder is missing"
 Assert-Exists "$DistRoot\_internal\procrastinate\sql\queries.sql" "Bundled Procrastinate SQL queries are missing"
 Assert-Matches "$DistRoot\_internal\procrastinate-*.dist-info\METADATA" "Bundled Procrastinate package metadata is missing"
-Assert-Exists "$DistRoot\_internal\pythonnet\runtime\Python.Runtime.dll" "Bundled pythonnet runtime is missing"
-Assert-Exists "$DistRoot\_internal\clr_loader\ffi\dlls\amd64\ClrLoader.dll" "Bundled clr_loader native bridge is missing"
-Assert-Matches "$DistRoot\_internal\pythonnet-*.dist-info\METADATA" "Bundled pythonnet package metadata is missing"
-Assert-Matches "$DistRoot\_internal\clr_loader-*.dist-info\METADATA" "Bundled clr_loader package metadata is missing"
+Assert-Exists "$DistRoot\_internal\PySide6" "Bundled Qt/PySide runtime is missing"
+Assert-Exists "$DistRoot\_internal\PySide6\QtWebEngineProcess.exe" "Bundled Qt WebEngine process is missing"
+Assert-Exists "$DistRoot\_internal\pptx" "Bundled python-pptx package is missing"
+Assert-Matches "$DistRoot\_internal\pyside6-*.dist-info\METADATA" "Bundled PySide6 package metadata is missing"
+Assert-Matches "$DistRoot\_internal\QtPy-*.dist-info\METADATA" "Bundled QtPy package metadata is missing"
+Assert-Matches "$DistRoot\_internal\python_pptx-*.dist-info\METADATA" "Bundled python-pptx package metadata is missing"
 Invoke-PackagingProbe "$DistRoot\Orrery.exe"
 
 Write-Host "Creating release folder..."
@@ -186,10 +201,12 @@ Assert-Exists "$ReleaseRoot\_internal\python312.dll" "Release Python runtime is 
 Assert-Exists "$ReleaseRoot\_internal\ui\dist" "Release frontend is missing"
 Assert-Exists "$ReleaseRoot\_internal\procrastinate\sql\queries.sql" "Release Procrastinate SQL queries are missing"
 Assert-Matches "$ReleaseRoot\_internal\procrastinate-*.dist-info\METADATA" "Release Procrastinate package metadata is missing"
-Assert-Exists "$ReleaseRoot\_internal\pythonnet\runtime\Python.Runtime.dll" "Release pythonnet runtime is missing"
-Assert-Exists "$ReleaseRoot\_internal\clr_loader\ffi\dlls\amd64\ClrLoader.dll" "Release clr_loader native bridge is missing"
-Assert-Matches "$ReleaseRoot\_internal\pythonnet-*.dist-info\METADATA" "Release pythonnet package metadata is missing"
-Assert-Matches "$ReleaseRoot\_internal\clr_loader-*.dist-info\METADATA" "Release clr_loader package metadata is missing"
+Assert-Exists "$ReleaseRoot\_internal\PySide6" "Release Qt/PySide runtime is missing"
+Assert-Exists "$ReleaseRoot\_internal\PySide6\QtWebEngineProcess.exe" "Release Qt WebEngine process is missing"
+Assert-Exists "$ReleaseRoot\_internal\pptx" "Release python-pptx package is missing"
+Assert-Matches "$ReleaseRoot\_internal\pyside6-*.dist-info\METADATA" "Release PySide6 package metadata is missing"
+Assert-Matches "$ReleaseRoot\_internal\QtPy-*.dist-info\METADATA" "Release QtPy package metadata is missing"
+Assert-Matches "$ReleaseRoot\_internal\python_pptx-*.dist-info\METADATA" "Release python-pptx package metadata is missing"
 Assert-Exists "$ReleaseRoot\docker-compose.yml" "Release docker-compose.yml is missing"
 Assert-Exists "$ReleaseRoot\.env.example" "Release .env.example is missing"
 Assert-Exists "$ReleaseRoot\sandbox\Dockerfile" "Release sandbox Dockerfile is missing"
