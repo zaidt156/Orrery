@@ -1,6 +1,6 @@
 # Orrery — Development Plan (v3: Postgres-first, robust automations)
 
-A desktop AI app where you bring your own model accounts/API keys and your own **PostgreSQL** database, and automate AI workflows visually (n8n-style). All logic in **Python**; JavaScript only paints the screen.
+A desktop AI app where you bring your own model accounts/API keys and your own **PostgreSQL** database, and automate AI workflows visually (n8n-style). The core backend remains Python; the desktop shell is migrating to Electron so React stays the UI and Python stays the local application backend.
 
 ---
 
@@ -9,12 +9,13 @@ A desktop AI app where you bring your own model accounts/API keys and your own *
 **Python side (all the logic):**
 
 ```
-pip install pywebview fastapi uvicorn litellm sqlalchemy psycopg "procrastinate[psycopg]" pgvector keyring
+pip install fastapi uvicorn litellm sqlalchemy psycopg "procrastinate[psycopg]" pgvector keyring
 ```
 
 | What it does | Tool | Notes |
 |---|---|---|
-| Desktop window | **pywebview** | Pure Python. No Rust, no Electron. |
+| Desktop shell | **Electron** | Production direction: launches the local Python backend and hosts the existing React UI. |
+| Legacy package shell | **PyInstaller + Qt WebEngine** | Kept during migration so current Windows packages still run. |
 | Backend / API | **FastAPI** | Chat, data, automation routes + SSE streaming. |
 | AI providers | **litellm + official account adapters** | API-key providers use litellm; official subscription-backed routes can be added only when providers support them safely. |
 | Database | **PostgreSQL** (SQLAlchemy + psycopg) | Single source of truth: chats, documents, workflows, runs, queue. |
@@ -22,9 +23,9 @@ pip install pywebview fastapi uvicorn litellm sqlalchemy psycopg "procrastinate[
 | Job queue + scheduler | **Procrastinate** | Postgres-native task queue: durable runs, automatic retries, cron-style periodic tasks, concurrency control — **no Redis, no Celery, no extra infrastructure.** |
 | DB-change triggers | **LISTEN/NOTIFY** | Workflows can react to new rows in the user's tables, natively. |
 | Accounts/API keys | **keyring** | OS keychain; no raw secrets are stored in Postgres or returned to the UI. |
-| Packaging | **PyInstaller** | One executable; bundles the built UI. |
+| Packaging | **Electron Builder + packaged Python backend** | Target direction for signed installers and in-app update support. |
 
-**Screen side (just the visuals):** one small **React + Vite** app — plain JavaScript, no TypeScript needed.
+**Screen side (just the visuals):** one **React + Vite** app — plain JavaScript for now.
 
 - **React Flow** (`@xyflow/react`) for the automation canvas — the industry-standard node editor library; smooth drag-drop, zoom, minimap, custom nodes.
 - **Apache ECharts** for dashboard charts — lines, bars, stats, tables from one library.
@@ -53,7 +54,7 @@ python app.py
  ├─ connects to Postgres (first run: asks for connection string, runs migrations, enables pgvector)
  ├─ starts FastAPI on localhost
  ├─ starts the Procrastinate worker (asyncio task in the same process)
- └─ opens the pywebview window
+ └─ opens the desktop shell window
 
 Window (React)  ←SSE/HTTP→  FastAPI (Python)
                               ├─ model account/API adapters → AI providers
@@ -61,7 +62,7 @@ Window (React)  ←SSE/HTTP→  FastAPI (Python)
                               └─ Procrastinate worker → executes workflow runs
 ```
 
-Everything is one process on the desktop, but because the queue lives in Postgres, runs are **durable**: if the app closes mid-workflow, the run resumes/retries on next launch. The same design can later scale to a headless server with zero code changes.
+The backend is a modular monolith: chat, providers, projects, data, RAG, jobs, settings, and admin/team features live in one local Python application. Sidecars handle isolated or heavy work such as Docker sandbox runs, local model runtimes, and official provider CLIs. Because the queue lives in Postgres, runs are **durable**: if the app closes mid-workflow, the run resumes/retries on next launch.
 
 ---
 
@@ -166,7 +167,7 @@ Every agent is defined by four things:
 | **5 — Agents** | Agent loop on Procrastinate, scope enforcement, learning notes, activity feed, handoff queue (**structured outputs** for tool calls) | ~2 weeks |
 | **6 — Media Hub** | Image/video generation (provider adapters + optional local backend), parameters, media library (files on disk, metadata in Postgres), pin-to-Chat, content safety | ~1.5 weeks |
 | **7 — Chat command surface** | Expose the shared tool registry to Chat so `/` or natural language can generate media, run automations, start/query agents, build dashboards — with the same approval/scope/read-only guardrails | ~1 week |
-| **8 — Power** | LISTEN/NOTIFY + webhook triggers, MCP tools, PyInstaller packaging | ongoing |
+| **8 — Power** | LISTEN/NOTIFY + webhook triggers, MCP tools, Electron packaging/update path | ongoing |
 
 ---
 
@@ -193,7 +194,7 @@ orrery/
 
 ## 9. Deliberately Avoided
 
-- **Tauri/Electron** → pywebview keeps the shell in Python.
+- **Microservices now** → modular monolith keeps packaging and local security manageable; split only sandbox/RAG/model-gateway workers later if scale requires it.
 - **Celery + Redis** → Procrastinate gives queues, retries, and cron using only Postgres.
 - **Embedding n8n itself** → its fair-code license restricts embedding; our engine stays pure Python and fully ours.
 - **TypeScript** → plain-JS React is enough; logic lives in Python anyway.
@@ -250,7 +251,7 @@ sandboxed `filegen` when code/visuals/audio/computation; project → workspace).
 - **Ops:** request IDs + structured logs, route telemetry (`task_route_events`), **Task Brain** ledger +
   Activity panel + background-run resume, live token count, connect/disconnect → picker, no flashing
   console windows, generated-file TTL cleanup, branding fix, Ollama pre-flight, Windows onedir release,
-  and macOS `.app` packaging scaffolding.
+  macOS `.app` packaging scaffolding, Electron shell scaffold, and in-app update checks.
 - **Projects:** model + API + hierarchical chat listing + scoped chat start + chat assignment + trusted
   project context in prompts.
 - **Polish:** refined app logo (in-app mark + favicon); `chat.py` split (`chat_context.py`).
@@ -262,8 +263,9 @@ sandboxed `filegen` when code/visuals/audio/computation; project → workspace).
 3. **Provider adapter split** (`accounts.py` → per-provider adapters + `ProviderAdapter` interface) and
    **JSONB** columns — production polish, lower urgency (most P0/P1 hardening already shipped).
 4. **Phases 3–6 (product surface):** Dashboards, Automations, Agents, Media Hub.
-5. **Release polish:** notarized/signed macOS packages, architecture-specific macOS artifacts if needed,
-   then Linux packaging.
+5. **Release polish:** Electron Builder Windows installer, signed/notarized macOS packages,
+   architecture-specific macOS artifacts if needed, in-app automatic update publishing, then Linux
+   packaging.
 6. **Voice/TTS/STT**, sandbox security tests, DB read-only role guidance, and the long-term
    **Ollama-free local inference engine**.
 7. **Speed:** only *perceived* speed can improve at high effort (never cut effort).

@@ -25,8 +25,9 @@ from backend.core.observability import install as _install_logging
 _install_logging(logging.INFO)  # root logging with per-request [id] field
 log = logging.getLogger("orrery")
 
-# fresh per-session token so other local processes can't drive the API
-SESSION_TOKEN = pysecrets.token_urlsafe(32)
+# fresh per-session token so other local processes can't drive the API. Electron can pass one in
+# because it owns the desktop window and starts the backend as a child process.
+SESSION_TOKEN = os.environ.get("ORRERY_SESSION_TOKEN") or pysecrets.token_urlsafe(32)
 WEBVIEW_DATA_DIR = runtime_path("tmp", "webview2")
 
 _ready = threading.Event()
@@ -227,8 +228,15 @@ def main() -> None:
     )
 
 
+def run_backend_only() -> None:
+    ensure_connection()
+    asyncio.run(_boot_and_serve())
+
+
 if __name__ == "__main__":
     if "--packaging-probe" in sys.argv or os.environ.get("ORRERY_PACKAGING_PROBE") == "1":
         _packaging_probe()
+    elif "--backend-only" in sys.argv or os.environ.get("ORRERY_BACKEND_ONLY") == "1":
+        run_backend_only()
     else:
         main()

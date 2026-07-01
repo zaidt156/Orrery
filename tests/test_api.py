@@ -207,3 +207,18 @@ def test_task_route_summary_endpoint(monkeypatch):
     assert r.status_code == 200
     assert r.json()["routes"]["chat"] == 2
     assert "sandbox_fallback" in r.json()["outcomes"]
+
+
+def test_app_update_endpoint(monkeypatch):
+    from backend.features import app_updates
+
+    monkeypatch.setattr(
+        app_updates,
+        "check_for_updates",
+        lambda: {"ok": True, "current_version": "0.1.3", "update_available": False},
+    )
+
+    r = _client().get("/api/app/update", headers={"X-Orrery-Token": TOKEN})
+
+    assert r.status_code == 200
+    assert r.json()["current_version"] == "0.1.3"

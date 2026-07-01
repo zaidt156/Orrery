@@ -15,7 +15,7 @@ from backend.core import appconfig, database
 from backend.core.config import settings
 from backend.core.observability import new_request_id
 from backend.core.paths import resource_path
-from backend.features import admin, artifacts, chat, data, exports, feedback, filepreview, local_models, mcp, projects, rag, route_telemetry, skills, team, usage
+from backend.features import admin, app_updates, artifacts, chat, data, exports, feedback, filepreview, local_models, mcp, projects, rag, route_telemetry, skills, team, usage
 from backend.features import files as file_library
 from backend.providers import accounts, ai, catalog
 from backend.security import secrets
@@ -351,6 +351,10 @@ def create_app(session_token: str) -> FastAPI:
     async def health() -> dict:
         db_ok = await database.check_connection()
         return {"status": "ok", "database": "ok" if db_ok else "error", "dev": settings.orrery_dev}
+
+    @r.get("/app/update")
+    async def app_update() -> dict:
+        return await asyncio.to_thread(app_updates.check_for_updates)
 
     async def _activate_provider(provider: str) -> None:
         """Turn on a provider's curated models when it's first configured (best-effort)."""

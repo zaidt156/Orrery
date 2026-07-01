@@ -7,6 +7,8 @@
 
 Release helpers:
 
+- `../desktop/electron/` contains the Electron migration shell. It starts `app.py --backend-only`,
+  waits for the local API, loads the existing React UI, and provides native file-save/update bridges.
 - `build-windows-onedir.ps1` builds the frontend, creates the PyInstaller onedir package, validates
   the required `_internal` runtime files, runs the frozen desktop-runtime probe, and writes
   `release/Orrery-Windows.zip`.

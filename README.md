@@ -20,8 +20,9 @@ documents, skills, and workflow tools in one Windows desktop app.
 ## Status
 
 Orrery is open source and under active development. Windows is the supported target right now.
-macOS and Linux are planned, but the current desktop packaging, installer notes, and testing path are
-Windows-focused.
+macOS and Linux are planned, but the current release packaging, installer notes, and testing path are
+Windows-focused. An Electron shell is now being added as the production desktop direction while the
+existing PyInstaller shell remains available during migration.
 
 The app is built for people who want AI help across documents, databases, local models, dashboards,
 automations, projects, and structured workflows while keeping control of their data. When you choose
@@ -56,7 +57,7 @@ environment.
 
 | Layer | Technology |
 |---|---|
-| Desktop shell | pywebview using the system WebView2 runtime on Windows |
+| Desktop shell | Electron migration shell; PyInstaller/Qt WebEngine release path remains during transition |
 | Backend API | Python 3.12, FastAPI, Uvicorn |
 | Frontend | React + Vite |
 | Database | PostgreSQL + pgvector |
@@ -64,6 +65,10 @@ environment.
 | Model routing | LiteLLM, official provider CLIs where supported, Ollama for local models |
 | Secrets | Operating-system keychain through `keyring` |
 | File sandbox | Docker container with no network, resource limits, read-only root, and mounted output folder |
+
+Orrery is a modular monolith with sidecars, not microservices. The backend modules run as one local
+application, while risky or heavy capabilities such as sandboxed file generation, local model runtimes,
+and provider CLIs stay isolated as local sidecar processes.
 
 ## Download A Desktop Build
 
@@ -220,6 +225,21 @@ python app.py
 
 For production-style local testing, set `ORRERY_DEV=0`, run `npm run build`, and start `python app.py`.
 
+### Electron Shell Preview
+
+The Electron shell keeps the same React UI and starts the Python backend in `--backend-only` mode:
+
+```powershell
+cd ui
+npm run build
+cd ..\desktop\electron
+npm install
+npm run dev
+```
+
+This is the production desktop direction. The current PyInstaller/Qt release path remains available
+until Electron Builder packaging, signing, and update publishing are complete.
+
 ## Run From Source On macOS
 
 Install Git, Python 3.12, Node.js 20, Docker Desktop, and PostgreSQL with pgvector, or use the
@@ -351,6 +371,9 @@ To reproduce the macOS package on macOS:
 
 The script validates that `Orrery.app`, the built UI, bundled skills, Docker compose file, sandbox
 Dockerfile, launcher, and macOS notes are all present before creating `release/Orrery-macOS.zip`.
+
+Electron packaging lives under `desktop/electron`. Its first phase is a development shell and update
+surface; signed installers and automatic update publishing come next.
 
 ## Test And Verify
 

@@ -23,6 +23,7 @@ import {
   deleteCustomModel,
   disconnectPlan,
   getBranding,
+  getAppUpdate,
   getPrivacy,
   setPrivacy,
   getDatabase,
@@ -67,6 +68,7 @@ const SETTINGS_SECTIONS = [
   { id: "database", label: "Database", Icon: Database },
   { id: "models", label: "Models", Icon: Cpu },
   { id: "usage", label: "Usage", Icon: WalletCards },
+  { id: "updates", label: "Updates", Icon: Download },
   { id: "integrations", label: "Integrations", Icon: Plug },
   { id: "feedback", label: "Feedback", Icon: MessageSquareText },
 ];
@@ -785,6 +787,84 @@ function SpendingSection() {
   );
 }
 
+function formatBytes(size) {
+  if (!size) return "";
+  if (size < 1024 * 1024) return `${Math.round(size / 1024)} KB`;
+  return `${Math.round(size / (1024 * 1024))} MB`;
+}
+
+function UpdatesSection() {
+  const [info, setInfo] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  async function check() {
+    setBusy(true);
+    try {
+      setInfo(await getAppUpdate());
+    } catch (e) {
+      setInfo({ ok: false, error: String(e.message || e) });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  useEffect(() => { check(); }, []);
+
+  const assets = info?.assets || [];
+  const isElectron = !!window.orreryDesktop;
+
+  return (
+    <>
+      <div className="section-label">Updates</div>
+      <div className="provider-block" style={{ gridColumn: "1 / -1" }}>
+        <div className="mode-row">
+          <div className="mode-main">
+            <div className="mode-name">
+              Orrery {info?.current_version || "checking"}
+              {info?.ok && info.update_available && <span className="mode-version">new version available</span>}
+            </div>
+            <div className="mode-sub">
+              {busy ? "Checking GitHub releases..."
+                : info?.ok && info.update_available ? `Latest release: ${info.latest_tag || info.latest_version}`
+                : info?.ok ? "You are on the latest published release."
+                : info?.error ? `Could not check updates: ${info.error}`
+                : "No update status yet."}
+            </div>
+            {isElectron && <div className="mode-hint">Electron shell detected. Automatic installer updates will be enabled after signed release builds are published.</div>}
+          </div>
+          <div className="mode-actions">
+            <button className="btn ghost icon-text-btn" disabled={busy} onClick={check}>
+              <RefreshCw className={busy ? "spin" : ""} />
+              Check now
+            </button>
+            {info?.html_url && (
+              <a className="btn primary icon-text-btn" href={info.html_url} target="_blank" rel="noreferrer">
+                <Download />
+                Open release
+              </a>
+            )}
+          </div>
+        </div>
+        {assets.length > 0 && (
+          <div className="custom-form">
+            {assets.map((asset) => (
+              <div className="mode-row" key={`${asset.name}-${asset.url}`}>
+                <div className="mode-main">
+                  <div className="mode-name">{asset.name || "Release asset"}</div>
+                  <div className="mode-sub">{formatBytes(asset.size)}</div>
+                </div>
+                <div className="mode-actions">
+                  {asset.url && <a className="btn ghost" href={asset.url} target="_blank" rel="noreferrer">Download</a>}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
 const FEEDBACK_CATS = [["general", "General"], ["bug", "Bug"], ["idea", "Idea"], ["praise", "Praise"]];
 
 function FeedbackSection() {
@@ -923,6 +1003,12 @@ export default function Settings() {
       <>
         <SettingsPanelHeader title="Usage" description="Monitor API-key costs and set a local spending cap." />
         <SpendingSection />
+      </>
+    ),
+    updates: (
+      <>
+        <SettingsPanelHeader title="Updates" description="Check for new Orrery desktop releases." />
+        <UpdatesSection />
       </>
     ),
     integrations: (

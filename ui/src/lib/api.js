@@ -77,6 +77,7 @@ export async function apiDownload(path, fallbackName) {
 
 // --- Endpoints ---
 export const getHealth = () => apiGet("/api/health");
+export const getAppUpdate = () => apiGet("/api/app/update");
 export const getModels = () => apiGet("/api/models");
 export const getModelCatalog = () => apiGet("/api/models/catalog");
 export const setModelActive = (id, label, provider, active) =>

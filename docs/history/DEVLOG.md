@@ -1187,3 +1187,21 @@ Next: structured input/workspace/output directories plus explicit manifest captu
   failing with `No module named 'pptx'`.
 - Updated the Windows setup checks and docs: the package validates bundled Qt and PowerPoint support, and
   users no longer need Microsoft Edge WebView2 for the Orrery desktop window.
+
+
+## Step 91 - Electron migration shell + in-app update checks (July 1, 2026)
+
+- Started the Electron migration without rewriting the React UI or Python backend. `app.py` now has
+  `--backend-only`, and Electron can start that backend as a child process with its own per-session
+  token before loading the normal Orrery URL.
+- Added `desktop/electron`: Electron main/preload files, package metadata, Electron Builder config,
+  backend lifecycle management, external-link handling, and a native save-file bridge that preserves
+  the existing `window.pywebview.api.save_file(...)` UI contract.
+- Added an in-app update check path. The backend exposes `/api/app/update`, which reads public GitHub
+  release metadata, compares it to Orrery's current version, and returns release assets without
+  downloading or executing anything.
+- Added a Settings -> Updates section that shows current/latest release status and release downloads.
+  Native automatic installer updates are scaffolded for Electron, but final auto-install requires
+  signed packaged builds and release metadata.
+- Updated architecture docs: Orrery is a modular monolith with sidecars. Electron is the desktop-shell
+  direction; microservices are deferred until a specific worker needs independent deployment or scale.
