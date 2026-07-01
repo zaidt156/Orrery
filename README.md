@@ -71,8 +71,8 @@ When a release is published, download the Windows package from the
 [GitHub Releases page](https://github.com/zaidt156/Orrery/releases):
 
 - `Orrery-Windows.zip`: recommended package with `Orrery.exe`, database compose file, sandbox
-  Dockerfile, `run-orrery.bat`, Windows notes, and the required PyInstaller `_internal` runtime
-  folder.
+  Dockerfile, `setup-orrery.bat`, `run-orrery.bat`, Windows notes, and the required PyInstaller
+  `_internal` runtime folder.
 
 The first public builds are preview builds. If a release asset is not attached yet, run Orrery from
 source using the steps below or ask a maintainer to publish a tagged release.
@@ -96,8 +96,11 @@ Install these before running the released `.exe`:
 From the extracted `Orrery-Windows.zip` folder:
 
 ```powershell
-# First-run launcher: copies .env.example, starts Docker Compose,
-# builds the sandbox image, then starts Orrery.
+# First-run setup menu: choose included Docker PostgreSQL, your own database,
+# sandbox-only setup, or start-only.
+.\setup-orrery.bat
+
+# Normal launch after setup.
 .\run-orrery.bat
 ```
 
@@ -105,8 +108,8 @@ Do not copy `Orrery.exe` out by itself. The Windows build is a PyInstaller `oned
 the `_internal` folder beside the executable. If you run the executable directly from PowerShell, use
 `.\Orrery.exe`; PowerShell does not run current-folder programs by name only.
 
-On first launch, if no database URL is saved in the Windows keychain and `.env` is not present,
-Orrery asks for a PostgreSQL connection string. For the included Docker database, use:
+On first launch, `setup-orrery.bat` can write the database URL into the extracted package's `.env`
+file. For the included Docker database, it uses:
 
 ```text
 postgresql+psycopg://orrery:orrery_dev_password@127.0.0.1:5432/orrery

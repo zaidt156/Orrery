@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import logging
+import os
 import secrets as pysecrets
 import sys
 import threading
@@ -149,6 +150,23 @@ def _window_url() -> str:
     return f"{base}/?token={SESSION_TOKEN}"
 
 
+def _packaging_probe() -> None:
+    """Fast frozen-build health check used by the Windows release script.
+
+    This intentionally does not start the database, API server, or WebView window. It loads the
+    same pythonnet/WinForms layer pywebview needs on Windows so a broken packaged runtime fails
+    before a release zip is published.
+    """
+    print("Orrery packaging probe: checking desktop runtime...")
+    if sys.platform == "win32":
+        import pythonnet
+
+        pythonnet.load()
+        import clr  # noqa: F401
+        import webview.platforms.winforms  # noqa: F401
+    print("Orrery packaging probe: ok")
+
+
 def main() -> None:
     # Windows groups the taskbar by process (python.exe) and shows its icon; giving the app
     # its own AppUserModelID makes Windows use our window icon in the taskbar instead.
@@ -186,4 +204,7 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    if "--packaging-probe" in sys.argv or os.environ.get("ORRERY_PACKAGING_PROBE") == "1":
+        _packaging_probe()
+    else:
+        main()

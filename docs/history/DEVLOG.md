@@ -1140,3 +1140,19 @@ Next: structured input/workspace/output directories plus explicit manifest captu
   explain artifact generation without exposing prompts, generated code, logs, raw file data, or secrets.
 - Updated the file-generation prompt and architecture doc to describe the new directory contract. Verified
   focused backend coverage: `tests/features/test_chat.py` + `tests/features/test_filegen.py` = 37 passed.
+
+
+## Step 88 - Windows release runtime probe + interactive setup (July 1, 2026)
+
+- Fixed the release process for the Windows onedir package without bumping the public version number.
+  The GitHub workflow now uses the same local builder script, pins release packaging to Python 3.12.0,
+  and overwrites the existing release asset for the same tag instead of requiring a new tag.
+- Added `Orrery.exe --packaging-probe`, a fast frozen-build check that loads the pywebview/pythonnet
+  desktop runtime before a zip can be published. This catches the `Python.Runtime.Loader.Initialize`
+  crash during packaging instead of letting a broken zip reach users.
+- The release package now includes `setup-orrery.bat` with an interactive first-run menu: use included
+  Docker PostgreSQL, enter a custom PostgreSQL URL, build/refresh the sandbox image, or start only.
+  `run-orrery.bat` remains the normal launch path after setup.
+- The local and CI builders now collect pythonnet/clr_loader explicitly, copy their package metadata,
+  validate their runtime files, run the packaged probe from both `dist/` and `release/`, and then zip
+  the complete `Orrery-Windows` folder.

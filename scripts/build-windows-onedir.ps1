@@ -4,6 +4,8 @@ $ScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $RepoRoot = Resolve-Path (Join-Path $ScriptRoot "..")
 Set-Location $RepoRoot
 
+$RequiredPythonVersion = "3.12.0"
+
 function Assert-Exists {
     param(
         [Parameter(Mandatory = $true)][string]$Path,
@@ -33,6 +35,38 @@ function Invoke-Checked {
     & $Exe @CommandArgs
     if ($LASTEXITCODE -ne 0) {
         throw "$Exe failed with exit code $LASTEXITCODE"
+    }
+}
+
+function Assert-VenvPythonVersion {
+    $version = & ".venv\Scripts\python.exe" -c "import sys; print('.'.join(map(str, sys.version_info[:3])))"
+    if ($LASTEXITCODE -ne 0) {
+        throw "Could not read Python version from .venv"
+    }
+    if ($version.Trim() -ne $RequiredPythonVersion) {
+        throw "Windows release builds currently require Python $RequiredPythonVersion. Found $($version.Trim()). Recreate .venv with Python $RequiredPythonVersion before building."
+    }
+}
+
+function New-ReleaseVenv {
+    $python = Get-Command "python" -ErrorAction SilentlyContinue
+    if ($python) {
+        & "python" "-m" "venv" ".venv"
+    } else {
+        & "py" "-3.12" "-m" "venv" ".venv"
+    }
+    if ($LASTEXITCODE -ne 0) {
+        throw "Could not create .venv. Install Python $RequiredPythonVersion and try again."
+    }
+}
+
+function Invoke-PackagingProbe {
+    param([Parameter(Mandatory = $true)][string]$ExePath)
+
+    Write-Host "Running packaged desktop runtime probe..."
+    & $ExePath "--packaging-probe"
+    if ($LASTEXITCODE -ne 0) {
+        throw "Packaged desktop runtime probe failed for $ExePath"
     }
 }
 
@@ -73,13 +107,21 @@ try {
 
 if (-not (Test-Path ".venv\Scripts\python.exe")) {
     Write-Host "Creating .venv..."
-    Invoke-Checked "py" "-3.12" "-m" "venv" ".venv"
+    New-ReleaseVenv
 }
+Assert-VenvPythonVersion
 
 Write-Host "Installing Python dependencies..."
 Invoke-Checked ".venv\Scripts\python.exe" "-m" "pip" "install" "--upgrade" "pip"
-Invoke-Checked ".venv\Scripts\python.exe" "-m" "pip" "install" "-r" "requirements.txt"
+$RequirementsFile = if (Test-Path "requirements.lock.txt") { "requirements.lock.txt" } else { "requirements.txt" }
+Write-Host "Installing from $RequirementsFile..."
+Invoke-Checked ".venv\Scripts\python.exe" "-m" "pip" "install" "-r" $RequirementsFile
 Invoke-Checked ".venv\Scripts\python.exe" "-m" "pip" "install" "pyinstaller"
+
+$PythonnetHookDir = (& ".venv\Scripts\python.exe" -c "import pathlib, pythonnet; print(pathlib.Path(pythonnet.__file__).resolve().parent / '_pyinstaller')")
+if ($LASTEXITCODE -ne 0) { throw "Could not resolve pythonnet PyInstaller hook path" }
+$WebviewHookDir = (& ".venv\Scripts\python.exe" -c "import pathlib, webview; print(pathlib.Path(webview.__file__).resolve().parent / '__pyinstaller')")
+if ($LASTEXITCODE -ne 0) { throw "Could not resolve pywebview PyInstaller hook path" }
 
 Write-Host "Building PyInstaller onedir package..."
 Invoke-Checked ".venv\Scripts\pyinstaller.exe" `
@@ -89,6 +131,8 @@ Invoke-Checked ".venv\Scripts\pyinstaller.exe" `
     "--name" "Orrery" `
     "--console" `
     "--icon" "assets\desktop\orrery.ico" `
+    "--additional-hooks-dir" $PythonnetHookDir `
+    "--additional-hooks-dir" $WebviewHookDir `
     "--add-data" "assets;assets" `
     "--add-data" "ui\dist;ui\dist" `
     "--add-data" "skills;skills" `
@@ -97,8 +141,13 @@ Invoke-Checked ".venv\Scripts\pyinstaller.exe" `
     "--collect-all" "litellm" `
     "--collect-all" "fastembed" `
     "--collect-all" "webview" `
+    "--collect-all" "pythonnet" `
+    "--collect-all" "clr_loader" `
     "--collect-data" "procrastinate" `
     "--copy-metadata" "procrastinate" `
+    "--copy-metadata" "pywebview" `
+    "--copy-metadata" "pythonnet" `
+    "--copy-metadata" "clr_loader" `
     "--collect-submodules" "keyring.backends" `
     "app.py"
 
@@ -114,6 +163,11 @@ Assert-Exists "$DistRoot\_internal\skills" "Bundled skills folder is missing"
 Assert-Exists "$DistRoot\_internal\assets" "Bundled assets folder is missing"
 Assert-Exists "$DistRoot\_internal\procrastinate\sql\queries.sql" "Bundled Procrastinate SQL queries are missing"
 Assert-Matches "$DistRoot\_internal\procrastinate-*.dist-info\METADATA" "Bundled Procrastinate package metadata is missing"
+Assert-Exists "$DistRoot\_internal\pythonnet\runtime\Python.Runtime.dll" "Bundled pythonnet runtime is missing"
+Assert-Exists "$DistRoot\_internal\clr_loader\ffi\dlls\amd64\ClrLoader.dll" "Bundled clr_loader native bridge is missing"
+Assert-Matches "$DistRoot\_internal\pythonnet-*.dist-info\METADATA" "Bundled pythonnet package metadata is missing"
+Assert-Matches "$DistRoot\_internal\clr_loader-*.dist-info\METADATA" "Bundled clr_loader package metadata is missing"
+Invoke-PackagingProbe "$DistRoot\Orrery.exe"
 
 Write-Host "Creating release folder..."
 New-Item -ItemType Directory -Force $ReleaseRoot | Out-Null
@@ -122,108 +176,9 @@ New-Item -ItemType Directory -Force "$ReleaseRoot\sandbox" | Out-Null
 Copy-Item "docker-compose.yml" "$ReleaseRoot\docker-compose.yml" -Force
 Copy-Item ".env.example" "$ReleaseRoot\.env.example" -Force
 Copy-Item "sandbox\Dockerfile" "$ReleaseRoot\sandbox\Dockerfile" -Force
-
-@'
-@echo off
-setlocal
-cd /d "%~dp0"
-
-echo Orrery Windows Preview
-echo ======================
-echo.
-
-if not exist "Orrery.exe" (
-  echo Missing Orrery.exe. Extract the full Orrery-Windows.zip package and try again.
-  pause
-  exit /b 1
-)
-
-if not exist "_internal\python312.dll" (
-  echo Missing _internal\python312.dll.
-  echo This package is incomplete. Download Orrery-Windows.zip again and extract the full folder.
-  pause
-  exit /b 1
-)
-
-if not exist ".env" (
-  if exist ".env.example" (
-    copy ".env.example" ".env" >nul
-  )
-)
-
-where docker >nul 2>nul
-if errorlevel 1 (
-  echo Docker was not found in PATH.
-  echo Start PostgreSQL with pgvector yourself, or install Docker Desktop and run this launcher again.
-  echo.
-) else (
-  echo Starting included PostgreSQL database...
-  docker compose up -d
-  if errorlevel 1 goto setup_failed
-
-  echo Checking PostgreSQL readiness...
-  set PG_READY=0
-  for /l %%i in (1,1,30) do (
-    docker exec orrery-postgres pg_isready -U orrery -d orrery >nul 2>nul
-    if not errorlevel 1 (
-      set PG_READY=1
-      goto postgres_ready
-    )
-    timeout /t 2 /nobreak >nul
-  )
-  :postgres_ready
-  if not "%PG_READY%"=="1" goto setup_failed
-
-  echo Building sandbox image for file generation...
-  docker build -t orrery-sandbox:latest sandbox
-  if errorlevel 1 goto setup_failed
-  echo.
-)
-
-echo Starting Orrery...
-echo.
-".\Orrery.exe"
-set EXITCODE=%ERRORLEVEL%
-if not "%EXITCODE%"=="0" (
-  echo.
-  echo Orrery exited with code %EXITCODE%.
-  echo If you started this by double-clicking, run run-orrery.bat from PowerShell to keep the full log visible.
-  pause
-)
-exit /b %EXITCODE%
-
-:setup_failed
-echo.
-echo Setup failed. Check Docker Desktop, then run run-orrery.bat again.
-pause
-exit /b 1
-'@ | Set-Content "$ReleaseRoot\run-orrery.bat" -Encoding ascii
-
-@'
-Orrery Windows Preview
-======================
-
-Requirements:
-- Windows 10/11
-- Microsoft Edge WebView2 Runtime
-- Docker Desktop if using the included PostgreSQL database or sandboxed file generation
-- PostgreSQL with pgvector, either your own server or the included docker-compose.yml
-
-Quick start:
-1. Extract the full Orrery-Windows.zip folder. Do not copy only Orrery.exe.
-2. Double-click run-orrery.bat, or run this from PowerShell:
-   .\run-orrery.bat
-3. If prompted for a database URL, use:
-   postgresql+psycopg://orrery:orrery_dev_password@127.0.0.1:5432/orrery
-
-Notes:
-- Orrery.exe is a PyInstaller onedir executable. It requires the _internal folder beside it.
-- In PowerShell, run .\Orrery.exe or .\run-orrery.bat. PowerShell does not run current-folder programs by name only.
-- run-orrery.bat copies .env.example to .env on first run, starts Docker Compose, builds the sandbox image, then launches Orrery.
-- API keys and database URLs are stored in the Windows keychain.
-- Orrery binds its API to localhost and uses a per-session token.
-- The preview executable uses a console window so first-run database prompts and startup errors are visible.
-'@ | Set-Content "$ReleaseRoot\README-WINDOWS.txt" -Encoding utf8
+Copy-Item "scripts\windows\setup-orrery.bat" "$ReleaseRoot\setup-orrery.bat" -Force
+Copy-Item "scripts\windows\run-orrery.bat" "$ReleaseRoot\run-orrery.bat" -Force
+Copy-Item "scripts\windows\README-WINDOWS.txt" "$ReleaseRoot\README-WINDOWS.txt" -Force
 
 Write-Host "Validating release folder..."
 Assert-Exists "$ReleaseRoot\Orrery.exe" "Release executable is missing"
@@ -231,11 +186,17 @@ Assert-Exists "$ReleaseRoot\_internal\python312.dll" "Release Python runtime is 
 Assert-Exists "$ReleaseRoot\_internal\ui\dist" "Release frontend is missing"
 Assert-Exists "$ReleaseRoot\_internal\procrastinate\sql\queries.sql" "Release Procrastinate SQL queries are missing"
 Assert-Matches "$ReleaseRoot\_internal\procrastinate-*.dist-info\METADATA" "Release Procrastinate package metadata is missing"
+Assert-Exists "$ReleaseRoot\_internal\pythonnet\runtime\Python.Runtime.dll" "Release pythonnet runtime is missing"
+Assert-Exists "$ReleaseRoot\_internal\clr_loader\ffi\dlls\amd64\ClrLoader.dll" "Release clr_loader native bridge is missing"
+Assert-Matches "$ReleaseRoot\_internal\pythonnet-*.dist-info\METADATA" "Release pythonnet package metadata is missing"
+Assert-Matches "$ReleaseRoot\_internal\clr_loader-*.dist-info\METADATA" "Release clr_loader package metadata is missing"
 Assert-Exists "$ReleaseRoot\docker-compose.yml" "Release docker-compose.yml is missing"
 Assert-Exists "$ReleaseRoot\.env.example" "Release .env.example is missing"
 Assert-Exists "$ReleaseRoot\sandbox\Dockerfile" "Release sandbox Dockerfile is missing"
+Assert-Exists "$ReleaseRoot\setup-orrery.bat" "Release setup launcher is missing"
 Assert-Exists "$ReleaseRoot\run-orrery.bat" "Release launcher is missing"
 Assert-Exists "$ReleaseRoot\README-WINDOWS.txt" "Release notes are missing"
+Invoke-PackagingProbe "$ReleaseRoot\Orrery.exe"
 
 Write-Host "Creating release zip..."
 New-Item -ItemType Directory -Force "release" | Out-Null
