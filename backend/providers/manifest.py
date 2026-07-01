@@ -21,8 +21,9 @@ DEFAULT_MANIFEST: dict = {
         "recommended_cli_version": [2, 1, 185],
         "variants": [
             ["claude_plan/default", "Claude plan - adaptive thinking", None],
+            ["claude_plan/fable", "Claude plan - Fable 5 - adaptive thinking", "claude-fable-5"],
             ["claude_plan/opus", "Claude plan - Opus - adaptive thinking", "claude-opus-4-8"],
-            ["claude_plan/sonnet", "Claude plan - Sonnet - adaptive thinking", "claude-sonnet-4-6"],
+            ["claude_plan/sonnet", "Claude plan - Sonnet 5 - adaptive thinking", "claude-sonnet-5"],
             ["claude_plan/haiku", "Claude plan - Haiku - fast", "claude-haiku-4-5"],
         ],
     },
