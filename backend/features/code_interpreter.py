@@ -219,6 +219,13 @@ async def run(
             return
         except Exception as exc:  # noqa: BLE001 — provider errors already sanitized upstream
             yield stream_events.error(str(exc))
+            # Persist the failed turn (any partial answer + the error) so it survives a chat switch
+            # instead of vanishing with the stream.
+            failed_text = strip_think("".join(visible_parts)).strip()
+            error_note = f"⚠️ The model call failed: {exc}"
+            failed_text = f"{failed_text}\n\n{error_note}" if failed_text else error_note
+            message_id = await persist(failed_text, all_files or None)
+            yield stream_events.message_id(message_id)
             return
 
         actionable = [(k, b) for k, b in blocks if b.strip()]

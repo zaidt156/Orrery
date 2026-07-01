@@ -188,6 +188,13 @@ def _packaging_probe() -> None:
             raise RuntimeError("Windows package must use Qt WebEngine desktop runtime.")
     elif sys.platform == "darwin":
         import webview.platforms.cocoa  # noqa: F401
+    # litellm counts tokens with tiktoken; its encodings load via the tiktoken_ext plugin package,
+    # which PyInstaller misses unless collected — a broken build fails every API-key chat with
+    # "Unknown encoding cl100k_base", so catch it here instead of in users' chats.
+    import tiktoken
+
+    if len(tiktoken.get_encoding("cl100k_base").encode("orrery")) < 1:
+        raise RuntimeError("tiktoken cl100k_base encoding returned no tokens.")
     print("Orrery packaging probe: ok")
 
 

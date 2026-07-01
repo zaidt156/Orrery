@@ -136,6 +136,8 @@ Invoke-Checked ".venv\Scripts\pyinstaller.exe" `
     "--add-data" "sandbox;sandbox" `
     "--add-data" "backend\providers\model_manifest.json;backend\providers" `
     "--collect-all" "litellm" `
+    "--collect-all" "tiktoken" `
+    "--collect-submodules" "tiktoken_ext" `
     "--collect-all" "fastembed" `
     "--collect-all" "pptx" `
     "--collect-data" "procrastinate" `

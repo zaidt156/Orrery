@@ -292,6 +292,14 @@ async def _generate(
     except Exception as exc:  # noqa: BLE001 — already sanitized by ai.stream_chat
         log_event(_log, "chat_generate_failed", model=model, error=type(exc).__name__)
         yield stream_events.error(str(exc))
+        # Persist the failed turn too — otherwise the error (and any partial answer) vanishes as soon
+        # as the user switches chats, leaving a user message with no reply and a hole in the context.
+        failed_text = _strip_think("".join(parts)).strip()
+        error_note = f"⚠️ The model call failed: {exc}"
+        failed_text = f"{failed_text}\n\n{error_note}" if failed_text else error_note
+        message_id = await _persist_assistant(cid, failed_text, model)
+        parts.clear()  # already persisted with the error note; don't re-persist in finally
+        yield stream_events.message_id(message_id)
         return
     finally:
         if parts:  # runs on normal completion AND on client-cancel (GeneratorExit)
