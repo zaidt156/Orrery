@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import uuid
 
 import pytest
@@ -245,6 +246,116 @@ async def test_stream_reply_file_route_can_fall_back_to_model_reply(monkeypatch)
 
 
 @pytest.mark.anyio
+async def test_stream_reply_file_route_sandbox_miss_uses_docspec(monkeypatch):
+    calls = []
+    outcomes = []
+
+    async def fake_prepare_turn(*args, **kwargs):
+        return _fake_turn()
+
+    async def fake_trusted_context(project_id):
+        return None
+
+    async def fake_record_plan(*args, **kwargs):
+        return "route-1"
+
+    async def fake_record_outcome(route_id, outcome, detail=None):
+        outcomes.append((route_id, outcome, detail))
+
+    async def fake_filegen_run(*args, **kwargs):
+        calls.append("sandbox")
+        yield stream_events.result({"ok": False, "error": "sandbox validation failed"})
+
+    async def fake_deliver_docspec(*args, **kwargs):
+        calls.append("docspec")
+        yield stream_events.delta("Here is your file.")
+        yield stream_events.files([{"kind": "file", "name": "revenue.pdf"}])
+        yield stream_events.done()
+
+    async def fake_route_model_reply(*args, **kwargs):
+        calls.append("model")
+        yield stream_events.delta("plain fallback")
+        yield stream_events.done()
+
+    monkeypatch.setattr(chat, "_prepare_turn", fake_prepare_turn)
+    monkeypatch.setattr(chat.project_store, "trusted_context", fake_trusted_context)
+    monkeypatch.setattr(chat.route_telemetry, "record_plan", fake_record_plan)
+    monkeypatch.setattr(chat.route_telemetry, "record_outcome", fake_record_outcome)
+    monkeypatch.setattr(chat.sandbox, "image_ready", lambda: True)
+    monkeypatch.setattr(chat.filegen, "run", fake_filegen_run)
+    monkeypatch.setattr(chat, "_deliver_docspec", fake_deliver_docspec)
+    monkeypatch.setattr(chat, "_route_model_reply", fake_route_model_reply)
+
+    events = [
+        event
+        async for event in chat.stream_reply(
+            "00000000-0000-0000-0000-000000000001",
+            "Create a PDF report about revenue",
+        )
+    ]
+
+    assert calls == ["sandbox", "docspec"]
+    assert {"files": [{"kind": "file", "name": "revenue.pdf"}]} in events
+    assert events[-1] == stream_events.done()
+    assert ("route-1", "sandbox_fallback", None) in outcomes
+
+
+@pytest.mark.anyio
+async def test_stream_reply_file_route_full_fallback_to_model_reply(monkeypatch):
+    calls = []
+    outcomes = []
+
+    async def fake_prepare_turn(*args, **kwargs):
+        return _fake_turn()
+
+    async def fake_trusted_context(project_id):
+        return None
+
+    async def fake_record_plan(*args, **kwargs):
+        return "route-1"
+
+    async def fake_record_outcome(route_id, outcome, detail=None):
+        outcomes.append((route_id, outcome, detail))
+
+    async def fake_filegen_run(*args, **kwargs):
+        calls.append("sandbox")
+        yield stream_events.result({"ok": False, "error": "sandbox produced no files"})
+
+    async def fake_deliver_docspec(*args, **kwargs):
+        calls.append("docspec")
+        return
+        yield
+
+    async def fake_route_model_reply(*args, **kwargs):
+        calls.append("model")
+        yield stream_events.delta("fallback answer")
+        yield stream_events.done()
+
+    monkeypatch.setattr(chat, "_prepare_turn", fake_prepare_turn)
+    monkeypatch.setattr(chat.project_store, "trusted_context", fake_trusted_context)
+    monkeypatch.setattr(chat.route_telemetry, "record_plan", fake_record_plan)
+    monkeypatch.setattr(chat.route_telemetry, "record_outcome", fake_record_outcome)
+    monkeypatch.setattr(chat.sandbox, "image_ready", lambda: True)
+    monkeypatch.setattr(chat.filegen, "run", fake_filegen_run)
+    monkeypatch.setattr(chat, "_deliver_docspec", fake_deliver_docspec)
+    monkeypatch.setattr(chat, "_route_model_reply", fake_route_model_reply)
+
+    events = [
+        event
+        async for event in chat.stream_reply(
+            "00000000-0000-0000-0000-000000000001",
+            "Create a PDF report about revenue",
+        )
+    ]
+
+    assert calls == ["sandbox", "docspec", "model"]
+    assert {"status": ""} in events
+    assert {"delta": "fallback answer"} in events
+    assert events[-1] == stream_events.done()
+    assert ("route-1", "deterministic_failed", None) in outcomes
+
+
+@pytest.mark.anyio
 async def test_stream_reply_dispatches_research_route(monkeypatch):
     calls = []
 
@@ -376,6 +487,47 @@ async def test_resume_without_running_task_signals_done():
 
 
 @pytest.mark.anyio
+async def test_resume_running_task_streams_resumed_then_events(monkeypatch):
+    statuses = []
+    release = asyncio.Event()
+
+    async def fake_conv_title(*args, **kwargs):
+        return "Test chat"
+
+    async def fake_start(*args, **kwargs):
+        return "task-1"
+
+    async def fake_finish(task_id, status):
+        statuses.append((task_id, status))
+
+    async def source():
+        yield stream_events.delta("first")
+        await release.wait()
+        yield stream_events.delta("second")
+
+    conv_id = "00000000-0000-0000-0000-0000000000dd"
+    monkeypatch.setattr(chat, "_conv_title", fake_conv_title)
+    monkeypatch.setattr(chat.taskbrain, "start", fake_start)
+    monkeypatch.setattr(chat.taskbrain, "finish", fake_finish)
+
+    chat.start_detached(conv_id, source())
+    collector = asyncio.create_task(_collect_async(chat.resume(conv_id)))
+    await asyncio.sleep(0)
+    release.set()
+    events = await asyncio.wait_for(collector, timeout=1)
+    for _ in range(10):
+        if statuses:
+            break
+        await asyncio.sleep(0)
+
+    assert events[0] == stream_events.resumed()
+    assert stream_events.delta("first") in events
+    assert stream_events.delta("second") in events
+    assert events[-1] == stream_events.done()
+    assert statuses == [("task-1", "done")]
+
+
+@pytest.mark.anyio
 async def test_detached_run_surfaces_generator_errors(monkeypatch):
     statuses = []
 
@@ -408,3 +560,46 @@ async def test_detached_run_surfaces_generator_errors(monkeypatch):
 
     assert events == [stream_events.delta("before"), stream_events.error("boom")]
     assert statuses == [("task-1", "failed")]
+
+
+@pytest.mark.anyio
+async def test_cancel_run_marks_detached_task_canceled(monkeypatch):
+    statuses = []
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def fake_conv_title(*args, **kwargs):
+        return "Test chat"
+
+    async def fake_start(*args, **kwargs):
+        return "task-1"
+
+    async def fake_finish(task_id, status):
+        statuses.append((task_id, status))
+
+    async def source():
+        started.set()
+        await release.wait()
+        yield stream_events.delta("late")
+
+    conv_id = "00000000-0000-0000-0000-0000000000cc"
+    monkeypatch.setattr(chat, "_conv_title", fake_conv_title)
+    monkeypatch.setattr(chat.taskbrain, "start", fake_start)
+    monkeypatch.setattr(chat.taskbrain, "finish", fake_finish)
+
+    queue = chat.start_detached(conv_id, source())
+    await asyncio.wait_for(started.wait(), timeout=1)
+    task = chat._run_tasks[conv_id]
+
+    chat.cancel_run(conv_id)
+    with contextlib.suppress(asyncio.CancelledError):
+        await asyncio.wait_for(task, timeout=1)
+    events = [event async for event in chat.observe(queue)]
+
+    assert events == []
+    assert statuses == [("task-1", "canceled")]
+    assert not chat.is_running(conv_id)
+
+
+async def _collect_async(source):
+    return [event async for event in source]

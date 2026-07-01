@@ -131,6 +131,26 @@ def test_approve_accepts_mp4_header_video():
     assert "has_mp4_header" in approval.manifest[0]["checks"]
 
 
+def test_sandbox_manifest_is_sanitized_and_structured():
+    manifest = sandbox._build_manifest(
+        "run-123",
+        ok=True,
+        exit_code=0,
+        timed_out=False,
+        files=[sandbox.SandboxFile("report.pdf", b"12345")],
+    )
+
+    assert manifest["run_id"] == "run-123"
+    assert manifest["layout"]["input"] == "/work/input"
+    assert manifest["layout"]["workspace"] == "/work/workspace"
+    assert manifest["layout"]["output"] == "/work/out"
+    assert manifest["status"] == {"ok": True, "exit_code": 0, "timed_out": False}
+    assert manifest["outputs"] == [{"name": "report.pdf", "size": 5}]
+    assert "code" not in manifest
+    assert "stdout" not in manifest
+    assert "stderr" not in manifest
+
+
 @pytest.mark.anyio
 async def test_filegen_run_validates_and_returns_file(monkeypatch):
     captured = {}
@@ -146,6 +166,8 @@ async def test_filegen_run_validates_and_returns_file(monkeypatch):
         return sandbox.SandboxResult(
             ok=True, stdout="earth.pptx", stderr="", exit_code=0, timed_out=False,
             files=[sandbox.SandboxFile("earth.pptx", _make_pptx())],
+            run_id="run-abc",
+            manifest={"run_id": "run-abc", "layout": {"output": "/work/out"}, "outputs": []},
         )
 
     monkeypatch.setattr(filegen.ai, "stream_chat", fake_stream_chat)
@@ -168,3 +190,5 @@ async def test_filegen_run_validates_and_returns_file(monkeypatch):
     assert captured["code"].startswith("import os as _os")
     assert events[-1]["result"]["ok"] is True
     assert events[-1]["result"]["files"][0].name == "earth.pptx"
+    assert events[-1]["result"]["sandbox"]["run_id"] == "run-abc"
+    assert events[-1]["result"]["sandbox_runs"][0]["run_id"] == "run-abc"

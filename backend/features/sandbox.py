@@ -16,6 +16,7 @@ import tempfile
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from backend.core import proc
 from backend.core.config import settings
@@ -30,6 +31,12 @@ _MAX_TOTAL_OUTPUT_BYTES = 30_000_000
 _MAX_FILE_BYTES = 25_000_000
 _MAX_LOG_CHARS = 6_000
 _MAX_CODE_CHARS = 200_000
+_LAYOUT = {
+    "root": "/work",
+    "input": "/work/input",
+    "workspace": "/work/workspace",
+    "output": "/work/out",
+}
 
 
 def _docker_bin() -> str:
@@ -55,6 +62,8 @@ class SandboxResult:
     exit_code: int
     timed_out: bool
     files: list[SandboxFile] = field(default_factory=list)
+    run_id: str = ""
+    manifest: dict[str, Any] = field(default_factory=dict)
 
 
 def image_ready() -> bool:
@@ -85,6 +94,44 @@ def _collect_outputs(out_dir: Path) -> list[SandboxFile]:
     return files
 
 
+def _build_manifest(
+    run_id: str,
+    *,
+    ok: bool,
+    exit_code: int,
+    timed_out: bool,
+    files: list[SandboxFile],
+) -> dict[str, Any]:
+    """Public, sanitized run metadata. Never include generated code, logs, prompts, or secrets."""
+    return {
+        "run_id": run_id,
+        "engine": "docker",
+        "image": IMAGE,
+        "layout": dict(_LAYOUT),
+        "limits": {
+            "timeout_seconds": TIMEOUT_SECONDS,
+            "memory": _MEMORY,
+            "cpus": _CPUS,
+            "pids": _PIDS,
+            "max_output_files": _MAX_OUTPUT_FILES,
+            "max_total_output_bytes": _MAX_TOTAL_OUTPUT_BYTES,
+            "max_file_bytes": _MAX_FILE_BYTES,
+        },
+        "status": {
+            "ok": ok,
+            "exit_code": exit_code,
+            "timed_out": timed_out,
+        },
+        "outputs": [
+            {
+                "name": file.name,
+                "size": len(file.data),
+            }
+            for file in files
+        ],
+    }
+
+
 def run_code(code: str) -> SandboxResult:
     """Run Python in the sandbox and return its logs plus any files it wrote to out/."""
     if not code or not code.strip():
@@ -92,11 +139,16 @@ def run_code(code: str) -> SandboxResult:
     if len(code) > _MAX_CODE_CHARS:
         raise SandboxError("The generated code is too large to run.")
 
-    workdir = Path(tempfile.mkdtemp(prefix="orrery-sbx-"))
+    run_id = uuid.uuid4().hex[:12]
+    workdir = Path(tempfile.mkdtemp(prefix=f"orrery-sbx-{run_id}-"))
+    input_dir = workdir / "input"
+    workspace_dir = workdir / "workspace"
     out_dir = workdir / "out"
+    input_dir.mkdir()
+    workspace_dir.mkdir()
     out_dir.mkdir()
     (workdir / "main.py").write_text(code, encoding="utf-8")
-    name = f"orrery-sbx-{uuid.uuid4().hex[:12]}"
+    name = f"orrery-sbx-{run_id}"
 
     command = [
         _docker_bin(), "run", "--rm", "--name", name,
@@ -132,7 +184,14 @@ def run_code(code: str) -> SandboxResult:
     finally:
         shutil.rmtree(workdir, ignore_errors=True)
 
+    ok = exit_code == 0 and not timed_out
     return SandboxResult(
-        ok=(exit_code == 0 and not timed_out),
-        stdout=stdout, stderr=stderr, exit_code=exit_code, timed_out=timed_out, files=files,
+        ok=ok,
+        stdout=stdout,
+        stderr=stderr,
+        exit_code=exit_code,
+        timed_out=timed_out,
+        files=files,
+        run_id=run_id,
+        manifest=_build_manifest(run_id, ok=ok, exit_code=exit_code, timed_out=timed_out, files=files),
     )

@@ -229,7 +229,7 @@ sandboxed `filegen` when code/visuals/audio/computation; project → workspace).
 
 ---
 
-# 11. Status — Done & Remaining (updated 2026-06-28)
+# 11. Status — Done & Remaining (updated 2026-07-01)
 
 ### Done — foundation & hardening
 - **Phases 0–2:** desktop shell, streaming chat, model routing (API keys + Claude/ChatGPT/Gemini CLI
@@ -288,9 +288,10 @@ sandboxed `filegen` when code/visuals/audio/computation; project → workspace).
 4. [x] Centralize SSE event shapes (a typed `events` helper) so the stream protocol is explicit and consistent.
 
 ### Phase C — Lock it down
-5. [ ] Integration tests for the dispatcher: each route → correct executor + events; fallback chain
-   (sandbox miss → docgen → plain reply); error, cancellation, and resume paths. Route/fallback coverage
-   exists, and error + resume edges are now covered; cancellation + full sandbox/docgen/plain chain still need hardening.
+5. [x] Integration tests for the dispatcher: each route → correct executor + events; fallback chain
+   (sandbox miss → docgen → plain reply); error, cancellation, and resume paths. Covered: route dispatch,
+   sandbox miss → docgen success, sandbox miss → docgen miss → model reply, detached generator errors,
+   resume, and cancellation bookkeeping.
 6. Audit every external `await` (DB / ai / sandbox) for graceful degradation (most already guarded).
 7. CI gate: `compileall` + import smoke tests + full suite on every change.
 
@@ -323,6 +324,9 @@ Implemented:
 - [x] Sandbox artifact generation now recognizes and validates HTML/web pages, audio, video/MP4/WebM,
       WebP, Markdown, text, JSON, archives, documents, slides, sheets, images, and WAV/MP3-style outputs;
       audio/video/html can be previewed directly from generated file cards.
+- [x] Sandbox runs expose structured `input` / `workspace` / `out` directories and return a sanitized
+      run manifest (run id, limits, status, output file names/sizes) without prompts, generated code,
+      logs, or secrets.
 - [x] Project workspaces: per-project files -> RAG, project-scoped chats, trusted project context.
 - [x] stream_reply split into route handlers + dispatcher tests; route telemetry (sanitized).
 - [x] Chat stream event shapes centralized in `backend.features.events`, preserving the current UI wire format.

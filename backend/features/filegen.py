@@ -644,6 +644,7 @@ async def run(
     )
     convo: list[dict] = [{"role": "user", "content": request}]
     last_error = ""
+    run_manifests: list[dict] = []
     max_attempts = reasoning.file_retries(effort)  # Quick=1 … Max=4 repair attempts
 
     for attempt in range(max_attempts):
@@ -717,6 +718,8 @@ async def run(
         )
 
         outcome = await asyncio.to_thread(sandbox.run_code, _guard(code))
+        if outcome.manifest:
+            run_manifests.append(outcome.manifest)
         if outcome.ok and outcome.files:
             yield stream_events.status("Checking the output…")
             yield reasoning_event(
@@ -736,6 +739,8 @@ async def run(
                     "code": code,
                     "summary": _summary(approval.files),
                     "manifest": approval.manifest,
+                    "sandbox": outcome.manifest,
+                    "sandbox_runs": run_manifests,
                 })
                 return
 
@@ -774,4 +779,5 @@ async def run(
         "ok": False,
         "error": "I couldn't build a production-quality file after several attempts.",
         "logs": last_error,
+        "sandbox_runs": run_manifests,
     })

@@ -219,7 +219,8 @@ FILE_SYSTEM_PROMPT = (
     "- Do not create, alter, imitate, backdate, or forge official, medical, academic, legal, banking, employment, immigration, or identity documents in a way that could deceive.\n"
     "- If the user asks for an official-document template or sample, make it clearly fictional/sample/watermarked and not usable as a real document.\n"
     "Technical requirements:\n"
-    "- Save every deliverable into the ./out directory (it already exists), with clear filenames and correct extensions.\n"
+    "- The sandbox provides ./input for backend-provided source files, ./workspace for scratch/intermediate files, and ./out for final deliverables.\n"
+    "- Save every user-facing deliverable into the ./out directory (it already exists), with clear filenames and correct extensions.\n"
     "- Build real, complete, polished files that fully satisfy the request - never placeholders, stubs, or 'TODO' content.\n"
     "- Reopen or validate each generated file in code before finishing when the library supports it. If validation fails, fix the file before printing success.\n"
     "- Available libraries/tools: python-docx, openpyxl, XlsxWriter, python-pptx, reportlab, fpdf2, pandas, numpy, matplotlib (use matplotlib.use('Agg')), Pillow, imageio, imageio-ffmpeg, markdown, beautifulsoup4, lxml, odfpy, ffmpeg, espeak-ng, plus the Python standard library including wave/math/struct for audio.\n"
@@ -229,7 +230,7 @@ FILE_SYSTEM_PROMPT = (
     "diagrams/icons, or python-pptx shapes and color blocks. If the user asks for photos you cannot "
     "draw, use tasteful shape/gradient graphics or clearly labeled placeholders and PROCEED — never let "
     "missing images block the file.\n"
-    "- Do not read or write outside ./out. print() the name of each file you create.\n"
+    "- Do not read or write outside ./input, ./workspace, and ./out. print() the name of each file you create.\n"
     "- Create only the file types the user asked for, unless they explicitly request companion exports."
 )
 

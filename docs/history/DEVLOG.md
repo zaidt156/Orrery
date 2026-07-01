@@ -1126,3 +1126,17 @@ Next: structured input/workspace/output directories plus explicit manifest captu
 - The Windows workflow and local release builder now collect Procrastinate data and package metadata
   explicitly, then validate both `procrastinate/sql/queries.sql` and `procrastinate-*.dist-info`
   before publishing the zip.
+
+
+## Step 87 - Dispatcher fallback tests + sandbox run manifests (July 1, 2026)
+
+- Finished the next production-hardening checklist item for the chat dispatcher. Tests now cover the
+  full file route fallback chain: sandbox miss -> deterministic docgen success, sandbox miss -> docgen
+  miss -> normal model reply, plus detached run resume and cancellation bookkeeping.
+- Added structured sandbox run metadata without changing the user-facing `./out` contract. Every run now
+  has `input`, `workspace`, and `out` directories, and `sandbox.run_code()` returns a sanitized manifest
+  with run id, layout, resource limits, exit status, timeout state, and output filenames/sizes.
+- `filegen` carries those sandbox manifests through success and final failure results so the backend can
+  explain artifact generation without exposing prompts, generated code, logs, raw file data, or secrets.
+- Updated the file-generation prompt and architecture doc to describe the new directory contract. Verified
+  focused backend coverage: `tests/features/test_chat.py` + `tests/features/test_filegen.py` = 37 passed.
