@@ -1156,3 +1156,19 @@ Next: structured input/workspace/output directories plus explicit manifest captu
 - The local and CI builders now collect pythonnet/clr_loader explicitly, copy their package metadata,
   validate their runtime files, run the packaged probe from both `dist/` and `release/`, and then zip
   the complete `Orrery-Windows` folder.
+
+
+## Step 89 - macOS packaging scaffold (July 1, 2026)
+
+- Added a macOS release path without changing the app architecture: PyInstaller builds `Orrery.app`,
+  copies Docker/Postgres/sandbox assets, adds Terminal-friendly setup/run helpers, and writes
+  `release/Orrery-macOS.zip`.
+- Added a `Build macOS Release` GitHub Actions workflow. On version tags it can attach
+  `Orrery-macOS.zip` beside the Windows zip; manual runs upload the zip as a workflow artifact.
+- Made runtime paths macOS-aware so packaged builds write `.env`, WebView data, and generated files
+  beside `Orrery.app` instead of inside `Orrery.app/Contents/MacOS`.
+- Extended the packaged `--packaging-probe` to check bundled UI/skills/assets and to load the macOS
+  pywebview Cocoa backend. This keeps missing resources or broken desktop-runtime imports from reaching
+  users.
+- Documentation now distinguishes Windows preview packaging from macOS preview packaging. Remaining
+  release work: sign/notarize macOS builds and validate architecture coverage on GitHub's macOS runners.

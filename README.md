@@ -65,14 +65,16 @@ environment.
 | Secrets | Operating-system keychain through `keyring` |
 | File sandbox | Docker container with no network, resource limits, read-only root, and mounted output folder |
 
-## Download A Windows Build
+## Download A Desktop Build
 
-When a release is published, download the Windows package from the
+When a release is published, download the desktop package from the
 [GitHub Releases page](https://github.com/zaidt156/Orrery/releases):
 
 - `Orrery-Windows.zip`: recommended package with `Orrery.exe`, database compose file, sandbox
   Dockerfile, `setup-orrery.bat`, `run-orrery.bat`, Windows notes, and the required PyInstaller
   `_internal` runtime folder.
+- `Orrery-macOS.zip`: macOS preview package with `Orrery.app`, database compose file, sandbox
+  Dockerfile, `setup-orrery.command`, `run-orrery.command`, and macOS notes.
 
 The first public builds are preview builds. If a release asset is not attached yet, run Orrery from
 source using the steps below or ask a maintainer to publish a tagged release.
@@ -117,6 +119,37 @@ postgresql+psycopg://orrery:orrery_dev_password@127.0.0.1:5432/orrery
 
 You can also point Orrery at your own local, LAN, or cloud PostgreSQL server as long as pgvector is
 available and the connection string is reachable from your machine.
+
+### macOS Release Prerequisites
+
+Install these before running the macOS preview package:
+
+1. macOS 13 or newer is the intended baseline for preview builds.
+2. Docker Desktop, if you want the included PostgreSQL container or sandboxed file generation.
+3. PostgreSQL with pgvector. The release zip includes `docker-compose.yml` for a local pgvector
+   database.
+4. Optional: Ollama for local models.
+5. Optional: first-party provider CLIs for account-plan routes.
+
+### Run The macOS Release
+
+From the extracted `Orrery-macOS.zip` folder:
+
+```bash
+# First-run setup menu: choose included Docker PostgreSQL, your own database,
+# sandbox-only setup, or start-only.
+./setup-orrery.command
+
+# Normal launch after setup.
+./run-orrery.command
+```
+
+The macOS preview is not notarized yet. If Gatekeeper blocks it, right-click `Orrery.app` and choose
+Open, or remove quarantine from the extracted folder only if you trust the downloaded release:
+
+```bash
+xattr -dr com.apple.quarantine Orrery.app setup-orrery.command run-orrery.command
+```
 
 ## Run From Source On Windows
 
@@ -185,6 +218,40 @@ python app.py
 
 For production-style local testing, set `ORRERY_DEV=0`, run `npm run build`, and start `python app.py`.
 
+## Run From Source On macOS
+
+Install Git, Python 3.12, Node.js 20, Docker Desktop, and PostgreSQL with pgvector, or use the
+included Docker Compose database.
+
+```bash
+git clone https://github.com/zaidt156/Orrery.git
+cd Orrery
+
+# Local development settings. Never commit .env.
+cp .env.example .env
+
+# Start local PostgreSQL + pgvector.
+docker compose up -d
+
+# Build the sandbox image used by file generation.
+docker build -t orrery-sandbox:latest sandbox
+
+# Python environment.
+python3.12 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+
+# Frontend production build served by FastAPI.
+cd ui
+npm install
+npm run build
+cd ..
+
+# Launch Orrery.
+python app.py
+```
+
 ## Model Setup
 
 Open `Settings -> Accounts & Keys` inside Orrery.
@@ -243,7 +310,7 @@ Orrery is designed around clear local boundaries:
 
 Read [`SECURITY.md`](SECURITY.md) for vulnerability reporting.
 
-## Build A Windows Release
+## Build Desktop Releases
 
 Maintainers can build release assets with GitHub Actions.
 
@@ -255,13 +322,14 @@ git tag v0.1.0
 git push origin v0.1.0
 ```
 
-3. The `Build Windows Release` workflow builds and publishes `Orrery-Windows.zip`.
+3. The release workflows build and publish platform zips:
+   - `Build Windows Release` -> `Orrery-Windows.zip`
+   - `Build macOS Release` -> `Orrery-macOS.zip`
 
-4. On version tags, the workflow attaches the zip to the GitHub Release automatically.
+4. On version tags, the workflows attach the zips to the GitHub Release automatically.
 
-You can also run the workflow manually from `Actions -> Build Windows Release`. Manual runs upload
-the zip as a workflow artifact but do not create a public release unless the run is from a version
-tag.
+You can also run the workflows manually from GitHub Actions. Manual runs upload zips as workflow
+artifacts but do not create a public release unless the run is from a version tag.
 
 To reproduce the same package locally on Windows:
 
@@ -272,6 +340,15 @@ To reproduce the same package locally on Windows:
 The script validates that `Orrery.exe`, `_internal\python312.dll`, the built UI, bundled skills,
 Docker compose file, sandbox Dockerfile, launcher, and Windows notes are all present before creating
 `release\Orrery-Windows.zip`. Do not publish `dist\Orrery\Orrery.exe` by itself.
+
+To reproduce the macOS package on macOS:
+
+```bash
+./scripts/build-macos-app.sh
+```
+
+The script validates that `Orrery.app`, the built UI, bundled skills, Docker compose file, sandbox
+Dockerfile, launcher, and macOS notes are all present before creating `release/Orrery-macOS.zip`.
 
 ## Test And Verify
 

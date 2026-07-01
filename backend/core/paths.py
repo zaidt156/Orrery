@@ -24,11 +24,20 @@ def bundle_dir() -> Path:
 def app_dir() -> Path:
     """Writable application folder.
 
-    In a packaged build this is the folder beside Orrery.exe. In source mode it is the
-    repository root.
+    In a packaged Windows/Linux build this is the folder beside the executable. In a packaged
+    macOS .app bundle this is the folder beside Orrery.app, not Contents/MacOS inside the bundle.
+    In source mode it is the repository root.
     """
     if getattr(sys, "frozen", False):
-        return Path(sys.executable).resolve().parent
+        executable = Path(sys.executable).resolve()
+        if (
+            sys.platform == "darwin"
+            and executable.parent.name == "MacOS"
+            and executable.parent.parent.name == "Contents"
+            and executable.parent.parent.parent.suffix == ".app"
+        ):
+            return executable.parent.parent.parent.parent
+        return executable.parent
     return project_root()
 
 

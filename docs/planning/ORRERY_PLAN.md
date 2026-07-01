@@ -249,7 +249,8 @@ sandboxed `filegen` when code/visuals/audio/computation; project → workspace).
 - **Providers:** model manifest (IDs/versions out of code), CLI flag-safety tests, honest `pricing_known`.
 - **Ops:** request IDs + structured logs, route telemetry (`task_route_events`), **Task Brain** ledger +
   Activity panel + background-run resume, live token count, connect/disconnect → picker, no flashing
-  console windows, generated-file TTL cleanup, branding fix, Ollama pre-flight.
+  console windows, generated-file TTL cleanup, branding fix, Ollama pre-flight, Windows onedir release,
+  and macOS `.app` packaging scaffolding.
 - **Projects:** model + API + hierarchical chat listing + scoped chat start + chat assignment + trusted
   project context in prompts.
 - **Polish:** refined app logo (in-app mark + favicon); `chat.py` split (`chat_context.py`).
@@ -261,9 +262,11 @@ sandboxed `filegen` when code/visuals/audio/computation; project → workspace).
 3. **Provider adapter split** (`accounts.py` → per-provider adapters + `ProviderAdapter` interface) and
    **JSONB** columns — production polish, lower urgency (most P0/P1 hardening already shipped).
 4. **Phases 3–6 (product surface):** Dashboards, Automations, Agents, Media Hub.
-5. **Voice/TTS/STT**, sandbox security tests, DB read-only role guidance, and the long-term
+5. **Release polish:** notarized/signed macOS packages, architecture-specific macOS artifacts if needed,
+   then Linux packaging.
+6. **Voice/TTS/STT**, sandbox security tests, DB read-only role guidance, and the long-term
    **Ollama-free local inference engine**.
-6. **Speed:** only *perceived* speed can improve at high effort (never cut effort).
+7. **Speed:** only *perceived* speed can improve at high effort (never cut effort).
 
 ---
 

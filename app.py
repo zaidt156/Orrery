@@ -27,7 +27,6 @@ log = logging.getLogger("orrery")
 
 # fresh per-session token so other local processes can't drive the API
 SESSION_TOKEN = pysecrets.token_urlsafe(32)
-APP_ICON = resource_path("assets", "desktop", "orrery.ico")
 WEBVIEW_DATA_DIR = runtime_path("tmp", "webview2")
 
 _ready = threading.Event()
@@ -150,6 +149,17 @@ def _window_url() -> str:
     return f"{base}/?token={SESSION_TOKEN}"
 
 
+def _app_icon() -> str | None:
+    candidates = (
+        ("orrery.ico",) if sys.platform == "win32" else ("orrery.png", "orrery.ico")
+    )
+    for name in candidates:
+        path = resource_path("assets", "desktop", name)
+        if path.exists():
+            return str(path)
+    return None
+
+
 def _packaging_probe() -> None:
     """Fast frozen-build health check used by the Windows release script.
 
@@ -158,12 +168,22 @@ def _packaging_probe() -> None:
     before a release zip is published.
     """
     print("Orrery packaging probe: checking desktop runtime...")
+    required = [
+        resource_path("ui", "dist", "index.html"),
+        resource_path("skills"),
+        resource_path("assets", "desktop", "orrery.png"),
+    ]
+    missing = [str(path) for path in required if not path.exists()]
+    if missing:
+        raise RuntimeError("Packaged resource check failed. Missing: " + ", ".join(missing))
     if sys.platform == "win32":
         import pythonnet
 
         pythonnet.load()
         import clr  # noqa: F401
         import webview.platforms.winforms  # noqa: F401
+    elif sys.platform == "darwin":
+        import webview.platforms.cocoa  # noqa: F401
     print("Orrery packaging probe: ok")
 
 
@@ -197,7 +217,7 @@ def main() -> None:
         js_api=_js_api,
     )
     webview.start(
-        icon=str(APP_ICON) if APP_ICON.exists() else None,
+        icon=_app_icon(),
         storage_path=str(WEBVIEW_DATA_DIR),
         private_mode=True,
     )
