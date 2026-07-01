@@ -1224,3 +1224,17 @@ Next: structured input/workspace/output directories plus explicit manifest captu
   the drag-to-Applications .app zip (its build got the same token-counter fix).
 
 Next: rebuild the release with these fixes; consider a macOS DMG via the same Electron path.
+
+
+## Step 93 - Installers built: Windows NSIS verified, macOS DMG wired (July 1, 2026)
+
+- **Windows installer works.** scripts/build-windows-installer.ps1 produced
+  Orrery-0.1.3-win-x64.exe (~178 MB): the backend passed its packaging probe (including the new
+  token-encoding check), Electron wrapped it, and NSIS packaged it - double-click to install
+  per-user with Start Menu/Desktop shortcuts; no more unzip-and-hunt-for-the-exe.
+- **macOS DMG pipeline.** scripts/build-macos-installer.sh mirrors the same flow on a Mac
+  (backend-only bundle -> Electron -> DMG, unsigned). DMGs can only be built on macOS, so a new
+  CI job builds it on a Mac runner; Windows CI likewise gained an installer job. Both attach
+  their installer to tagged releases next to the portable zips.
+
+Next: tag a release (v*) to let CI produce all four artifacts; consider code signing later.
