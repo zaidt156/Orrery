@@ -71,6 +71,8 @@ jobs:
             --collect-all litellm `
             --collect-all fastembed `
             --collect-all webview `
+            --collect-data procrastinate `
+            --copy-metadata procrastinate `
             --collect-submodules keyring.backends `
             app.py
           if ($LASTEXITCODE -ne 0) { throw "PyInstaller failed with exit code $LASTEXITCODE" }
@@ -88,7 +90,9 @@ jobs:
             "$distRoot\_internal\python312.dll",
             "$distRoot\_internal\ui\dist",
             "$distRoot\_internal\skills",
-            "$distRoot\_internal\assets"
+            "$distRoot\_internal\assets",
+            "$distRoot\_internal\procrastinate\sql\queries.sql",
+            "$distRoot\_internal\procrastinate-*.dist-info\METADATA"
           )
           foreach ($path in $requiredDist) {
             if (-not (Test-Path $path)) {
@@ -210,6 +214,8 @@ jobs:
             "$releaseRoot\Orrery.exe",
             "$releaseRoot\_internal\python312.dll",
             "$releaseRoot\_internal\ui\dist",
+            "$releaseRoot\_internal\procrastinate\sql\queries.sql",
+            "$releaseRoot\_internal\procrastinate-*.dist-info\METADATA",
             "$releaseRoot\docker-compose.yml",
             "$releaseRoot\.env.example",
             "$releaseRoot\sandbox\Dockerfile",

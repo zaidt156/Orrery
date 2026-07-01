@@ -1116,3 +1116,13 @@ Next: structured input/workspace/output directories plus explicit manifest captu
   and generated-file directory in the right places.
 - Test discovery now ignores generated `build`, `dist`, and `release` folders so bundled third-party
   tests inside local release packages do not pollute the Orrery test suite.
+
+
+## Step 86 - Windows release: bundled queue SQL (July 1, 2026)
+
+- Fixed the next packaged-startup failure after the full onedir release: Procrastinate loads its SQL
+  files from package data at runtime, and PyInstaller had not bundled
+  `_internal/procrastinate/sql/queries.sql`.
+- The Windows workflow and local release builder now collect Procrastinate data and package metadata
+  explicitly, then validate both `procrastinate/sql/queries.sql` and `procrastinate-*.dist-info`
+  before publishing the zip.

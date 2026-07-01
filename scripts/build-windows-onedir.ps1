@@ -14,6 +14,16 @@ function Assert-Exists {
     }
 }
 
+function Assert-Matches {
+    param(
+        [Parameter(Mandatory = $true)][string]$PathPattern,
+        [string]$Message = "Required path is missing"
+    )
+    if (-not (Test-Path -Path $PathPattern)) {
+        throw "$Message`: $PathPattern"
+    }
+}
+
 function Invoke-Checked {
     param(
         [Parameter(Mandatory = $true)][string]$Exe,
@@ -87,6 +97,8 @@ Invoke-Checked ".venv\Scripts\pyinstaller.exe" `
     "--collect-all" "litellm" `
     "--collect-all" "fastembed" `
     "--collect-all" "webview" `
+    "--collect-data" "procrastinate" `
+    "--copy-metadata" "procrastinate" `
     "--collect-submodules" "keyring.backends" `
     "app.py"
 
@@ -100,6 +112,8 @@ Assert-Exists "$DistRoot\_internal\python312.dll" "PyInstaller Python runtime is
 Assert-Exists "$DistRoot\_internal\ui\dist" "Bundled frontend build is missing"
 Assert-Exists "$DistRoot\_internal\skills" "Bundled skills folder is missing"
 Assert-Exists "$DistRoot\_internal\assets" "Bundled assets folder is missing"
+Assert-Exists "$DistRoot\_internal\procrastinate\sql\queries.sql" "Bundled Procrastinate SQL queries are missing"
+Assert-Matches "$DistRoot\_internal\procrastinate-*.dist-info\METADATA" "Bundled Procrastinate package metadata is missing"
 
 Write-Host "Creating release folder..."
 New-Item -ItemType Directory -Force $ReleaseRoot | Out-Null
@@ -215,6 +229,8 @@ Write-Host "Validating release folder..."
 Assert-Exists "$ReleaseRoot\Orrery.exe" "Release executable is missing"
 Assert-Exists "$ReleaseRoot\_internal\python312.dll" "Release Python runtime is missing"
 Assert-Exists "$ReleaseRoot\_internal\ui\dist" "Release frontend is missing"
+Assert-Exists "$ReleaseRoot\_internal\procrastinate\sql\queries.sql" "Release Procrastinate SQL queries are missing"
+Assert-Matches "$ReleaseRoot\_internal\procrastinate-*.dist-info\METADATA" "Release Procrastinate package metadata is missing"
 Assert-Exists "$ReleaseRoot\docker-compose.yml" "Release docker-compose.yml is missing"
 Assert-Exists "$ReleaseRoot\.env.example" "Release .env.example is missing"
 Assert-Exists "$ReleaseRoot\sandbox\Dockerfile" "Release sandbox Dockerfile is missing"
