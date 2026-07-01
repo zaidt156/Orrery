@@ -30,6 +30,10 @@
       {
         "from": "../../assets/desktop",
         "to": "assets/desktop"
+      },
+      {
+        "from": "../../dist/OrreryBackend",
+        "to": "backend"
       }
     ],
     "publish": [

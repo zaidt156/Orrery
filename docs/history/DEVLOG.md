@@ -1205,3 +1205,22 @@ Next: structured input/workspace/output directories plus explicit manifest captu
   signed packaged builds and release metadata.
 - Updated architecture docs: Orrery is a modular monolith with sidecars. Electron is the desktop-shell
   direction; microservices are deferred until a specific worker needs independent deployment or scale.
+
+
+## Step 92 - Release fixes: token-counter packaging, persisted failed turns, Windows installer (July 1, 2026)
+
+- **Fixed the release-breaking chat error.** In the packaged build, every API-key chat failed with
+  "Unknown encoding cl100k_base". The token counter's encoding data loads through a plugin package the
+  packager silently leaves out; the Windows and macOS build scripts now bundle it, and the packaging
+  probe verifies the encoding loads so a broken build fails at build time, not in users' chats.
+- **Failed turns no longer vanish.** A failed model call used to show its error only in the live stream -
+  click anywhere else and it was gone, leaving a question with no answer and a hole in the chat history.
+  Both the plain chat path and the tool loop now save the failed turn (any partial answer plus an error
+  note), so it survives switching chats and reloads.
+- **A real Windows installer.** New scripts/build-windows-installer.ps1 builds the backend as its own
+  bundle (no Qt - Electron owns the window), wraps it in the Electron shell, and produces an NSIS
+  installer with Start Menu/Desktop shortcuts and in-app updates. Install once, launch like any app -
+  no more unzipping and hunting for the .exe. The zip release stays as the portable option; macOS keeps
+  the drag-to-Applications .app zip (its build got the same token-counter fix).
+
+Next: rebuild the release with these fixes; consider a macOS DMG via the same Electron path.

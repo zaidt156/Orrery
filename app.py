@@ -180,13 +180,16 @@ def _packaging_probe() -> None:
     missing = [str(path) for path in required if not path.exists()]
     if missing:
         raise RuntimeError("Packaged resource check failed. Missing: " + ", ".join(missing))
-    if sys.platform == "win32":
+    # Backend-only bundles (the Electron installer's OrreryBackend) ship no GUI runtime — Electron
+    # owns the window — so skip the desktop-webview checks for them.
+    backend_only = "--backend-only" in sys.argv or os.environ.get("ORRERY_BACKEND_ONLY") == "1"
+    if sys.platform == "win32" and not backend_only:
         import webview.platforms.qt as _qt_backend
         from qtpy.QtWebEngineWidgets import QWebEngineView  # noqa: F401
 
         if getattr(_qt_backend, "renderer", "") != "qtwebengine":
             raise RuntimeError("Windows package must use Qt WebEngine desktop runtime.")
-    elif sys.platform == "darwin":
+    elif sys.platform == "darwin" and not backend_only:
         import webview.platforms.cocoa  # noqa: F401
     # litellm counts tokens with tiktoken; its encodings load via the tiktoken_ext plugin package,
     # which PyInstaller misses unless collected — a broken build fails every API-key chat with
