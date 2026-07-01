@@ -100,6 +100,33 @@ def model_provider(model_id: str) -> str:
     return "openai"
 
 
+# Context-window sizes for routes litellm can't look up. Plan CLIs run the provider's standard
+# context (not long-context betas); local/custom models vary, so their fallbacks stay conservative —
+# this is the history budget Orrery trims to, so overstating it makes models silently lose context.
+_PLAN_CONTEXT: dict[str, int] = {
+    "claude_plan": 200_000,
+    "chatgpt_plan": 272_000,
+    "gemini_plan": 1_048_576,
+}
+_DEFAULT_CONTEXT = 131_072
+_LOCAL_DEFAULT_CONTEXT = 32_768
+
+
+def model_context_window(model_id: str) -> int:
+    """Max usable context for a model, so the UI only offers sizes the model actually has."""
+    provider = model_provider(model_id)
+    if provider in _PLAN_CONTEXT:
+        return _PLAN_CONTEXT[provider]
+    try:
+        info = _load_litellm().get_model_info(model_id)
+        known = int(info.get("max_input_tokens") or info.get("max_tokens") or 0)
+        if known > 0:
+            return known
+    except Exception:  # noqa: BLE001 — unknown to litellm → conservative fallback below
+        pass
+    return _LOCAL_DEFAULT_CONTEXT if provider in ("ollama", "custom") else _DEFAULT_CONTEXT
+
+
 # --- live model discovery ---
 
 def _clean_openai(ids: list[str]) -> list[str]:

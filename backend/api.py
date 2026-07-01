@@ -67,7 +67,8 @@ class NewConversation(BaseModel):
     model: str
     system_prompt: str | None = None
     effort: str | None = None
-    context_window: Literal[131072, 262144, 1000000] = 1000000
+    # any size the UI offers; clamped server-side to the chosen model's real maximum
+    context_window: int = Field(default=1_000_000, ge=4_096, le=2_000_000)
     project_id: str | None = None
 
 
@@ -75,7 +76,7 @@ class UpdateConversation(BaseModel):
     model: str | None = None
     system_prompt: str | None = None
     effort: str | None = None
-    context_window: Literal[131072, 262144, 1000000] | None = None
+    context_window: int | None = Field(default=None, ge=4_096, le=2_000_000)
     project_id: str | None = None
 
 
@@ -369,7 +370,10 @@ def create_app(session_token: str) -> FastAPI:
     # --- models & providers ---
     @r.get("/models")
     async def models() -> dict:
-        return {"models": await ai.list_available_models()}
+        items = await ai.list_available_models()
+        for m in items:  # so the context selector only offers sizes the model actually has
+            m["context_window"] = ai.model_context_window(m["id"])
+        return {"models": items}
 
     @r.get("/models/catalog")
     async def models_catalog() -> dict:

@@ -92,7 +92,7 @@ async def create_conversation(
             model=model,
             system_prompt=system_prompt or None,
             effort=effort or None,
-            context_window=context_window,
+            context_window=min(int(context_window), ai.model_context_window(model)) if context_window else context_window,
             owner_id=owner,
         )
         s.add(conv)
@@ -191,6 +191,8 @@ async def update_conversation(
             conv.effort = (effort or None)
         if context_window is not _UNSET:
             conv.context_window = context_window
+        if conv.context_window:  # clamp to the (possibly new) model's real maximum
+            conv.context_window = min(int(conv.context_window), ai.model_context_window(conv.model))
         if project_id is not _UNSET:
             if project_id:
                 project = await s.get(Project, uuid.UUID(project_id))

@@ -229,6 +229,29 @@ class DataConnection(Base):
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class Dashboard(Base):
+    """An AI-designed dashboard: the model wrote the SQL and picked the charts; Orrery stores the
+    result as a spec and refreshes it by re-running the saved read-only SQL — no model call on reuse.
+
+    spec JSON: {"widgets": [{"title", "type" (stat|line|bar|pie|table), "sql", "x", "y"}]}.
+    Every revision snapshots the previous spec into history so a bad AI edit rolls back in one click.
+    """
+    __tablename__ = "dashboards"
+
+    id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(160))
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)  # the user's plain-words ask
+    connection_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True))  # which data connection it queries
+    model: Mapped[str] = mapped_column(String(120))    # authoring model (revisions may change it)
+    spec: Mapped[str] = mapped_column(Text)            # JSON widget spec (see docstring)
+    history: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON list of previous specs
+    owner_id: Mapped[str | None] = mapped_column(String(36), nullable=True)  # team mode: private per user
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
 class Collection(Base):
     __tablename__ = "collections"
 

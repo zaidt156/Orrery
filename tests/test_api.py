@@ -50,10 +50,15 @@ def test_permission_error_returns_403(monkeypatch):
 
 
 def test_context_window_has_safe_bounds():
+    # any size within bounds is accepted — the UI offers per-model tiers and the backend clamps to
+    # the model's real maximum in chat.create/update_conversation
     assert NewConversation(model="openai/test").context_window == 1_000_000
     assert NewConversation(model="openai/test", context_window=131072).context_window == 131072
+    assert NewConversation(model="openai/test", context_window=65536).context_window == 65536
     with pytest.raises(ValidationError):
-        NewConversation(model="openai/test", context_window=65536)
+        NewConversation(model="openai/test", context_window=1024)  # below the floor
+    with pytest.raises(ValidationError):
+        NewConversation(model="openai/test", context_window=5_000_000)  # above the ceiling
 
 
 def test_branding_accepts_uploaded_raster_images_only():

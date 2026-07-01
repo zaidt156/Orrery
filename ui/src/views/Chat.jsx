@@ -33,11 +33,17 @@ import {
 // Reasoning depth modes shown to the user; the stored value is the underlying effort (see backend
 // reasoning.py for the canonical mapping). Standard = "" (the provider's own default depth).
 const REASONING_MODES = [["", "Standard"], ["low", "Quick"], ["high", "Deep"], ["xhigh", "Max"]];
-const CONTEXT_WINDOWS = [
-  ["131072", "context: 128K"],
-  ["262144", "context: 256K"],
-  ["1000000", "context: 1M"],
-];
+// Context sizes are offered per model: standard tiers up to the model's real maximum, plus the
+// maximum itself — so a 200K model shows 32K/64K/128K/200K, never a 1M it doesn't have.
+const CONTEXT_TIERS = [32768, 65536, 131072, 262144, 524288, 1000000];
+const fmtTokens = (n) =>
+  n >= 1000000 ? `${(n / 1000000).toFixed(n % 1000000 ? 1 : 0)}M` : `${Math.round(n / 1024)}K`;
+function contextOptionsFor(maxCtx) {
+  const max = Number(maxCtx) > 0 ? Number(maxCtx) : 131072;
+  const opts = CONTEXT_TIERS.filter((t) => t < max).map((t) => [String(t), `context: ${fmtTokens(t)}`]);
+  opts.push([String(max), `context: ${fmtTokens(max)} (max)`]);
+  return opts;
+}
 
 const CMDS = [
   ["/image", true], ["/video", true], ["/run automation", false],
@@ -305,8 +311,12 @@ export default function Chat() {
   async function chooseModel(id) {
     setModel(id);
     setModelMenu(false);
+    // Clamp the context budget to what the new model actually supports.
+    const maxCtx = models.find((m) => m.id === id)?.context_window || 131072;
+    const clamped = Math.min(Number(contextWindow) || maxCtx, maxCtx);
+    if (clamped !== Number(contextWindow)) setContextWindow(String(clamped));
     if (activeId) {
-      await updateConversation(activeId, { model: id });
+      await updateConversation(activeId, { model: id, ...(clamped !== Number(contextWindow) ? { context_window: clamped } : {}) });
       setConvos((p) => p.map((c) => (c.id === activeId ? { ...c, model: id } : c)));
     }
   }
@@ -567,11 +577,15 @@ export default function Chat() {
             className="effort-pick context-pick"
             value={contextWindow}
             onChange={(e) => chooseContextWindow(e.target.value)}
-            title="Approximate per-chat token window. Orrery reserves 25% for the reply; the selected model may support less."
+            title="Per-chat token window, limited to what this model actually supports. Orrery reserves 25% for the reply."
           >
-            {CONTEXT_WINDOWS.map(([value, label]) => (
-              <option key={value || "auto"} value={value}>{label}</option>
-            ))}
+            {(() => {
+              const maxCtx = models.find((m) => m.id === model)?.context_window || 131072;
+              const opts = contextOptionsFor(maxCtx);
+              // keep the stored value selectable even if it predates the per-model limits
+              if (!opts.some(([v]) => v === contextWindow)) opts.push([contextWindow, `context: ${fmtTokens(Number(contextWindow) || 0)}`]);
+              return opts.map(([value, label]) => <option key={value} value={value}>{label}</option>);
+            })()}
           </select>
           <select className="effort-pick" value={effort === "medium" ? "" : effort} onChange={(e) => chooseEffort(e.target.value)} title="Reasoning depth (where the model supports it)">
             {REASONING_MODES.map(([v, label]) => <option key={v || "std"} value={v}>{label}</option>)}
