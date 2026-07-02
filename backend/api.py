@@ -226,6 +226,7 @@ class McpBody(BaseModel):
     command: str = ""
     url: str = ""
     enabled: bool = False
+    env: dict[str, str] = {}  # secret values -> keychain only; the API returns names, never values
 
 
 class McpUpdate(BaseModel):
@@ -234,6 +235,7 @@ class McpUpdate(BaseModel):
     command: str | None = None
     url: str | None = None
     enabled: bool | None = None
+    env: dict[str, str] | None = None  # replaces the server's env vars; {} clears them
 
 
 class DashboardCreate(BaseModel):
@@ -839,7 +841,7 @@ def create_app(session_token: str) -> FastAPI:
 
     @r.post("/mcp")
     async def mcp_create(body: McpBody) -> dict:
-        return await mcp.create_server(body.name, body.transport, body.command, body.url, body.enabled)
+        return await mcp.create_server(body.name, body.transport, body.command, body.url, body.enabled, env=body.env)
 
     @r.patch("/mcp/{sid}")
     async def mcp_update(sid: str, body: McpUpdate) -> dict:

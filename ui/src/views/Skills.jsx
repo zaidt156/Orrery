@@ -24,7 +24,7 @@ export default function Skills() {
   const [genBusy, setGenBusy] = useState(false);
   const [builtin, setBuiltin] = useState([]);
   const [mcp, setMcp] = useState([]);
-  const emptyMcp = { name: "", transport: "stdio", command: "", url: "" };
+  const emptyMcp = { name: "", transport: "stdio", command: "", url: "", envText: "" };
   const [mcpForm, setMcpForm] = useState(emptyMcp);
   const [mcpOpen, setMcpOpen] = useState(false);
   const [isAdmin, setIsAdmin] = useState(true); // solo or team-admin can approve; default true (solo)
@@ -73,10 +73,23 @@ export default function Skills() {
     try { await deleteMcp(s.id); await loadMcp(); } catch (e) { setErr(String(e.message || e)); }
   }
 
+  // "KEY=value" lines -> {KEY: value}; values are secrets and go straight to the OS keychain.
+  function parseEnvText(text) {
+    const env = {};
+    for (const line of String(text || "").split("\n")) {
+      const i = line.indexOf("=");
+      if (i > 0) env[line.slice(0, i).trim()] = line.slice(i + 1).trim();
+    }
+    return env;
+  }
+
   async function addMcp() {
     if (!mcpForm.name.trim()) { setErr("Name the MCP server"); return; }
-    try { await createMcp({ ...mcpForm, enabled: false }); setMcpForm(emptyMcp); setMcpOpen(false); await loadMcp(); }
-    catch (e) { setErr(String(e.message || e)); }
+    try {
+      const { envText, ...rest } = mcpForm;
+      await createMcp({ ...rest, env: parseEnvText(envText), enabled: false });
+      setMcpForm(emptyMcp); setMcpOpen(false); await loadMcp();
+    } catch (e) { setErr(String(e.message || e)); }
   }
   async function toggleMcp(srv, next) {
     setMcp((prev) => prev.map((x) => (x.id === srv.id ? { ...x, enabled: next } : x)));
@@ -282,6 +295,15 @@ export default function Skills() {
                   ) : (
                     <input placeholder="https://your-mcp-server/sse" value={mcpForm.url} onChange={(e) => setMcpForm((f) => ({ ...f, url: e.target.value }))} />
                   )}
+                  <textarea
+                    className="mcp-env"
+                    rows={2}
+                    placeholder={"Environment variables the server needs (one per line):\nGITHUB_TOKEN=ghp_..."}
+                    value={mcpForm.envText}
+                    onChange={(e) => setMcpForm((f) => ({ ...f, envText: e.target.value }))}
+                    spellCheck={false}
+                  />
+                  <small className="ov-sub" style={{ margin: 0 }}>Values are stored only in your OS keychain and passed to the server at launch — never shown again.</small>
                   <button className="btn primary sm" onClick={addMcp}>Save server</button>
                 </div>
               )}
@@ -292,7 +314,11 @@ export default function Skills() {
                     <Server />
                     <span className="ov-meta">
                       <b>{s.name}{s.status === "pending" && <span className="pending-pill">pending</span>}</b>
-                      <small>{(s.tools?.length ? `${s.tools.length} tool(s) - ` : "")}{s.transport === "http" ? (s.url || "http") : (s.command || "stdio")}</small>
+                      <small>
+                        {(s.tools?.length ? `${s.tools.length} tool(s) - ` : "")}
+                        {(s.env_names?.length ? `${s.env_names.length} env - ` : "")}
+                        {s.transport === "http" ? (s.url || "http") : (s.command || "stdio")}
+                      </small>
                     </span>
                     <button className="btn ghost sm" onClick={() => testMcpServer(s)} disabled={s.testing}>{s.testing ? "Testing..." : "Test"}</button>
                     <span className={`toggle${s.enabled ? " on" : ""}`} role="switch" aria-checked={s.enabled} tabIndex={0} title={s.enabled ? "Enabled" : "Disabled"} onClick={() => toggleMcp(s, !s.enabled)} />

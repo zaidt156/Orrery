@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import subprocess
 import uuid
 
@@ -19,9 +20,38 @@ from backend.core import proc
 from backend.core.database import get_sessionmaker
 from backend.core.models import McpServer
 from backend.features import team
+from backend.security import secrets
 
 _ALLOWED_TRANSPORTS = {"stdio", "http"}
 _MCP_TIMEOUT = 45  # seconds for a whole stdio session (first npx run can be slow)
+
+
+# --- per-server environment variables (many servers need an API key/token) -----------------------
+# Values are secrets: they live ONLY in the OS keychain (security.md §1), keyed per server, and are
+# injected into the server process at launch. The UI ever only sees the variable NAMES.
+
+def _env_secret(sid: str) -> str:
+    return f"mcp_env:{sid}"
+
+
+def _load_env(sid: str) -> dict[str, str]:
+    raw = secrets.get_secret(_env_secret(sid))
+    if not raw:
+        return {}
+    try:
+        env = json.loads(raw)
+        return {str(k): str(v) for k, v in env.items()} if isinstance(env, dict) else {}
+    except (ValueError, TypeError):
+        return {}
+
+
+def set_env(sid: str, env: dict[str, str]) -> None:
+    """Replace a server's env vars. Empty dict clears them."""
+    clean = {str(k).strip(): str(v) for k, v in (env or {}).items() if str(k).strip()}
+    if clean:
+        secrets.set_secret(_env_secret(sid), json.dumps(clean))
+    else:
+        secrets.delete_secret(_env_secret(sid))
 
 
 # --- minimal MCP stdio client (JSON-RPC over a plain subprocess) ---------------------------------
@@ -30,11 +60,12 @@ _MCP_TIMEOUT = 45  # seconds for a whole stdio session (first npx run can be slo
 # A blocking subprocess + newline-delimited JSON-RPC, run off the event loop via to_thread, sidesteps
 # that entirely. The configured command is admin-owned and runs only when a server is enabled.
 
-def _stdio_session(command: str, ops: list[dict]) -> list:
+def _stdio_session(command: str, ops: list[dict], env: dict[str, str] | None = None) -> list:
     """Initialize an MCP stdio server, run each op (method/params), return their results."""
     p = proc.popen(
         command, shell=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
         text=True, encoding="utf-8", bufsize=1,
+        env={**os.environ, **env} if env else None,
     )
     try:
         def send(obj: dict) -> None:
@@ -74,8 +105,13 @@ def _stdio_session(command: str, ops: list[dict]) -> list:
                 pass
 
 
-async def _run_stdio(command: str, ops: list[dict]) -> list:
-    return await asyncio.wait_for(asyncio.to_thread(_stdio_session, command, ops), timeout=_MCP_TIMEOUT)
+async def _run_stdio(command: str, ops: list[dict], env: dict[str, str] | None = None) -> list:
+    return await asyncio.wait_for(asyncio.to_thread(_stdio_session, command, ops, env), timeout=_MCP_TIMEOUT)
+
+
+def _server_env(server: dict) -> dict[str, str]:
+    sid = server.get("id") or ""
+    return _load_env(sid) if sid else {}
 
 
 async def list_tools(server: dict) -> list[dict]:
@@ -83,7 +119,7 @@ async def list_tools(server: dict) -> list[dict]:
     if server.get("transport") != "stdio" or not server.get("command"):
         return []  # http/sse transport not supported by this minimal client yet
     try:
-        (res,) = await _run_stdio(server["command"], [{"method": "tools/list"}])
+        (res,) = await _run_stdio(server["command"], [{"method": "tools/list"}], _server_env(server))
         tools = res.get("tools", []) if isinstance(res, dict) else []
         return [{"name": t.get("name"), "description": t.get("description", ""),
                  "input_schema": t.get("inputSchema", {})} for t in tools if t.get("name")]
@@ -96,7 +132,8 @@ async def call_tool(server: dict, tool: str, args: dict) -> dict:
     if server.get("transport") != "stdio" or not server.get("command"):
         return {"ok": False, "error": "Only stdio MCP servers are supported right now."}
     try:
-        (res,) = await _run_stdio(server["command"], [{"method": "tools/call", "params": {"name": tool, "arguments": args or {}}}])
+        (res,) = await _run_stdio(server["command"], [{"method": "tools/call", "params": {"name": tool, "arguments": args or {}}}],
+                                  _server_env(server))
     except Exception as exc:  # noqa: BLE001
         return {"ok": False, "error": str(exc)[:300]}
     parts: list[str] = []
@@ -115,6 +152,7 @@ def _dict(s: McpServer) -> dict:
         "id": str(s.id), "name": s.name, "transport": s.transport,
         "command": s.command or "", "url": s.url or "", "enabled": bool(s.enabled), "tools": tools,
         "status": getattr(s, "status", "approved") or "approved", "owner_id": getattr(s, "owner_id", None),
+        "env_names": sorted(_load_env(str(s.id)).keys()),  # names only — values never leave the keychain
     }
 
 
@@ -137,7 +175,8 @@ async def list_servers() -> list[dict]:
     return out
 
 
-async def create_server(name: str, transport: str, command: str = "", url: str = "", enabled: bool = False) -> dict:
+async def create_server(name: str, transport: str, command: str = "", url: str = "", enabled: bool = False,
+                        env: dict[str, str] | None = None) -> dict:
     transport = transport if transport in _ALLOWED_TRANSPORTS else "stdio"
     async with get_sessionmaker()() as s:
         row = McpServer(
@@ -148,6 +187,8 @@ async def create_server(name: str, transport: str, command: str = "", url: str =
         s.add(row)
         await s.commit()
         await s.refresh(row)
+        if env:
+            set_env(str(row.id), env)
         return _dict(row)
 
 
@@ -167,7 +208,9 @@ async def update_server(server_id: str, **fields) -> bool:
         if fields.get("enabled") is not None:
             row.enabled = bool(fields["enabled"])
         await s.commit()
-        return True
+    if fields.get("env") is not None:
+        set_env(server_id, fields["env"] or {})
+    return True
 
 
 async def delete_server(server_id: str) -> bool:
@@ -177,7 +220,8 @@ async def delete_server(server_id: str) -> bool:
             return False
         await s.delete(row)
         await s.commit()
-        return True
+    secrets.delete_secret(_env_secret(server_id))  # remove the server's env secrets with it
+    return True
 
 
 async def refresh_tools(server_id: str) -> dict:
