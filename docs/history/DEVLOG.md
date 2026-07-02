@@ -1279,3 +1279,17 @@ Next: review ontology/MCP/skills for improvements; then Automations (the engine 
   nothing).
 
 Next: prompt/answer evaluation (compare candidate answers with an AI judge, on demand).
+
+
+## Step 96 - Pick the best answer: on-demand evaluation with an AI judge (July 2, 2026)
+
+- Every assistant reply now has an Evaluate action (the scales icon). Pick up to three other models
+  to re-answer the same prompt, pick a judge model, and Orrery generates the candidates in parallel,
+  strips the model names, and has the judge score each anonymously (A/B/C) on accuracy, completeness,
+  and clarity with a one-line comment. Candidates come back ranked, the judge's pick is highlighted,
+  and "Use this answer" swaps the chosen one into the chat (persisted like any edit).
+- Judging is anonymous so brand names can't bias scores; a failed candidate or a judge that returns
+  no scores degrades gracefully (unranked list, visible warnings). Runs only when the user asks -
+  it costs extra model calls, so it's a per-message action, not an always-on pipeline.
+
+Next: the architecture split (shared tool registry + per-feature API routers), then Automations.

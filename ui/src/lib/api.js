@@ -146,6 +146,12 @@ export const listTables = (id) => apiGet(`/api/connections/${id}/tables`);
 export const browseTable = (id, schema, table, limit = 100) =>
   apiGet(`/api/connections/${id}/browse?schema=${encodeURIComponent(schema)}&table=${encodeURIComponent(table)}&limit=${limit}`);
 
+// Answer evaluation: candidates + anonymous AI judge; adopting replaces the message
+export const evaluateMessage = (cid, mid, models, judge) =>
+  apiSend(`/api/conversations/${cid}/messages/${mid}/evaluate`, "POST", { models, judge });
+export const adoptAnswer = (cid, mid, text, model) =>
+  apiSend(`/api/conversations/${cid}/messages/${mid}/adopt`, "POST", { text, model });
+
 // Workspace defaults (Settings → General)
 export const getDefaults = () => apiGet("/api/defaults");
 export const setDefaults = (model, effort) => apiSend("/api/defaults", "PUT", { model, effort });

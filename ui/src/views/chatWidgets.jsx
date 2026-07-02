@@ -2,9 +2,9 @@
 // thinking/working indicators. Kept out of Chat.jsx to keep that file focused.
 import { useEffect, useState } from "react";
 import {
-  AlertTriangle, Brain, CheckCircle2, Cog, Download, Eye, FileText, GitBranch, Loader2, Search, ShieldCheck, Terminal,
+  AlertTriangle, Brain, CheckCircle2, Cog, Download, Eye, FileText, GitBranch, Loader2, Scale, Search, ShieldCheck, Terminal, X,
 } from "lucide-react";
-import { saveClientFile, getTasks, cancelTask } from "../lib/api.js";
+import { saveClientFile, getTasks, cancelTask, evaluateMessage, adoptAnswer } from "../lib/api.js";
 
 // Task Brain: a live, collapsible ledger of background work (chat generations, jobs, automations)
 // so the user can see what's running, jump to it, or cancel it. Polls; also refreshes on demand.
@@ -382,6 +382,110 @@ export function ReasoningPanel({ outer, trace, thinking, summary, sources, strea
           ) : null}
         </div>
       )}
+    </div>
+  );
+}
+
+// Answer evaluation ("pick the best answer"): re-answers the same prompt with the models the user
+// picks, sends all candidates ANONYMOUSLY to a judge model for 0-10 scoring, and lets the user adopt
+// the winner — which rewrites the assistant message through the normal persistence path.
+export function EvaluatePanel({ convId, messageId, models, currentModel, onClose, onAdopted }) {
+  const [picked, setPicked] = useState([]);
+  const [judge, setJudge] = useState(currentModel || models[0]?.id || "");
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState(null);
+  const [err, setErr] = useState("");
+  const [expanded, setExpanded] = useState("");
+
+  function togglePick(id) {
+    setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : p.length < 3 ? [...p, id] : p));
+  }
+
+  async function run() {
+    setBusy(true); setErr(""); setResult(null);
+    try { setResult(await evaluateMessage(convId, messageId, picked, judge)); }
+    catch (e) { setErr(String(e.message || e)); }
+    finally { setBusy(false); }
+  }
+
+  async function adopt(c) {
+    setBusy(true); setErr("");
+    try {
+      await adoptAnswer(convId, messageId, c.text, c.model);
+      onAdopted?.(c.text, c.model);
+    } catch (e) { setErr(String(e.message || e)); setBusy(false); }
+  }
+
+  return (
+    <div className="eval-overlay" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="eval-panel">
+        <div className="eval-head">
+          <Scale /> <b>Evaluate answers</b>
+          <span className="eval-sub">candidates are judged anonymously (A, B, C…)</span>
+          <button className="icon-btn" title="Close" onClick={onClose}><X /></button>
+        </div>
+
+        {!result && (
+          <>
+            <div className="eval-label">Also answer with (up to 3 — the current answer is always included):</div>
+            <div className="eval-models">
+              {models.map((m) => (
+                <label key={m.id} className={`eval-model${picked.includes(m.id) ? " on" : ""}`}>
+                  <input type="checkbox" checked={picked.includes(m.id)} onChange={() => togglePick(m.id)} />
+                  {m.label}
+                </label>
+              ))}
+            </div>
+            <div className="eval-label">Judge model:</div>
+            <select className="eval-judge" value={judge} onChange={(e) => setJudge(e.target.value)}>
+              {models.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+            </select>
+            {err && <div className="chat-banner">{err}</div>}
+            <button className="btn primary" onClick={run} disabled={busy || !judge || picked.length === 0}>
+              {busy ? "Generating & judging… (this makes model calls)" : `Compare ${picked.length + 1} answers`}
+            </button>
+          </>
+        )}
+
+        {result && (
+          <div className="eval-results">
+            {!result.judged && <div className="chat-banner">The judge didn't return scores — showing unranked candidates.</div>}
+            {(result.failed || []).map((f) => (
+              <div key={f.model} className="eval-failed">⚠ {f.model}: {f.error}</div>
+            ))}
+            {result.candidates.map((c) => (
+              <div key={c.letter} className={`eval-card${result.best === c.letter ? " best" : ""}`}>
+                <div className="eval-card-head">
+                  <span className="eval-letter">{c.letter}</span>
+                  <b>{c.model}</b>
+                  {c.current && <em className="eval-tag">current</em>}
+                  {result.best === c.letter && <em className="eval-tag win">judge's pick</em>}
+                  {c.scores?.overall != null && <span className="eval-score">{c.scores.overall}/10</span>}
+                </div>
+                {c.scores?.overall != null && (
+                  <div className="eval-dims">
+                    accuracy {c.scores.accuracy ?? "–"} · completeness {c.scores.completeness ?? "–"} · clarity {c.scores.clarity ?? "–"}
+                  </div>
+                )}
+                {c.comment && <div className="eval-comment">{c.comment}</div>}
+                <div className={`eval-text${expanded === c.letter ? " open" : ""}`}>{c.text}</div>
+                <div className="eval-card-actions">
+                  <button className="btn ghost sm" onClick={() => setExpanded((v) => (v === c.letter ? "" : c.letter))}>
+                    {expanded === c.letter ? "Collapse" : "Read full answer"}
+                  </button>
+                  {!c.current && (
+                    <button className="btn primary sm" disabled={busy} onClick={() => adopt(c)}>
+                      Use this answer
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+            {err && <div className="chat-banner">{err}</div>}
+            <button className="btn ghost sm" onClick={() => setResult(null)}>Run again with different models</button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

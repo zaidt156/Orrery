@@ -15,7 +15,7 @@ from backend.core import appconfig, database
 from backend.core.config import settings
 from backend.core.observability import new_request_id
 from backend.core.paths import resource_path
-from backend.features import admin, app_updates, artifacts, chat, dashboards, data, exports, feedback, filepreview, local_models, mcp, projects, rag, route_telemetry, skills, team, usage
+from backend.features import admin, app_updates, artifacts, chat, dashboards, data, evaluate, exports, feedback, filepreview, local_models, mcp, projects, rag, route_telemetry, skills, team, usage
 from backend.features import files as file_library
 from backend.providers import accounts, ai, catalog
 from backend.security import secrets
@@ -241,6 +241,16 @@ class McpUpdate(BaseModel):
 class DefaultsBody(BaseModel):
     model: str = ""
     effort: str = ""  # "" (standard) | low | high | xhigh
+
+
+class EvaluateBody(BaseModel):
+    models: list[str] = []  # extra candidate models (the current answer is always included)
+    judge: str = ""
+
+
+class AdoptBody(BaseModel):
+    text: str
+    model: str = ""
 
 
 class DashboardCreate(BaseModel):
@@ -1093,6 +1103,22 @@ def create_app(session_token: str) -> FastAPI:
     @r.post("/conversations/{cid}/messages/{mid}/reasoning")
     async def save_message_reasoning(cid: str, mid: str, body: ReasoningBody) -> dict:
         return {"saved": await chat.save_reasoning(cid, mid, body.reasoning)}
+
+    # --- answer evaluation: regenerate with other models, judge anonymously, pick the best ---
+    @r.post("/conversations/{cid}/messages/{mid}/evaluate")
+    async def evaluate_message(cid: str, mid: str, body: EvaluateBody) -> dict:
+        try:
+            return await evaluate.evaluate(cid, mid, body.models, body.judge)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        except Exception as e:  # noqa: BLE001 — provider errors are already sanitized
+            raise HTTPException(status_code=502, detail=str(e)[:300])
+
+    @r.post("/conversations/{cid}/messages/{mid}/adopt")
+    async def adopt_message(cid: str, mid: str, body: AdoptBody) -> dict:
+        if not await evaluate.adopt(cid, mid, body.text, body.model):
+            raise HTTPException(status_code=404, detail="Message not found")
+        return {"adopted": True}
 
     @r.post("/conversations/{cid}/code-image")
     async def generate_code_image(cid: str, body: NewMessage) -> StreamingResponse:

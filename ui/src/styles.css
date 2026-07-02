@@ -847,6 +847,33 @@ body{
 .dash-connect-btn{align-self:flex-start}
 .defaults-select{max-width:280px;background:var(--bg2);border:1px solid var(--line);border-radius:8px;color:var(--text);padding:8px 10px;font-size:12px;outline:none}
 .defaults-select:focus{border-color:var(--amber)}
+/* answer evaluation (compare candidates + AI judge) */
+.eval-overlay{position:fixed;inset:0;background:rgba(4,7,14,.62);display:flex;align-items:center;justify-content:center;z-index:90;padding:24px}
+.eval-panel{width:min(720px,94vw);max-height:86vh;overflow-y:auto;background:var(--bg1);border:1px solid var(--line);border-radius:14px;padding:16px 18px;display:flex;flex-direction:column;gap:11px}
+.eval-head{display:flex;align-items:center;gap:8px}
+.eval-head svg{width:17px;height:17px;color:var(--amber)}
+.eval-head b{font-size:14px}
+.eval-sub{color:var(--faint);font-size:11px;flex:1}
+.eval-label{font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+.eval-models{display:flex;flex-direction:column;gap:6px;max-height:200px;overflow-y:auto}
+.eval-model{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:8px;background:var(--bg2);padding:8px 11px;font-size:12.5px;cursor:pointer}
+.eval-model.on{border-color:var(--amber)}
+.eval-judge{background:var(--bg2);border:1px solid var(--line);border-radius:8px;color:var(--text);padding:8px 10px;font-size:12.5px;outline:none}
+.eval-results{display:flex;flex-direction:column;gap:10px}
+.eval-failed{font-size:11.5px;color:#e0a366}
+.eval-card{border:1px solid var(--line);border-radius:11px;background:var(--bg2);padding:11px 13px;display:flex;flex-direction:column;gap:7px}
+.eval-card.best{border-color:var(--amber)}
+.eval-card-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.eval-letter{width:22px;height:22px;border-radius:50%;background:var(--bg1);border:1px solid var(--line);display:grid;place-items:center;font-family:var(--font-mono);font-size:11px;color:var(--ice);flex:none}
+.eval-card-head b{font-size:12.5px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.eval-tag{font-style:normal;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);border:1px solid var(--line);border-radius:20px;padding:1px 7px}
+.eval-tag.win{color:var(--amber);border-color:var(--amber)}
+.eval-score{font-family:var(--font-display);font-size:16px;font-weight:600;color:var(--ice)}
+.eval-dims{font-family:var(--font-mono);font-size:10px;color:var(--faint)}
+.eval-comment{font-size:12px;color:var(--muted);line-height:1.5;font-style:italic}
+.eval-text{font-size:12px;color:var(--muted);line-height:1.55;max-height:72px;overflow:hidden;white-space:pre-wrap;position:relative;mask-image:linear-gradient(to bottom,#000 55%,transparent)}
+.eval-text.open{max-height:none;mask-image:none}
+.eval-card-actions{display:flex;gap:8px}
 .dash-connect-form{display:flex;flex-direction:column;gap:7px;border:1px solid var(--line);border-radius:9px;background:var(--bg1);padding:10px 12px}
 .dash-connect-form input{background:var(--bg2);border:1px solid var(--line);border-radius:7px;color:var(--text);padding:8px 10px;font-size:12.5px;font-family:var(--font-mono);outline:none}
 .dash-connect-form input:focus{border-color:var(--amber)}

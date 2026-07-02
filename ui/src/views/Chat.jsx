@@ -9,6 +9,7 @@ import {
   Pencil,
   RefreshCw,
   Repeat2,
+  Scale,
   Telescope,
   WandSparkles,
   X,
@@ -29,6 +30,7 @@ import {
 } from "./chatHelpers.jsx";
 import {
   ReplyFiles, InlineSvg, CodeImageArtifact, GeneratedFileCard, ThinkingPulse, ReasoningPanel, TaskBrainPanel,
+  EvaluatePanel,
 } from "./chatWidgets.jsx";
 
 // Reasoning depth modes shown to the user; the stored value is the underlying effort (see backend
@@ -146,6 +148,7 @@ export default function Chat() {
     }
   }
   const [contextWindow, setContextWindow] = useState("1000000");
+  const [evalFor, setEvalFor] = useState(null); // {messageId, content} — the answer being evaluated
 
   useEffect(() => {
     let alive = true;
@@ -799,6 +802,15 @@ export default function Chat() {
                         <Repeat2 />
                       </button>
                     )}
+                    {m.id && !sending && (
+                      <button
+                        title="Evaluate answers — compare candidates from other models and pick the best"
+                        aria-label="Evaluate answers"
+                        onClick={() => setEvalFor({ messageId: m.id, content: m.content })}
+                      >
+                        <Scale />
+                      </button>
+                    )}
                   </div>
                 )}
                 {m.id && !m.streaming && !m.error && (() => {
@@ -900,6 +912,20 @@ export default function Chat() {
             <iframe className="artifact-frame" src={artifact.url} title="File preview" />
           )}
         </aside>
+      )}
+
+      {evalFor && activeId && (
+        <EvaluatePanel
+          convId={activeId}
+          messageId={evalFor.messageId}
+          models={models}
+          currentModel={model}
+          onClose={() => setEvalFor(null)}
+          onAdopted={(text, adoptedModel) => {
+            setMessages((p) => p.map((x) => (x.id === evalFor.messageId ? { ...x, content: text, model: adoptedModel || x.model } : x)));
+            setEvalFor(null);
+          }}
+        />
       )}
     </section>
   );
