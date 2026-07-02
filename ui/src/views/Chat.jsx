@@ -45,6 +45,21 @@ function contextOptionsFor(maxCtx) {
   return opts;
 }
 
+// The header chip shows a short model name; long descriptors ("adaptive thinking", "reasoning")
+// and the "<Brand> plan -" prefix become a small plan badge — the menu keeps the full labels.
+const MODEL_DESCRIPTOR = /^(adaptive thinking|reasoning|fast( reasoning)?|thinking|default|best available.*)$/i;
+function compactModelLabel(label) {
+  const parts = String(label || "").split(/\s+[-·]\s+/).map((p) => p.trim()).filter(Boolean);
+  if (parts.length <= 1) return { name: label || "", plan: false };
+  const isPlan = /\bplan$/i.test(parts[0]) || /^google cli$/i.test(parts[0]);
+  if (!isPlan) return { name: label, plan: false };
+  const brand = parts[0].replace(/\s*plan$/i, "").replace(/^google cli$/i, "Gemini");
+  const names = parts.slice(1).filter((p) => !MODEL_DESCRIPTOR.test(p));
+  if (!names.length) return { name: `${brand} (auto)`, plan: true };
+  const name = names.join(" ");
+  return { name: brand.toLowerCase() === "claude" && !/^claude/i.test(name) ? `${brand} ${name}` : name, plan: true };
+}
+
 const CMDS = [
   ["/image", true], ["/video", true], ["/run automation", false],
   ["/agent", false], ["/dashboard", false], ["/search docs", false],
@@ -506,6 +521,7 @@ export default function Chat() {
   const projectName = (id) => projects.find((p) => p.id === id)?.name || "";
   const current = models.find((m) => m.id === model);
   const modelLabel = current?.label || model || "pick a model";
+  const compact = compactModelLabel(modelLabel);
   const noKey = !!model && !current;
   const prefix = model.includes("/") ? model.split("/")[0] : "";
   const provider = PROVIDER_NAME[prefix] || "this provider";
@@ -539,8 +555,11 @@ export default function Chat() {
         <div className="chat-header">
           <span className="view-title">{title}</span>
           <div className="pickwrap">
-            <span className={`pill model-pill${noKey ? " no-key" : ""}`} title="Switch model" onClick={toggleModelMenu}>
-              <b>{modelLabel}</b>{noKey ? " · no key" : ""} ⌄
+            <span className={`pill model-pill${noKey ? " no-key" : ""}`} title={`${modelLabel} — switch model`} onClick={toggleModelMenu}>
+              <b>{compact.name}</b>
+              {compact.plan && <em className="plan-tag">plan</em>}
+              {noKey ? " · no key" : ""}
+              <span className="pill-caret">⌄</span>
             </span>
             {modelMenu && (
               <div className="model-menu">
