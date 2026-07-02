@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import {
+  Check,
   Copy,
   Download,
   Eye,
@@ -22,7 +23,7 @@ import {
   updateConversation, deleteConversation, streamMessage, regenerateMessage,
   downloadMessageExport, streamCodeImage, createArtifact, previewExport, saveClientFile,
   downloadGeneratedFile, previewGeneratedFile, stopGeneration, resumeGeneration, listProjects, saveReasoning,
-  getDefaults, readFileAsAttachment,
+  getDefaults, readFileAsAttachment, getAttachmentText,
 } from "../lib/api.js";
 import {
   EXPORT_FORMATS, requestedFileFormats, precedingUserText,
@@ -158,6 +159,7 @@ export default function Chat() {
   }
   const [contextWindow, setContextWindow] = useState("1000000");
   const [evalFor, setEvalFor] = useState(null); // {messageId, content} — the answer being evaluated
+  const [copiedKey, setCopiedKey] = useState(""); // which copy button just fired (✓ flash)
 
   useEffect(() => {
     let alive = true;
@@ -507,13 +509,40 @@ export default function Chat() {
     abortRef.current?.abort();
   }
 
-  function copy(text) {
-    navigator.clipboard?.writeText(String(text || ""));
+  async function copy(text, key) {
+    const { copyText } = await import("../lib/clipboard.js");
+    if (await copyText(String(text || "")) && key) {
+      setCopiedKey(key);
+      setTimeout(() => setCopiedKey((cur) => (cur === key ? "" : cur)), 1200);
+    }
+  }
+
+  // Open an attachment: fresh ones carry their content; reloaded ones fetch their indexed text.
+  async function openAttachment(a) {
+    try {
+      if (a.kind === "image" && a.content) {
+        setArtifact({ image: a.content, title: a.name });
+        return;
+      }
+      let text = a.kind === "text" && a.content ? a.content : null;
+      if (text === null) {
+        const r = await getAttachmentText(activeId, a.name);
+        text = r.text;
+      }
+      const url = URL.createObjectURL(new Blob([text], { type: "text/plain;charset=utf-8" }));
+      setArtifact({ url, title: a.name });
+    } catch {
+      setBanner(`No stored preview for ${a.name} — its text may not have been indexable.`);
+    }
   }
 
   async function handleFiles(e) {
     const files = Array.from(e.target.files || []);
     e.target.value = "";
+    await addFiles(files);
+  }
+
+  async function addFiles(files) {
     const ok = [];
     for (const f of files) {
       const isImage = f.type.startsWith("image/");
@@ -674,30 +703,46 @@ export default function Chat() {
 
         {banner && <div className="chat-banner">{banner}</div>}
 
-        <div className="thread" ref={threadRef}>
+        <div
+          className="thread"
+          ref={threadRef}
+          onDragOver={(e) => { e.preventDefault(); }}
+          onDrop={(e) => { e.preventDefault(); if (e.dataTransfer?.files?.length) addFiles(Array.from(e.dataTransfer.files)); }}
+        >
           {messages.length === 0 && (
             <div className="thread-empty">
               <div className="constellation">✦ &nbsp; · &nbsp; ✦ &nbsp;· &nbsp;✦</div>
             </div>
           )}
-          {messages.map((m, i) =>
-            m.role === "user" ? (
+          {messages.map((m, i) => {
+            // attachments: fresh sends carry full content; reloaded messages carry metadata in artifacts
+            const atts = m.role === "user"
+              ? (m.attachments?.length
+                ? m.attachments
+                : (m.artifacts || []).filter((a) => a.kind === "attachment").map((a) => ({ name: a.name, kind: a.att || "file", mime: a.mime })))
+              : [];
+            const promptText = (m.content || "").replace(/\n*📎 .*$/s, "");  // strip legacy baked-in note
+            return m.role === "user" ? (
               <div className="msg user" key={i}>
-                {m.attachments?.length > 0 && (
+                {promptText && <div className="prompt-text"><Markdown plain>{promptText}</Markdown></div>}
+                {atts.length > 0 && (
                   <div className="msg-attach">
-                    {m.attachments.map((a, k) =>
-                      a.kind === "image"
-                        ? <img key={k} src={a.content} alt={a.name} className="msg-thumb" />
-                        : <span key={k} className="attach-chip">{fileIcon(a.kind)} {a.name}</span>
+                    {atts.map((a, k) =>
+                      a.kind === "image" && a.content
+                        ? <img key={k} src={a.content} alt={a.name} className="msg-thumb" onClick={() => openAttachment(a)} title="Click to view" />
+                        : (
+                          <button key={k} className="attach-chip" onClick={() => openAttachment(a)} title="Click to see what's inside">
+                            {fileIcon(a.kind)} {a.name}
+                          </button>
+                        )
                     )}
                   </div>
                 )}
-                {m.content && <div className="prompt-text"><Markdown plain>{m.content}</Markdown></div>}
                 <div className="prompt-actions">
-                  <button title="Copy prompt" aria-label="Copy prompt" onClick={() => copy(m.content || "")}>
-                    <Copy />
+                  <button title="Copy prompt" aria-label="Copy prompt" className={copiedKey === `p${i}` ? "copied-pop" : ""} onClick={() => copy(promptText || "", `p${i}`)}>
+                    {copiedKey === `p${i}` ? <Check /> : <Copy />}
                   </button>
-                  <button title="Edit prompt" aria-label="Edit prompt" onClick={() => editPrompt(m.content)}>
+                  <button title="Edit prompt" aria-label="Edit prompt" onClick={() => editPrompt(promptText)}>
                     <Pencil />
                   </button>
                   <button
@@ -777,8 +822,8 @@ export default function Chat() {
                 )}
                 {!m.streaming && !m.error && (
                   <div className="msg-actions">
-                    <button title="Copy reply" aria-label="Copy reply" onClick={() => copy(m.content)}>
-                      <Copy />
+                    <button title="Copy reply" aria-label="Copy reply" className={copiedKey === `r${i}` ? "copied-pop" : ""} onClick={() => copy(m.content, `r${i}`)}>
+                      {copiedKey === `r${i}` ? <Check /> : <Copy />}
                     </button>
                     {extractHtml(m.content) && (
                       <button
@@ -831,8 +876,8 @@ export default function Chat() {
                   );
                 })()}
               </div>
-            )
-          )}
+            );
+          })}
         </div>
 
         <div className="composer">
@@ -876,7 +921,11 @@ export default function Chat() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
-              placeholder="Ask, or type / to generate media, run automations, start agents, build dashboards…"
+              onPaste={(e) => {
+                const files = Array.from(e.clipboardData?.files || []);
+                if (files.length) { e.preventDefault(); addFiles(files); }  // paste screenshots/files directly
+              }}
+              placeholder="Ask, attach or paste files/screenshots, or type / to run anything…"
             />
             {sending ? (
               <button className="send stop" aria-label="Stop" title="Stop" onClick={stop}>

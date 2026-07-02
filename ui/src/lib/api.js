@@ -146,6 +146,9 @@ export const listTables = (id) => apiGet(`/api/connections/${id}/tables`);
 export const browseTable = (id, schema, table, limit = 100) =>
   apiGet(`/api/connections/${id}/browse?schema=${encodeURIComponent(schema)}&table=${encodeURIComponent(table)}&limit=${limit}`);
 
+export const getAttachmentText = (cid, source) =>
+  apiGet(`/api/conversations/${cid}/attachment-text?source=${encodeURIComponent(source)}`);
+
 // Answer evaluation: candidates + anonymous AI judge; adopting replaces the message
 export const evaluateMessage = (cid, mid, models, judge) =>
   apiSend(`/api/conversations/${cid}/messages/${mid}/evaluate`, "POST", { models, judge });

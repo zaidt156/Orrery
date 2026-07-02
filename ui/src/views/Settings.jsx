@@ -518,10 +518,26 @@ function BrandingSection() {
       setErr("Use a PNG, JPEG, WebP, or GIF logo.");
       return;
     }
-    if (f.size > 1024 * 1024) { window.alert("Logo too large (max 1 MB)."); return; }
+    if (f.size > 15 * 1024 * 1024) { setErr("Logo file is too large (max 15 MB)."); return; }
     setErr(null);
     const r = new FileReader();
-    r.onload = () => update({ logo: String(r.result) });
+    r.onload = () => {
+      const raw = String(r.result);
+      // Small GIFs keep their animation; everything else is downscaled so ANY image works as a logo.
+      if (f.type === "image/gif" && raw.length < 1_400_000) { update({ logo: raw }); return; }
+      const img = new Image();
+      img.onload = () => {
+        const maxH = 128;  // header renders at 28px; 128 keeps it crisp on high-DPI screens
+        const scale = Math.min(1, maxH / (img.height || maxH));
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, Math.round(img.width * scale));
+        canvas.height = Math.max(1, Math.round(img.height * scale));
+        canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+        update({ logo: canvas.toDataURL("image/png") });
+      };
+      img.onerror = () => setErr("Couldn't read that image — try a different file.");
+      img.src = raw;
+    };
     r.readAsDataURL(f);
   }
 

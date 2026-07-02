@@ -145,6 +145,18 @@ def _load_reasoning(raw: str | None) -> dict | None:
         return None
 
 
+async def attachment_text(conv_id: str, source: str) -> str | None:
+    """Extracted text of an uploaded attachment (from the chat's index) for the preview panel."""
+    owner = await team.current_owner_id()
+    async with get_sessionmaker()() as s:
+        conv = await s.get(Conversation, uuid.UUID(conv_id))
+        if conv is None or not _owned_by(conv, owner) or not conv.collection_id:
+            return None
+        collection = str(conv.collection_id)
+    text = await rag.document_text(collection, source)
+    return text or None
+
+
 async def save_reasoning(conv_id: str, message_id: str, reasoning: dict) -> bool:
     """Persist the reasoning-panel snapshot for one assistant message so it survives reloads."""
     try:
@@ -566,10 +578,15 @@ async def _prepare_turn(cid: uuid.UUID, user_content: str, attachments: list[dic
         messages = [{"role": m.role, "content": m.context or m.content} for m in history]
         messages.append({"role": "user", "content": _build_user_content(user_content, attachments)})
 
+        # Attachment metadata rides in artifacts so reloads render real chips (name+kind), not a
+        # text blob baked into the message. Content stays out of it (text lives in context/RAG).
+        att_meta = [{"kind": "attachment", "name": a.get("name", "file"), "mime": a.get("mime", ""),
+                     "att": a.get("kind", "file")} for a in attachments] or None
         s.add(Message(
             conversation_id=cid, role="user",
-            content=_db_content(user_content, attachments),
+            content=user_content or "",
             context=_history_text(user_content, attachments),  # keeps file/PDF text for later turns
+            artifacts=json.dumps(att_meta) if att_meta else None,
         ))
         if conv.title == "New chat" and not history:
             seed = user_content or (attachments[0].get("name") if attachments else "")

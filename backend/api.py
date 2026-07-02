@@ -1230,6 +1230,13 @@ def create_app(session_token: str) -> FastAPI:
         attachments = [a.model_dump() for a in body.attachments]
         return _sse_run(cid, chat.stream_reply(cid, body.content, attachments, body.collection_id))
 
+    @r.get("/conversations/{cid}/attachment-text")
+    async def conversation_attachment_text(cid: str, source: str) -> dict:
+        text_content = await chat.attachment_text(cid, source)
+        if text_content is None:
+            raise HTTPException(status_code=404, detail="No stored text for that attachment.")
+        return {"source": source, "text": text_content}
+
     @r.post("/conversations/{cid}/messages/{mid}/reasoning")
     async def save_message_reasoning(cid: str, mid: str, body: ReasoningBody) -> dict:
         return {"saved": await chat.save_reasoning(cid, mid, body.reasoning)}

@@ -1320,3 +1320,26 @@ Next: the architecture split (shared tool registry + per-feature API routers), t
   get a clear "save as .docx" message instead of silently failing.
 - Uploaded Office documents are also indexed into the chat's durable file memory, so later turns can
   retrieve them through the same per-chat RAG path as PDFs and text files.
+
+
+## Step 99 - Chat polish: copy that works, real attachment chips, paste images, logo fix (July 2, 2026)
+
+- **Copy buttons actually copy now.** The desktop webview can silently deny the modern clipboard
+  API; every copy control (prompt, reply, code blocks) now falls back to the classic method and
+  flashes a green check with a little pop animation so you know it worked.
+- **Attachments look like files, not a text blob.** Uploaded files used to render as one comma-run
+  paragraph baked into the message. They're now separate chips below the prompt - click one to open
+  what's inside (the extracted text, retrieved from the chat's index even after a reload; images
+  open in the preview panel). Attachment metadata is stored with the message.
+- **Paste or drop images/files straight into chat.** Ctrl+V a screenshot into the composer or drag
+  files onto the conversation - both attach instantly (the picker allowed images all along, but
+  paste/drop is how people actually do it).
+- **Company logo uploads fixed.** Any reasonably sized image works now: logos are downscaled
+  client-side to header resolution (crisp on high-DPI), so the old "too large" rejections and
+  validation failures are gone; small GIFs keep their animation.
+- Also landed this session: the shared tool registry (backend/tools) - stable keys, schema-exposed
+  configs, scope allow-lists enforced at the tool layer - the groundwork Automations and Agents
+  build on next.
+
+Still on the list from user reports: specifics of the 'API limit' issue (need a repro - cap not
+triggering, or blocking wrongly?).

@@ -3,20 +3,21 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import { normalizeMarkdown } from "../lib/markdownFormat.js";
+import { copyText } from "../lib/clipboard.js";
 
 function CodeBlock({ className, children }) {
   const [copied, setCopied] = useState(false);
   const lang = (/language-([a-z0-9+#.-]+)/i.exec(className || "") || [])[1] || "code";
-  const copy = () => {
-    navigator.clipboard?.writeText(String(children).replace(/\n$/, ""));
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1200);
+  const copy = async () => {
+    const ok = await copyText(String(children).replace(/\n$/, ""));
+    setCopied(ok);
+    if (ok) setTimeout(() => setCopied(false), 1200);
   };
   return (
     <div className="codeblock">
       <div className="codeblock-bar">
         <span className="cb-lang">{lang}</span>
-        <button className="cb-copy" onClick={copy}>{copied ? "✓ Copied" : "Copy"}</button>
+        <button className={`cb-copy${copied ? " flash" : ""}`} onClick={copy}>{copied ? "✓ Copied" : "Copy"}</button>
       </div>
       <pre><code className={className}>{children}</code></pre>
     </div>

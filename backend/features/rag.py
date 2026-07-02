@@ -218,6 +218,17 @@ async def documents(cid: str) -> list[dict]:
         return [{"source": src, "chunks": int(n or 0)} for src, n in rows]
 
 
+async def document_text(cid: str, source: str, max_chars: int = 60_000) -> str:
+    """The extracted text of one indexed file, re-joined from its chunks (attachment preview)."""
+    async with get_sessionmaker()() as s:
+        rows = (await s.execute(
+            select(Chunk.content)
+            .where(Chunk.collection_id == uuid.UUID(cid), Chunk.source == source)
+            .order_by(Chunk.ordinal)
+        )).scalars().all()
+    return "\n".join(rows)[:max_chars]
+
+
 async def delete_source(cid: str, source: str) -> int:
     """Remove all chunks for one source file from a collection."""
     from sqlalchemy import delete

@@ -452,8 +452,15 @@ body{
 }
 .attach-chip button{background:none; border:none; color:var(--faint); cursor:pointer; font-size:13px; line-height:1; padding:0 2px}
 .attach-chip button:hover{color:var(--red)}
-.msg-attach{display:flex; flex-wrap:wrap; gap:8px; margin-bottom:8px}
-.msg-thumb{max-width:150px; max-height:150px; border-radius:8px; border:1px solid var(--line); object-fit:cover; display:block}
+.msg-attach{display:flex; flex-wrap:wrap; gap:8px; margin:8px 0 2px}
+.msg-thumb{max-width:150px; max-height:150px; border-radius:8px; border:1px solid var(--line); object-fit:cover; display:block; cursor:zoom-in}
+/* attachment chips on sent messages are buttons: click to open the file's extracted content */
+button.attach-chip{cursor:pointer}
+button.attach-chip:hover{border-color:var(--amber); color:var(--text)}
+/* copied feedback: quick pop on any copy control */
+@keyframes copied-pop{0%{transform:scale(1)}45%{transform:scale(1.25)}100%{transform:scale(1)}}
+.copied-pop{animation:copied-pop .35s ease; color:#54c08a !important; border-color:#54c08a !important}
+.cb-copy.flash{color:#54c08a}
 .code-image{margin:12px 0 4px;max-width:min(760px,72vw);border:1px solid var(--line);border-radius:8px;overflow:hidden;background:#fff}
 .code-image img{display:block;width:100%;height:auto;aspect-ratio:3/2;object-fit:contain;background:#fff}
 .code-image figcaption{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 9px;background:var(--bg1);color:var(--faint);font-family:var(--font-mono);font-size:10px}
