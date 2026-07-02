@@ -653,7 +653,9 @@ def _outer_title_for_plan(plan) -> str:
 
 def _outer_summary_for_plan(plan, *, has_attachments: bool) -> str:
     detail = getattr(plan, "detail", "") or "Preparing the answer."
-    return f"{detail} Attachments are included as context." if has_attachments else detail
+    if has_attachments and "ttachments" not in detail:  # the router may have noted them already
+        detail += " Attachments are included as context."
+    return detail
 
 
 _RESEARCH_PREFIX = re.compile(r"^\s*/(?:deep[\s-]?research|research)\b[:\s]*", re.IGNORECASE)

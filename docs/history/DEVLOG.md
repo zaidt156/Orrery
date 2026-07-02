@@ -1343,3 +1343,23 @@ Next: the architecture split (shared tool registry + per-feature API routers), t
 
 Still on the list from user reports: specifics of the 'API limit' issue (need a repro - cap not
 triggering, or blocking wrongly?).
+
+
+## Step 100 - Vision on plan routes, native copy, relevance-gated file context (July 2, 2026)
+
+- **Images now work on plan connections.** Claude plan turns with images write the attachment into a
+  throwaway folder and allow the CLI exactly one tool - Read, scoped to that folder - so the model
+  actually sees the picture while the no-write/no-persistence posture is unchanged. ChatGPT plan uses
+  Codex's official --image flag. Gemini CLI stays text-first (deprecated consumer route) with an
+  accurate message.
+- **Copy finally works everywhere.** The desktop webview disables JS clipboard access at the engine
+  level (both modern and legacy APIs), which is why earlier fallbacks still failed. Copy buttons now
+  route through a native bridge (OS clipboard via the Python side); browsers/Electron keep the
+  standard APIs. Green-check pop confirms every copy.
+- **Files stop haunting unrelated questions.** Retrieval had no absolute relevance bar - the vector
+  arm always returned the top k chunks, so earlier uploads leaked into every answer. Chunks past a
+  cosine-distance ceiling are now dropped (keyword matches always pass), so an unrelated question
+  simply gets no file context; the trace no longer claims attachments are in context twice.
+- **Branding:** uploading a logo now auto-enables the header (it was easy to upload and see nothing).
+
+Next: user to clarify the 'API limit' symptom; then the router split -> Automations.

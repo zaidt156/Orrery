@@ -240,12 +240,21 @@ async def delete_source(cid: str, source: str) -> int:
         return result.rowcount or 0
 
 
+# Above this cosine distance a chunk is judged unrelated to the question and dropped. Without this
+# gate the vector arm ALWAYS returns k chunks, so files from earlier turns kept leaking into every
+# answer ("why is it reading my Q2 report when I asked about pasta?").
+MAX_COSINE_DISTANCE = 0.62
+
+
 async def search(cid: str, query: str, k: int = 5) -> list[dict]:
-    """Hybrid retrieval: vector (pgvector) + keyword (Postgres FTS), fused by RRF."""
+    """Hybrid retrieval: vector (pgvector) + keyword (Postgres FTS), fused by RRF.
+
+    Relevance-gated: vector hits past MAX_COSINE_DISTANCE are dropped; keyword hits always pass
+    (the text literally matched). An empty result means "these files say nothing about this"."""
     qv = _vec(await embed_query(query))
     async with get_sessionmaker()() as s:
         vec = (await s.execute(
-            text("SELECT id::text AS id, source, content "
+            text("SELECT id::text AS id, source, content, (embedding <=> (:q)::vector) AS dist "
                  "FROM chunks WHERE collection_id = (:cid)::uuid "
                  "ORDER BY embedding <=> (:q)::vector LIMIT :k"),
             {"q": qv, "cid": cid, "k": k},
@@ -263,4 +272,9 @@ async def search(cid: str, query: str, k: int = 5) -> list[dict]:
         for rank, row in enumerate(ranked, 1):
             entry = fused.setdefault(row["id"], {"source": row["source"], "content": row["content"], "score": 0.0})
             entry["score"] += 1.0 / (60 + rank)
-    return sorted(fused.values(), key=lambda r: r["score"], reverse=True)[:k]
+            if "dist" in row:
+                entry["dist"] = float(row["dist"])
+            else:
+                entry["kw"] = True  # matched by actual words → relevant regardless of distance
+    kept = [e for e in fused.values() if e.get("kw") or e.get("dist", 1.0) <= MAX_COSINE_DISTANCE]
+    return sorted(kept, key=lambda r: r["score"], reverse=True)[:k]

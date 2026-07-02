@@ -533,7 +533,7 @@ function BrandingSection() {
         canvas.width = Math.max(1, Math.round(img.width * scale));
         canvas.height = Math.max(1, Math.round(img.height * scale));
         canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
-        update({ logo: canvas.toDataURL("image/png") });
+        update({ logo: canvas.toDataURL("image/png"), enabled: true });  // uploading a logo means "show it"
       };
       img.onerror = () => setErr("Couldn't read that image — try a different file.");
       img.src = raw;

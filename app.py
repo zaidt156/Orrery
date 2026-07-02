@@ -64,6 +64,43 @@ class JsApi:
             return {"ok": False, "error": str(exc)}
         return {"ok": True, "path": str(target)}
 
+    def copy_text(self, text: str) -> dict:
+        """Native clipboard copy. Qt WebEngine ships with JS clipboard access disabled, so the page's
+        copy buttons route here instead — the OS clipboard can't be blocked by the webview."""
+        try:
+            _set_clipboard_text(str(text or ""))
+            return {"ok": True}
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": str(exc)}
+
+
+def _set_clipboard_text(text: str) -> None:
+    if sys.platform == "win32":
+        import ctypes
+        CF_UNICODETEXT = 13
+        GMEM_MOVEABLE = 0x0002
+        user32, kernel32 = ctypes.windll.user32, ctypes.windll.kernel32
+        data = text.encode("utf-16-le") + b"\x00\x00"
+        if not user32.OpenClipboard(0):
+            raise OSError("Could not open the clipboard.")
+        try:
+            user32.EmptyClipboard()
+            handle = kernel32.GlobalAlloc(GMEM_MOVEABLE, len(data))
+            locked = kernel32.GlobalLock(handle)
+            ctypes.memmove(locked, data, len(data))
+            kernel32.GlobalUnlock(handle)
+            if not user32.SetClipboardData(CF_UNICODETEXT, handle):
+                kernel32.GlobalFree(handle)
+                raise OSError("Could not write to the clipboard.")
+        finally:
+            user32.CloseClipboard()
+    elif sys.platform == "darwin":
+        import subprocess
+        subprocess.run(["pbcopy"], input=text.encode("utf-8"), check=True, timeout=5)
+    else:
+        import subprocess
+        subprocess.run(["xclip", "-selection", "clipboard"], input=text.encode("utf-8"), check=True, timeout=5)
+
 
 _js_api = JsApi()
 

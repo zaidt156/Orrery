@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import os
 import re
@@ -374,30 +375,57 @@ def claude_plan_models() -> list[dict]:
     ]
 
 
-def _content_to_text(content) -> str:
+_IMAGE_MIME_EXT = {"image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp", "image/gif": ".gif"}
+_DATA_URL = re.compile(r"^data:(image/[a-z+.-]+);base64,(.+)$", re.DOTALL)
+
+
+def _content_to_text(content, images: list[tuple[bytes, str]] | None = None) -> str:
+    """Flatten one message's content to text. With `images`, data-URL images are collected into it
+    (decoded bytes + extension) and replaced by a numbered marker; without it, images raise."""
     if isinstance(content, str):
         return content
     if isinstance(content, list):
         parts: list[str] = []
         for block in content:
             if block.get("type") == "image_url":
-                raise UnsupportedClaudePlanInput(
-                    "Claude plan access in Orrery is text-first for now. Use an API-key vision model for image attachments."
-                )
+                url = (block.get("image_url") or {}).get("url", "") if isinstance(block.get("image_url"), dict) else str(block.get("image_url", ""))
+                match = _DATA_URL.match(url or "")
+                if images is None or not match or match.group(1) not in _IMAGE_MIME_EXT:
+                    raise UnsupportedClaudePlanInput(
+                        "This plan connection can't take that image here. Attach PNG/JPEG/WebP/GIF, "
+                        "or use an API-key vision model."
+                    )
+                try:
+                    data = base64.b64decode(match.group(2))
+                except (ValueError, TypeError):
+                    raise UnsupportedClaudePlanInput("That image attachment couldn't be decoded.")
+                images.append((data, _IMAGE_MIME_EXT[match.group(1)]))
+                parts.append(f"[Attached image {len(images)}]")
+                continue
             if block.get("type") == "text":
                 parts.append(block.get("text", ""))
         return "\n".join(p for p in parts if p).strip()
     return str(content or "")
 
 
-def _messages_to_prompt(messages: list[dict]) -> str:
+def _messages_to_prompt(messages: list[dict], images: list[tuple[bytes, str]] | None = None) -> str:
     rendered = []
     for message in messages:
         role = message.get("role", "user").title()
-        body = _content_to_text(message.get("content"))
+        body = _content_to_text(message.get("content"), images)
         if body:
             rendered.append(f"{role}:\n{body}")
     return "\n\n".join(rendered).strip()
+
+
+def _write_image_files(images: list[tuple[bytes, str]], workdir: str) -> list[str]:
+    paths = []
+    for i, (data, ext) in enumerate(images[:8], start=1):  # bounded: 8 images per turn
+        path = os.path.join(workdir, f"image-{i}{ext}")
+        with open(path, "wb") as f:
+            f.write(data)
+        paths.append(path)
+    return paths
 
 
 class CliStreamError(Exception):
@@ -566,8 +594,12 @@ def _limit_text(err: str, plan: str) -> str | None:
 
 def _claude_plan_args(
     cmd: str, model_id: str | None, effort: str | None, system_prompt: str | None, effort_supported: bool,
+    image_dir: str | None = None,
 ) -> list[str]:
-    """Build the Claude Code argv with tools disabled and no session persistence (pure + testable)."""
+    """Build the Claude Code argv with tools disabled and no session persistence (pure + testable).
+
+    Image turns allow exactly ONE tool — Read — scoped to the temp folder holding this turn's
+    attachments, so vision works while the no-write/no-persistence posture is unchanged."""
     args = [
         cmd,
         "--print",
@@ -575,12 +607,14 @@ def _claude_plan_args(
         "--include-partial-messages",
         "--verbose",  # required alongside stream-json
         "--no-session-persistence",
-        "--tools", "",
+        "--tools", "Read" if image_dir else "",
         "--strict-mcp-config",
         "--disable-slash-commands",
         "--setting-sources", "user",
         "--permission-mode", "dontAsk",
     ]
+    if image_dir:
+        args += ["--add-dir", image_dir]
     flag = _CLAUDE_PLAN_FLAG.get(model_id) if model_id else None
     if flag:
         args += ["--model", flag]
@@ -605,11 +639,18 @@ async def _stream_claude_plan_impl(
     if not cmd:
         raise ClaudePlanUnavailable("Claude Code is not installed or is not on PATH.")
 
-    prompt = _messages_to_prompt(messages)
+    images: list[tuple[bytes, str]] = []
+    prompt = _messages_to_prompt(messages, images)
     if not prompt:
         raise ClaudePlanUnavailable("There is no text to send to Claude plan.")
+    image_dir = None
+    if images:
+        image_dir = tempfile.mkdtemp(prefix="orrery_claude_img_")
+        paths = _write_image_files(images, image_dir)
+        listing = "\n".join(paths)
+        prompt = f"Before answering, view every attached image with the Read tool:\n{listing}\n\n{prompt}"
 
-    args = _claude_plan_args(cmd, model_id, effort, system_prompt, _claude_effort_supported())
+    args = _claude_plan_args(cmd, model_id, effort, system_prompt, _claude_effort_supported(), image_dir=image_dir)
 
     produced = False
     try:
@@ -628,6 +669,9 @@ async def _stream_claude_plan_impl(
                 "Claude Code is not signed in. Open Settings, sign in to Claude Code, then reconnect the Claude plan."
             ) from None
         raise ClaudePlanUnavailable("Claude plan request failed. Check Claude Code sign-in and plan status.") from None
+    finally:
+        if image_dir:
+            shutil.rmtree(image_dir, ignore_errors=True)
 
     if not produced:
         # claude often exits 0 with no text when the rolling usage limit is hit
@@ -1073,6 +1117,7 @@ def _codex_exec_args(
     model_id: str | None,
     effort: str | None,
     force_auto: bool = False,
+    image_paths: list[str] | None = None,
 ) -> list[str]:
     flags_ok, config_isolated, reason = _codex_exec_flags()
     if not flags_ok:
@@ -1080,6 +1125,8 @@ def _codex_exec_args(
     args = [cmd, "exec"]
     if config_isolated:
         args.append("--ignore-user-config")
+    for path in image_paths or []:  # codex exec --image: official vision input
+        args += ["--image", path]
     args += [
         "-c", 'service_tier="fast"',
         # default to real reasoning (not "low") so GPT doesn't answer shallowly; the chat
@@ -1176,14 +1223,16 @@ async def stream_chatgpt_plan(
     cmd = _codex_command()
     if not cmd or secrets.get_secret(_CHATGPT_PLAN_KEY) != "connected":
         raise CliRouteUnavailable("ChatGPT plan (Codex CLI) is not connected.")
-    prompt = _messages_to_prompt(messages)  # raises UnsupportedClaudePlanInput on images
+    images: list[tuple[bytes, str]] = []
+    prompt = _messages_to_prompt(messages, images)
     if not prompt:
         raise CliRouteUnavailable("There is no text to send.")
     if system_prompt:
         prompt = f"{system_prompt}\n\n{prompt}"  # codex exec has no system-prompt flag
     workdir = tempfile.mkdtemp(prefix="orrery_codex_")
     outfile = os.path.join(workdir, "last.txt")
-    args = _codex_exec_args(cmd, workdir, outfile, model_id, effort)
+    image_paths = _write_image_files(images, workdir) if images else None
+    args = _codex_exec_args(cmd, workdir, outfile, model_id, effort, image_paths=image_paths)
     try:
         text = await asyncio.to_thread(_run_codex, args, prompt, outfile)
     except subprocess.TimeoutExpired:
@@ -1191,7 +1240,7 @@ async def stream_chatgpt_plan(
     except CliStreamError as exc:
         if _codex_should_retry_auto(model_id, exc.message, args):
             try:
-                args = _codex_exec_args(cmd, workdir, outfile, "chatgpt_plan/default", effort, force_auto=True)
+                args = _codex_exec_args(cmd, workdir, outfile, "chatgpt_plan/default", effort, force_auto=True, image_paths=image_paths)
                 text = await asyncio.to_thread(_run_codex, args, prompt, outfile)
             except subprocess.TimeoutExpired:
                 raise CliRouteUnavailable("ChatGPT plan request timed out.") from None

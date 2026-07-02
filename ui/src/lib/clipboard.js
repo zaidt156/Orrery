@@ -1,7 +1,15 @@
-// Clipboard that actually works in the desktop webview: the async Clipboard API can be denied by
-// the embedded browser (Qt WebEngine), so fall back to a hidden textarea + execCommand.
+// Clipboard that actually works in the desktop webview. Qt WebEngine disables JS clipboard access
+// entirely (both navigator.clipboard AND execCommand), so the desktop build copies natively through
+// the Python bridge; browsers/Electron use the standard APIs.
 export async function copyText(text) {
   const value = String(text ?? "");
+  try {
+    const bridge = window.pywebview?.api?.copy_text;
+    if (bridge) {
+      const r = await bridge(value);
+      if (r?.ok) return true;
+    }
+  } catch { /* fall through to the web APIs */ }
   try {
     await navigator.clipboard.writeText(value);
     return true;
