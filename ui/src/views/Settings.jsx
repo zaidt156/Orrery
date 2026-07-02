@@ -30,6 +30,11 @@ import {
   testDatabase,
   saveDatabase,
   clearDatabase,
+  getDefaults,
+  setDefaults,
+  getModels,
+  listMcp,
+  updateMcp,
   getModelCatalog,
   getProviders,
   getUsage,
@@ -918,45 +923,100 @@ function SettingsPanelHeader({ title, description }) {
   );
 }
 
+const EFFORT_DEFAULTS = [["", "Standard"], ["low", "Quick"], ["high", "Deep"], ["xhigh", "Max"]];
+
 function DefaultsSection() {
+  const [models, setModels] = useState([]);
+  const [model, setModel] = useState("");
+  const [effort, setEffort] = useState("");
+  const [saved, setSaved] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    getModels().then((m) => setModels(m.models || [])).catch(() => {});
+    getDefaults().then((d) => { setModel(d.model || ""); setEffort(d.effort || ""); }).catch(() => {});
+  }, []);
+
+  async function save(nextModel, nextEffort) {
+    setBusy(true); setSaved(false);
+    try {
+      await setDefaults(nextModel, nextEffort);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 1500);
+    } catch { /* keep local state; next change retries */ } finally { setBusy(false); }
+  }
+
   return (
     <>
-      <div className="section-label">Defaults</div>
-      <div className="defaults-grid">
-        <div className="srow">
-          <div className="s-body"><div className="s-name">Default model</div><div className="s-sub">set per chat in the model picker</div></div>
-        </div>
-        <div className="srow">
-          <div className="s-body" style={{ width: "100%" }}>
-            <div className="s-name" style={{ marginBottom: "9px" }}>Temperature · 0.7</div>
-            <div className="slider-row"><div className="slider"><div className="fill" /><div className="knob" /></div></div>
+      <div className="section-label">Defaults — applied to every new chat</div>
+      <div className="provider-block">
+        <div className="mode-row">
+          <div className="mode-main">
+            <div className="mode-name">Default model</div>
+            <div className="mode-sub">New chats start on this model (you can still switch per chat)</div>
+          </div>
+          <div className="mode-actions">
+            <select className="defaults-select" value={model}
+              onChange={(e) => { setModel(e.target.value); save(e.target.value, effort); }}>
+              <option value="">Last used / first available</option>
+              {models.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+            </select>
           </div>
         </div>
-        <div className="srow">
-          <div className="s-body"><div className="s-name">Theme</div><div className="s-sub">Night — default</div></div>
+        <div className="mode-row">
+          <div className="mode-main">
+            <div className="mode-name">Default reasoning depth</div>
+            <div className="mode-sub">Quick / Standard / Deep / Max — the per-chat selector still overrides it</div>
+          </div>
+          <div className="mode-actions">
+            <select className="defaults-select" value={effort}
+              onChange={(e) => { setEffort(e.target.value); save(model, e.target.value); }}>
+              {EFFORT_DEFAULTS.map(([v, label]) => <option key={v || "std"} value={v}>{label}</option>)}
+            </select>
+          </div>
         </div>
-        <div className="srow">
-          <div className="s-body"><div className="s-name">Run logs retention</div><div className="s-sub">keep 90 days ⌄</div></div>
-        </div>
+        <div className="mode-sub" style={{ marginTop: 8 }}>{busy ? "Saving…" : saved ? "Saved." : ""}</div>
       </div>
     </>
   );
 }
 
 function IntegrationsSection() {
+  const [servers, setServers] = useState(null);
+  const load = () => listMcp().then((d) => setServers(d.servers || [])).catch(() => setServers([]));
+  useEffect(() => { load(); }, []);
+
+  async function toggle(s, next) {
+    setServers((prev) => (prev || []).map((x) => (x.id === s.id ? { ...x, enabled: next } : x)));
+    try { await updateMcp(s.id, { enabled: next }); } catch { await load(); }
+  }
+
   return (
     <>
-      <div className="section-label">MCP servers — plug your own tools into chat and workflows</div>
-      <div className="srow">
-        <div className="s-icon">M</div>
-        <div className="s-body"><div className="s-name">filesystem</div><div className="s-sub">arrives in Phase 8</div></div>
-        <Toggle />
-      </div>
-      <div className="srow">
-        <div className="s-icon">M</div>
-        <div className="s-body"><div className="s-name">github</div><div className="s-sub">arrives in Phase 8</div></div>
-        <Toggle />
-      </div>
+      <div className="section-label">MCP servers — your own tools, available to the chat model</div>
+      {servers === null && <div className="s-sub settings-loading">Loading…</div>}
+      {servers?.length === 0 && (
+        <div className="s-sub" style={{ padding: "4px 2px" }}>
+          No MCP servers yet. Add and configure them in the Skills tab (Overview → MCP servers).
+        </div>
+      )}
+      {(servers || []).map((s) => (
+        <div className="srow" key={s.id}>
+          <div className="s-icon">M</div>
+          <div className="s-body">
+            <div className="s-name">{s.name}</div>
+            <div className="s-sub">
+              {(s.tools?.length ? `${s.tools.length} tool(s) · ` : "")}
+              {(s.env_names?.length ? `${s.env_names.length} env · ` : "")}
+              {s.transport === "http" ? (s.url || "http") : (s.command || "stdio")}
+            </div>
+          </div>
+          <Toggle on={s.enabled} onClick={() => toggle(s, !s.enabled)} />
+        </div>
+      ))}
+      {(servers || []).length > 0 && (
+        <div className="s-sub" style={{ padding: "6px 2px 0" }}>Add, test, or remove servers in the Skills tab.</div>
+      )}
     </>
   );
 }

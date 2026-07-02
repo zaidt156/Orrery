@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import * as echarts from "echarts";
-import { Code2, Database, LayoutDashboard, Plus, RefreshCw, Trash2, Undo2, WandSparkles } from "lucide-react";
+import { Code2, Database, LayoutDashboard, Layers, Plus, RefreshCw, Trash2, Undo2, WandSparkles } from "lucide-react";
 import {
-  createDashboard, deleteDashboard, getModels, listDashboards, listDataConnections,
+  addDataConnection, createDashboard, deleteDashboard, getModels, listDashboards, listDataConnections,
   reviseDashboard, rollbackDashboard, runDashboard,
 } from "../lib/api.js";
 
@@ -128,6 +128,10 @@ export default function Dashboards() {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
   const [reviseText, setReviseText] = useState("");
+  const [connectOpen, setConnectOpen] = useState(false);
+  const [connName, setConnName] = useState("");
+  const [connUrl, setConnUrl] = useState("");
+  const [showTransforms, setShowTransforms] = useState(false);
 
   async function load(nextActive) {
     const d = await listDashboards();
@@ -186,6 +190,18 @@ export default function Dashboards() {
     setSelectedConns((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
   }
 
+  async function connectData() {
+    if (!connUrl.trim()) return;
+    setBusy(true); setErr("");
+    try {
+      const created = await addDataConnection(connName.trim() || "database", connUrl.trim());
+      const c = await listDataConnections();
+      setConnections(c.connections || []);
+      setSelectedConns((p) => [...p, created.id]);  // auto-select the new source
+      setConnName(""); setConnUrl(""); setConnectOpen(false);
+    } catch (e) { setErr(String(e.message || e)); } finally { setBusy(false); }
+  }
+
   const active = items.find((d) => d.id === activeId);
   const showCreate = creating || (!items.length && !activeId);
 
@@ -219,9 +235,10 @@ export default function Dashboards() {
               writes read-only SQL (always visible per widget); refreshes re-run the saved queries with
               no model cost.</p>
             <label className="dash-form-label">Data connections (pick one or more)</label>
-            {connections.length === 0 ? (
-              <div className="project-muted">No data connections yet — add one in the Data tab first.</div>
-            ) : (
+            {connections.length === 0 && !connectOpen && (
+              <div className="project-muted">No data connections yet — connect one below.</div>
+            )}
+            {connections.length > 0 && (
               <div className="dash-conn-list">
                 {connections.map((c) => (
                   <label key={c.id} className={`dash-conn${selectedConns.includes(c.id) ? " on" : ""}`}>
@@ -230,6 +247,19 @@ export default function Dashboards() {
                   </label>
                 ))}
               </div>
+            )}
+            {connectOpen ? (
+              <div className="dash-connect-form">
+                <input placeholder="Name (e.g. warehouse)" value={connName} onChange={(e) => setConnName(e.target.value)} />
+                <input placeholder="postgres://user:password@host:5432/dbname" value={connUrl} onChange={(e) => setConnUrl(e.target.value)} spellCheck={false} />
+                <div className="dash-connect-row">
+                  <button className="btn primary sm" onClick={connectData} disabled={busy || !connUrl.trim()}>{busy ? "Connecting…" : "Connect"}</button>
+                  <button className="btn ghost sm" onClick={() => setConnectOpen(false)}>Cancel</button>
+                  <small>The connection string is stored only in your OS keychain.</small>
+                </div>
+              </div>
+            ) : (
+              <button className="btn ghost sm dash-connect-btn" onClick={() => setConnectOpen(true)}><Plus /> Connect new data source</button>
             )}
             <label className="dash-form-label">Built by</label>
             <select value={model} onChange={(e) => setModel(e.target.value)}>
@@ -260,6 +290,24 @@ export default function Dashboards() {
 
             {err && <div className="chat-banner">{err}</div>}
             {loading && <div className="project-muted" style={{ padding: "18px 4px" }}>Running the saved queries…</div>}
+
+            {board && (board.transforms?.length || 0) > 0 && (
+              <div className="dash-transforms">
+                <button className="dash-transforms-head" onClick={() => setShowTransforms((v) => !v)}>
+                  <Layers /> Transforms ({board.transforms.length}) — prepared datasets widgets build on
+                  <span className="pill-caret">{showTransforms ? "▴" : "▾"}</span>
+                </button>
+                {showTransforms && board.transforms.map((t) => (
+                  <div key={t.name} className="dash-transform">
+                    <div className="dash-transform-head">
+                      <code>{t.name}</code>
+                      <small>{t.description || "prepared dataset"}</small>
+                    </div>
+                    <pre className="dash-sql">{t.sql}</pre>
+                  </div>
+                ))}
+              </div>
+            )}
 
             {board && (
               <div className="dash-grid2">

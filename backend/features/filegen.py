@@ -65,6 +65,9 @@ _NEEDS_CODE = re.compile(
 )
 
 _FORMAT_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    # Deliverable-first: a web app/page ask often *mentions* other formats as features inside it
+    # ("… and a Download CSV button") — the page is the deliverable, not the button's format.
+    ("html", re.compile(r"\b(web\s?app|web\s?page|webpage|website|landing page|single[-\s]?page app)\b", re.I)),
     ("pdf", re.compile(r"\bpdf\b|\.pdf\b", re.I)),
     ("docx", re.compile(r"\b(word\s+doc(?:ument)?|docx?)\b|\.docx?\b", re.I)),
     ("xlsx", re.compile(r"\b(excel|xlsx?|spreadsheet|workbook|sheet)\b|\.xlsx?\b", re.I)),

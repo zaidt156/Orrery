@@ -877,7 +877,8 @@ async def _route_model_reply(
     limited_messages = _limit_messages(messages, context_window, budget_system)
     outcome = "completed"
 
-    if sandbox.image_ready() and allow_code:
+    sandbox_ok = sandbox.image_ready()
+    if sandbox_ok and allow_code:
         user_text = _latest_user_text(limited_messages)
         gen_effort = filegen.quality_effort(model, effort) if _wants_high_effort(user_text) else effort
         mcp_servers = await mcp.enabled_servers() if allow_mcp else []
@@ -910,6 +911,14 @@ async def _route_model_reply(
                 yield trace.summary()
             yield event
     else:
+        if allow_code and not sandbox_ok:
+            # Say WHY code-run/file tools are missing instead of silently degrading — users otherwise
+            # see the model claim it "can't write files" with no hint that Docker is simply off.
+            yield trace.step(
+                "Sandbox offline", "Docker isn't running (or the sandbox image isn't built), so code "
+                "execution and sandbox file tools are unavailable this turn. Answering directly.",
+                kind="context", status="warning", phase="prepare",
+            )
         async for event in _generate(cid, model, gen_system, limited_messages, effort, rag_context, trusted_context):
             if "error" in event:
                 outcome = "failed"

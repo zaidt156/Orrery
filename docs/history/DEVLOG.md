@@ -1257,3 +1257,25 @@ Next: tag a release (v*) to let CI produce all four artifacts; consider code sig
   plan gained the Fable 5 variant, and the model chip shows a clean short name with a PLAN badge.
 
 Next: review ontology/MCP/skills for improvements; then Automations (the engine + canvas).
+
+
+## Step 95 - BI transforms, fixed file routing, working Settings General (July 2, 2026)
+
+- **Dashboards, BI-style.** The designing model can now define named *transforms* - prepared datasets
+  (cleaning, joins, derived columns) that widgets on the same connection reference like tables; Orrery
+  validates each one (single read-only SELECT) and attaches them as CTEs at run time. A collapsible
+  Transforms panel shows every prepared dataset's SQL. New data sources can be connected right in the
+  dashboard create form (stored in the keychain as always).
+- **Fixed the web-app-became-CSV bug.** "Build me a dashboard web app ... with a Download CSV button"
+  produced a CSV, because format detection matched the mentioned button before the actual deliverable.
+  Deliverable words (web app/page/site) now outrank incidental format mentions - that exact request
+  routes to an HTML page.
+- **No more 'read-only workspace' excuses.** A new app rule tells every model it is inside Orrery, not
+  its own CLI, and must never refuse files on environmental grounds. And when the Docker sandbox is
+  offline, the reasoning panel now says so explicitly instead of silently degrading.
+- **Settings -> General is real now.** Default model + default reasoning depth (applied to new chats,
+  stored in app config), a working Integrations panel showing your actual MCP servers with live enable
+  toggles, and the shared Toggle component supports controlled use (it used to flip visually and do
+  nothing).
+
+Next: prompt/answer evaluation (compare candidate answers with an AI judge, on demand).

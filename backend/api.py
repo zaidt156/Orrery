@@ -238,6 +238,11 @@ class McpUpdate(BaseModel):
     env: dict[str, str] | None = None  # replaces the server's env vars; {} clears them
 
 
+class DefaultsBody(BaseModel):
+    model: str = ""
+    effort: str = ""  # "" (standard) | low | high | xhigh
+
+
 class DashboardCreate(BaseModel):
     model: str
     connection_ids: list[str] = []
@@ -425,6 +430,16 @@ def create_app(session_token: str) -> FastAPI:
     @r.put("/branding")
     async def put_branding(body: Branding) -> dict:
         return await appconfig.set_setting("branding", body.model_dump())
+
+    @r.get("/defaults")
+    async def get_defaults() -> dict:
+        saved = await appconfig.get_setting("defaults", {}) or {}
+        return {"model": str(saved.get("model", "")), "effort": str(saved.get("effort", ""))}
+
+    @r.put("/defaults")
+    async def put_defaults(body: DefaultsBody) -> dict:
+        effort = body.effort if body.effort in ("", "low", "high", "xhigh") else ""
+        return await appconfig.set_setting("defaults", {"model": body.model.strip(), "effort": effort})
 
     @r.get("/privacy")
     async def get_privacy() -> dict:

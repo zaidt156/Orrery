@@ -146,6 +146,10 @@ export const listTables = (id) => apiGet(`/api/connections/${id}/tables`);
 export const browseTable = (id, schema, table, limit = 100) =>
   apiGet(`/api/connections/${id}/browse?schema=${encodeURIComponent(schema)}&table=${encodeURIComponent(table)}&limit=${limit}`);
 
+// Workspace defaults (Settings → General)
+export const getDefaults = () => apiGet("/api/defaults");
+export const setDefaults = (model, effort) => apiSend("/api/defaults", "PUT", { model, effort });
+
 // Dashboards: the AI designs the spec; refresh re-runs saved read-only SQL (no model call)
 export const listDashboards = () => apiGet("/api/dashboards");
 export const createDashboard = (model, connection_ids, description) =>

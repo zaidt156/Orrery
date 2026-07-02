@@ -21,6 +21,7 @@ import {
   updateConversation, deleteConversation, streamMessage, regenerateMessage,
   downloadMessageExport, streamCodeImage, createArtifact, previewExport, saveClientFile,
   downloadGeneratedFile, previewGeneratedFile, stopGeneration, resumeGeneration, listProjects, saveReasoning,
+  getDefaults,
 } from "../lib/api.js";
 import {
   EXPORT_FORMATS, requestedFileFormats, precedingUserText,
@@ -201,7 +202,15 @@ export default function Chat() {
           setContextWindow("1000000");
           sessionStorage.removeItem("orrery_preferred_model");
         } else if (!hasConversations || startBlankProject) {
-          setModel(m.value.models[0] ? m.value.models[0].id : "");
+          // workspace defaults (Settings → General): default model + reasoning depth for new chats
+          try {
+            const d = await getDefaults();
+            const defModel = m.value.models.find((x) => x.id === d.model);
+            setModel(defModel ? defModel.id : (m.value.models[0] ? m.value.models[0].id : ""));
+            if (d.effort) setEffort(d.effort);
+          } catch {
+            setModel(m.value.models[0] ? m.value.models[0].id : "");
+          }
         }
       } else {
         setBanner(String(m.reason?.message || m.reason));

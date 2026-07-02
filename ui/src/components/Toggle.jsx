@@ -1,13 +1,17 @@
 import { useState } from "react";
 
-export default function Toggle({ defaultOn = false }) {
-  const [on, setOn] = useState(defaultOn);
-  const flip = () => setOn((v) => !v);
+// Controlled when `on`/`onClick` are passed (real settings); falls back to local state for
+// purely visual uses. Prefer the controlled form — an uncontrolled toggle changes nothing.
+export default function Toggle({ on, onClick, defaultOn = false }) {
+  const controlled = typeof on === "boolean";
+  const [local, setLocal] = useState(defaultOn);
+  const value = controlled ? on : local;
+  const flip = () => (controlled ? onClick?.() : setLocal((v) => !v));
   return (
     <span
-      className={`toggle${on ? " on" : ""}`}
+      className={`toggle${value ? " on" : ""}`}
       role="switch"
-      aria-checked={on}
+      aria-checked={value}
       tabIndex={0}
       onClick={flip}
       onKeyDown={(e) => {

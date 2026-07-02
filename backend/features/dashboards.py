@@ -54,6 +54,59 @@ def validate_widget_sql(sql: str) -> str | None:
     return None
 
 
+_TRANSFORM_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,62}$")
+MAX_TRANSFORMS = 6
+
+
+def _clean_transform(t: dict, allowed_connections: set[str], default_conn: str) -> tuple[dict | None, str | None]:
+    """Normalize one model-proposed transform (a named, validated SELECT widgets can build on)."""
+    if not isinstance(t, dict):
+        return None, "transform is not an object"
+    name = str(t.get("name", "")).strip()
+    if not _TRANSFORM_NAME.match(name):
+        return None, f"transform name {name!r} is not a valid identifier"
+    sql = str(t.get("sql", "")).strip().rstrip(";")
+    err = validate_widget_sql(sql)
+    if err:
+        return None, f"transform {name}: {err}"
+    conn = str(t.get("connection_id", "") or default_conn)
+    if conn not in allowed_connections:
+        conn = default_conn
+    return {
+        "name": name, "connection_id": conn, "sql": sql,
+        "description": str(t.get("description", "") or "")[:200],
+    }, None
+
+
+def effective_widget_sql(widget: dict, transforms: list[dict]) -> str:
+    """Widget SQL with any referenced same-connection transforms attached as CTEs (BI prep layer)."""
+    same = [t for t in transforms if t.get("connection_id") == widget.get("connection_id")]
+    if not same:
+        return widget["sql"]
+    searched = widget["sql"]
+    names: set[str] = set()
+    changed = True
+    while changed:  # include transforms referenced by the widget or by already-included transforms
+        changed = False
+        for t in same:
+            if t["name"] not in names and re.search(rf"\b{re.escape(t['name'])}\b", searched):
+                names.add(t["name"])
+                searched += "\n" + t["sql"]
+                changed = True
+    if not names:
+        return widget["sql"]
+    ordered = [t for t in same if t["name"] in names]  # spec order: later CTEs may use earlier ones
+    ctes = ", ".join(f"{t['name']} AS ({t['sql']})" for t in ordered)
+    body = widget["sql"].strip()
+    if re.match(r"^\s*with\b", body, re.IGNORECASE):
+        # the widget brings its own CTEs — merge into one WITH list
+        own_ctes = re.sub(r"^\s*with\b", "", body, count=1, flags=re.IGNORECASE).strip()
+        combined = f"WITH {ctes}, {own_ctes}"
+    else:
+        combined = f"WITH {ctes} {body}"
+    return combined if validate_widget_sql(combined) is None else widget["sql"]
+
+
 def _clean_widget(w: dict, allowed_connections: set[str], default_conn: str) -> tuple[dict | None, str | None]:
     """Normalize one model-proposed widget; returns (widget, None) or (None, why it was dropped)."""
     if not isinstance(w, dict):
@@ -80,8 +133,11 @@ def _clean_widget(w: dict, allowed_connections: set[str], default_conn: str) -> 
 
 # --- spec generation ------------------------------------------------------------------------------
 
-_SPEC_PROMPT = """You are designing a data dashboard. Output ONLY a JSON object, no prose:
+_SPEC_PROMPT = """You are designing a data dashboard, BI-style. Output ONLY a JSON object, no prose:
 {{"name": "<short dashboard name>",
+  "transforms": [{{"name": "<snake_case identifier>", "connection_id": "<connection id>",
+                  "sql": "<ONE read-only SELECT that cleans/joins/reshapes data>",
+                  "description": "<what this prepared dataset is>"}}],
   "widgets": [{{"title": "...", "type": "stat|line|bar|pie|table",
                "connection_id": "<id of the connection this widget queries>",
                "sql": "<ONE read-only PostgreSQL SELECT>",
@@ -89,10 +145,15 @@ _SPEC_PROMPT = """You are designing a data dashboard. Output ONLY a JSON object,
 
 Rules:
 - 3 to {max_widgets} widgets. Prefer a stat row (1-3 single-number stats), then charts, then at most one table.
-- Every query must be a single SELECT (no writes, no DDL). Aggregate in SQL (GROUP BY) so charts get
-  tidy label/value rows; cap raw table listings with LIMIT 50; order time series by the time column.
-- Use ONLY tables/columns from the schemas below, and set each widget's "connection_id" to the id of
-  the connection whose schema you used for that query.
+- TRANSFORMS (optional, up to {max_transforms}): named prepared datasets — cleaning, joins, unions,
+  derived columns. A widget on the SAME connection can then reference a transform by name as if it
+  were a table (it is attached as a CTE at run time). Use them to avoid repeating messy joins in
+  every widget. Do not redefine a transform name inside a widget's own WITH clause.
+- Every query (transform and widget) must be a single SELECT (no writes, no DDL). Aggregate in SQL
+  (GROUP BY) so charts get tidy label/value rows; cap raw table listings with LIMIT 50; order time
+  series by the time column.
+- Use ONLY tables/columns from the schemas below, and set each item's "connection_id" to the id of
+  the connection whose schema it uses. Transforms cannot join across different connections.
 - "stat" widgets: the query returns one row; the first numeric column is shown big.
 - "line"/"bar": x = label/time column, y = numeric column. "pie": x = label column, y = value column.
 
@@ -112,8 +173,9 @@ Available data connections and their schemas:
 
 Requested change: {instruction}
 
-Apply the same rules: 1-{max_widgets} widgets, each with one read-only SELECT against only the listed
-tables/columns, each widget's connection_id set to the connection whose schema it queries."""
+Apply the same rules: 1-{max_widgets} widgets (and up to {max_transforms} named transforms widgets can
+reference on the same connection), each with one read-only SELECT against only the listed
+tables/columns, each item's connection_id set to the connection whose schema it uses."""
 
 
 async def _connection_names(ids: list[str]) -> dict[str, str]:
@@ -149,21 +211,34 @@ async def _ask_model(model: str, prompt: str) -> dict:
 
 
 async def _build_spec(model: str, connection_ids: list[str], prompt: str) -> tuple[str, dict, list[str]]:
-    """Run the model, validate every widget, return (name, spec, dropped-reasons)."""
+    """Run the model, validate every transform + widget, return (name, spec, dropped-reasons)."""
     raw = await _ask_model(model, prompt)
     allowed = set(connection_ids)
     default_conn = connection_ids[0]
-    widgets, dropped = [], []
+    transforms, widgets, dropped = [], [], []
+    seen_names: set[str] = set()
+    for t in (raw.get("transforms") or [])[:MAX_TRANSFORMS]:
+        cleaned, why = _clean_transform(t, allowed, default_conn)
+        if cleaned and cleaned["name"] not in seen_names:
+            transforms.append(cleaned)
+            seen_names.add(cleaned["name"])
+        elif why:
+            dropped.append(why)
     for w in (raw.get("widgets") or [])[:MAX_WIDGETS]:
         cleaned, why = _clean_widget(w, allowed, default_conn)
-        if cleaned:
-            widgets.append(cleaned)
-        else:
+        if cleaned is None:
             dropped.append(why or "invalid")
+            continue
+        # the widget must also be valid WITH its transforms attached (that's what actually runs)
+        err = validate_widget_sql(effective_widget_sql(cleaned, transforms))
+        if err:
+            dropped.append(f"{cleaned['title']}: {err}")
+            continue
+        widgets.append(cleaned)
     if not widgets:
         raise ValueError("None of the model's widgets passed SQL validation. Try again or rephrase.")
     name = str(raw.get("name", "") or "Dashboard")[:160]
-    return name, {"connections": connection_ids, "widgets": widgets}, dropped
+    return name, {"connections": connection_ids, "transforms": transforms, "widgets": widgets}, dropped
 
 
 # --- CRUD + execution -----------------------------------------------------------------------------
@@ -179,6 +254,7 @@ def _dict(d: Dashboard, spec: dict | None = None) -> dict:
         "id": str(d.id), "name": d.name, "description": d.description or "",
         "model": d.model, "connection_id": str(d.connection_id),
         "connections": spec.get("connections", [str(d.connection_id)]),
+        "transforms": spec.get("transforms", []),
         "widgets": spec.get("widgets", []), "versions": history_len,
         "updated_at": d.updated_at.isoformat() if d.updated_at else None,
     }
@@ -217,7 +293,8 @@ async def create_dashboard(model: str, connection_ids: list[str], description: s
     if not connection_ids:
         raise ValueError("Pick at least one data connection.")
     schemas = await _schemas_block(connection_ids)
-    prompt = _SPEC_PROMPT.format(max_widgets=MAX_WIDGETS, schemas=schemas, description=description.strip())
+    prompt = _SPEC_PROMPT.format(max_widgets=MAX_WIDGETS, max_transforms=MAX_TRANSFORMS,
+                                 schemas=schemas, description=description.strip())
     name, spec, dropped = await _build_spec(model, connection_ids, prompt)
     async with get_sessionmaker()() as s:
         row = Dashboard(
@@ -249,16 +326,19 @@ async def run_dashboard(did: str) -> dict | None:
         spec = _load_spec(row)
         base = _dict(row, spec)
     conn_names = await _connection_names([str(w.get("connection_id")) for w in spec.get("widgets", [])])
+    transforms = spec.get("transforms", [])
     results = []
     for w in spec.get("widgets", []):
         item = dict(w)
         item["connection"] = conn_names.get(w.get("connection_id", ""), "database")
+        # What actually runs: the widget SQL with its referenced transforms attached as CTEs.
+        run_sql = effective_widget_sql(w, transforms)
         # Belt and braces: the stored SQL was validated at save time, but re-check before running.
-        err = validate_widget_sql(w.get("sql", ""))
+        err = validate_widget_sql(run_sql)
         if err is None:
             try:
                 cols, rows = await data.run_readonly_query(
-                    w["connection_id"], w["sql"], row_cap=_ROW_CAPS.get(w["type"], _DEFAULT_ROW_CAP))
+                    w["connection_id"], run_sql, row_cap=_ROW_CAPS.get(w["type"], _DEFAULT_ROW_CAP))
                 item["columns"], item["rows"] = cols, rows
             except Exception as exc:  # noqa: BLE001 — one broken widget shouldn't kill the board
                 item["error"] = str(exc)[:200]
@@ -278,7 +358,8 @@ async def revise_dashboard(did: str, model: str, instruction: str) -> dict | Non
     connection_ids = spec.get("connections") or [str(row.connection_id)]
     schemas = await _schemas_block(connection_ids)
     prompt = _REVISE_PROMPT.format(spec=json.dumps(spec, indent=1), schemas=schemas,
-                                   instruction=instruction.strip(), max_widgets=MAX_WIDGETS)
+                                   instruction=instruction.strip(), max_widgets=MAX_WIDGETS,
+                                   max_transforms=MAX_TRANSFORMS)
     name, new_spec, dropped = await _build_spec(model, connection_ids, prompt)
     async with get_sessionmaker()() as s:
         row = await _get_owned(s, did)

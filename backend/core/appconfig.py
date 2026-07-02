@@ -17,6 +17,7 @@ _ALLOWED_SETTINGS: dict[str, type] = {
     "spend_cap": dict,
     "privacy_mode": str,
     "feature_flags": dict,  # admin on/off toggles per capability
+    "defaults": dict,       # workspace defaults: {"model": "<id>", "effort": ""|low|high|xhigh}
 }
 
 
