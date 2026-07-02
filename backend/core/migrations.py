@@ -131,6 +131,9 @@ async def run_migrations() -> None:
         # Team mode: chats/projects are private to their owner (null = single-user / legacy)
         await conn.execute(text("ALTER TABLE conversations ADD COLUMN IF NOT EXISTS owner_id VARCHAR(36)"))
         await conn.execute(text("ALTER TABLE projects ADD COLUMN IF NOT EXISTS owner_id VARCHAR(36)"))
+        # Data sources: connection kind (postgres | datasets) + the datasets schema for imports
+        await conn.execute(text("ALTER TABLE data_connections ADD COLUMN IF NOT EXISTS kind VARCHAR(20) NOT NULL DEFAULT 'postgres'"))
+        await conn.execute(text("CREATE SCHEMA IF NOT EXISTS orrery_datasets"))
         # Team mode: member-authored skills/MCP need admin approval before they go team-wide
         await conn.execute(text("ALTER TABLE user_skills ADD COLUMN IF NOT EXISTS owner_id VARCHAR(36)"))
         await conn.execute(text("ALTER TABLE user_skills ADD COLUMN IF NOT EXISTS status VARCHAR(12) NOT NULL DEFAULT 'approved'"))

@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import * as echarts from "echarts";
 import { Code2, Database, LayoutDashboard, Layers, Plus, RefreshCw, Trash2, Undo2, WandSparkles } from "lucide-react";
 import {
-  addDataConnection, createDashboard, deleteDashboard, getModels, listDashboards, listDataConnections,
-  reviseDashboard, rollbackDashboard, runDashboard,
+  addDataConnection, createDashboard, createDatasetFromApi, createDatasetFromFile, deleteDashboard,
+  getModels, listDashboards, listDataConnections, reviseDashboard, rollbackDashboard, runDashboard,
 } from "../lib/api.js";
 
 // Dashboards: the AI is the designer, not the renderer. The user describes the dashboard and picks
@@ -129,9 +129,12 @@ export default function Dashboards() {
   const [err, setErr] = useState("");
   const [reviseText, setReviseText] = useState("");
   const [connectOpen, setConnectOpen] = useState(false);
+  const [connMode, setConnMode] = useState("postgres"); // postgres | file | api
   const [connName, setConnName] = useState("");
   const [connUrl, setConnUrl] = useState("");
+  const [connHeaders, setConnHeaders] = useState("");
   const [showTransforms, setShowTransforms] = useState(false);
+  const fileRef = useRef(null);
 
   async function load(nextActive) {
     const d = await listDashboards();
@@ -190,16 +193,56 @@ export default function Dashboards() {
     setSelectedConns((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
   }
 
+  async function refreshConnectionsAndSelect(preferId) {
+    const c = await listDataConnections();
+    setConnections(c.connections || []);
+    const target = preferId || (c.connections || []).find((x) => x.kind === "datasets")?.id;
+    if (target) setSelectedConns((p) => (p.includes(target) ? p : [...p, target]));
+    setConnName(""); setConnUrl(""); setConnHeaders(""); setConnectOpen(false);
+  }
+
   async function connectData() {
     if (!connUrl.trim()) return;
     setBusy(true); setErr("");
     try {
       const created = await addDataConnection(connName.trim() || "database", connUrl.trim());
-      const c = await listDataConnections();
-      setConnections(c.connections || []);
-      setSelectedConns((p) => [...p, created.id]);  // auto-select the new source
-      setConnName(""); setConnUrl(""); setConnectOpen(false);
+      await refreshConnectionsAndSelect(created.id);
     } catch (e) { setErr(String(e.message || e)); } finally { setBusy(false); }
+  }
+
+  async function connectApi() {
+    if (!connUrl.trim()) return;
+    setBusy(true); setErr("");
+    try {
+      const headers = {};
+      for (const line of connHeaders.split("\n")) {
+        const i = line.indexOf(":") >= 0 ? line.indexOf(":") : line.indexOf("=");
+        if (i > 0) headers[line.slice(0, i).trim()] = line.slice(i + 1).trim();
+      }
+      await createDatasetFromApi(connName.trim(), connUrl.trim(), headers);
+      await refreshConnectionsAndSelect();
+    } catch (e) { setErr(String(e.message || e)); } finally { setBusy(false); }
+  }
+
+  async function connectFile(e) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setBusy(true); setErr("");
+    try {
+      const isExcel = /\.(xlsx|xls|xlsm)$/i.test(file.name);
+      let content;
+      if (isExcel) {
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        let bin = "";
+        for (let o = 0; o < bytes.length; o += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(o, o + 0x8000));
+        content = btoa(bin);
+      } else {
+        content = await file.text();
+      }
+      await createDatasetFromFile(connName.trim() || file.name.replace(/\.[^.]+$/, ""), file.name, content);
+      await refreshConnectionsAndSelect();
+    } catch (e2) { setErr(String(e2.message || e2)); } finally { setBusy(false); }
   }
 
   const active = items.find((d) => d.id === activeId);
@@ -250,13 +293,47 @@ export default function Dashboards() {
             )}
             {connectOpen ? (
               <div className="dash-connect-form">
-                <input placeholder="Name (e.g. warehouse)" value={connName} onChange={(e) => setConnName(e.target.value)} />
-                <input placeholder="postgres://user:password@host:5432/dbname" value={connUrl} onChange={(e) => setConnUrl(e.target.value)} spellCheck={false} />
-                <div className="dash-connect-row">
-                  <button className="btn primary sm" onClick={connectData} disabled={busy || !connUrl.trim()}>{busy ? "Connecting…" : "Connect"}</button>
-                  <button className="btn ghost sm" onClick={() => setConnectOpen(false)}>Cancel</button>
-                  <small>The connection string is stored only in your OS keychain.</small>
+                <div className="dash-connect-modes">
+                  {[["postgres", "PostgreSQL"], ["file", "CSV / Excel file"], ["api", "REST API (JSON)"]].map(([id, label]) => (
+                    <button key={id} className={`dash-mode${connMode === id ? " on" : ""}`} onClick={() => setConnMode(id)}>{label}</button>
+                  ))}
                 </div>
+                <input placeholder={connMode === "file" ? "Dataset name (optional — file name is used)" : "Name (e.g. warehouse)"} value={connName} onChange={(e) => setConnName(e.target.value)} />
+                {connMode === "postgres" && (
+                  <>
+                    <input placeholder="postgres://user:password@host:5432/dbname" value={connUrl} onChange={(e) => setConnUrl(e.target.value)} spellCheck={false} />
+                    <div className="dash-connect-row">
+                      <button className="btn primary sm" onClick={connectData} disabled={busy || !connUrl.trim()}>{busy ? "Connecting…" : "Connect"}</button>
+                      <button className="btn ghost sm" onClick={() => setConnectOpen(false)}>Cancel</button>
+                      <small>The connection string is stored only in your OS keychain.</small>
+                    </div>
+                  </>
+                )}
+                {connMode === "file" && (
+                  <>
+                    <input ref={fileRef} type="file" accept=".csv,.tsv,.xlsx,.xls,.xlsm,text/csv" hidden onChange={connectFile} />
+                    <div className="dash-connect-row">
+                      <button className="btn primary sm" onClick={() => fileRef.current?.click()} disabled={busy}>{busy ? "Importing…" : "Choose file & import"}</button>
+                      <button className="btn ghost sm" onClick={() => setConnectOpen(false)}>Cancel</button>
+                      <small>Becomes a table under “Workspace datasets” — dashboards query it like a database.</small>
+                    </div>
+                  </>
+                )}
+                {connMode === "api" && (
+                  <>
+                    <input placeholder="https://api.example.com/v1/orders" value={connUrl} onChange={(e) => setConnUrl(e.target.value)} spellCheck={false} />
+                    <textarea
+                      className="dash-connect-headers" rows={2} spellCheck={false}
+                      placeholder={"Auth headers if needed (one per line):\nAuthorization: Bearer sk-..."}
+                      value={connHeaders} onChange={(e) => setConnHeaders(e.target.value)}
+                    />
+                    <div className="dash-connect-row">
+                      <button className="btn primary sm" onClick={connectApi} disabled={busy || !connUrl.trim()}>{busy ? "Fetching…" : "Fetch & import"}</button>
+                      <button className="btn ghost sm" onClick={() => setConnectOpen(false)}>Cancel</button>
+                      <small>JSON records become a refreshable table; headers stay in your OS keychain.</small>
+                    </div>
+                  </>
+                )}
               </div>
             ) : (
               <button className="btn ghost sm dash-connect-btn" onClick={() => setConnectOpen(true)}><Plus /> Connect new data source</button>

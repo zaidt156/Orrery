@@ -156,6 +156,15 @@ export const adoptAnswer = (cid, mid, text, model) =>
 export const getDefaults = () => apiGet("/api/defaults");
 export const setDefaults = (model, effort) => apiSend("/api/defaults", "PUT", { model, effort });
 
+// Imported datasets (CSV/Excel uploads + REST APIs) — BI-style sources for dashboards
+export const listDatasets = () => apiGet("/api/datasets");
+export const createDatasetFromFile = (name, filename, content) =>
+  apiSend("/api/datasets/file", "POST", { name, filename, content });
+export const createDatasetFromApi = (name, url, headers) =>
+  apiSend("/api/datasets/api", "POST", { name, url, headers });
+export const refreshDataset = (id) => apiSend(`/api/datasets/${id}/refresh`, "POST");
+export const deleteDataset = (id) => apiSend(`/api/datasets/${id}`, "DELETE");
+
 // Dashboards: the AI designs the spec; refresh re-runs saved read-only SQL (no model call)
 export const listDashboards = () => apiGet("/api/dashboards");
 export const createDashboard = (model, connection_ids, description) =>

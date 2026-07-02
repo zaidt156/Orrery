@@ -108,6 +108,19 @@ async def add_connection(name: str, url: str) -> dict:
     return meta
 
 
+async def connection_kind(cid: str) -> str:
+    """postgres (a user DB) or datasets (the built-in import source, scoped to orrery_datasets)."""
+    async with get_sessionmaker()() as s:
+        row = await s.get(DataConnection, uuid.UUID(cid))
+        return getattr(row, "kind", "postgres") or "postgres" if row else "postgres"
+
+
+async def _schema_filter(cid: str) -> str:
+    if await connection_kind(cid) == "datasets":
+        return "table_schema = 'orrery_datasets'"
+    return "table_schema NOT IN ('pg_catalog', 'information_schema', 'orrery_datasets')"
+
+
 async def list_connections() -> list[dict]:
     async with get_sessionmaker()() as s:
         rows = (await s.execute(select(DataConnection).order_by(DataConnection.created_at))).scalars().all()
@@ -118,7 +131,8 @@ async def list_connections() -> list[dict]:
             ok = True
         except Exception:  # noqa: BLE001
             ok = False
-        out.append({"id": str(r.id), "name": r.name, "display": r.display, "reachable": ok})
+        out.append({"id": str(r.id), "name": r.name, "display": r.display, "reachable": ok,
+                    "kind": getattr(r, "kind", "postgres") or "postgres"})
     return out
 
 
@@ -146,7 +160,7 @@ async def schema_overview(cid: str, max_tables: int = 40, max_columns: int = 24)
     _cols, rows = await _run_readonly(
         _engine(cid),
         "SELECT table_schema, table_name, column_name, data_type FROM information_schema.columns "
-        "WHERE table_schema NOT IN ('pg_catalog', 'information_schema') "
+        f"WHERE {await _schema_filter(cid)} "
         "ORDER BY table_schema, table_name, ordinal_position",
         row_cap=max_tables * max_columns * 2,
     )
@@ -164,7 +178,7 @@ async def list_tables(cid: str) -> list[dict]:
     _cols, rows = await _run_readonly(
         _engine(cid),
         "SELECT table_schema, table_name FROM information_schema.tables "
-        "WHERE table_schema NOT IN ('pg_catalog', 'information_schema') "
+        f"WHERE {await _schema_filter(cid)} "
         "ORDER BY table_schema, table_name",
         row_cap=2000,
     )

@@ -226,7 +226,28 @@ class DataConnection(Base):
     id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(120))
     display: Mapped[str] = mapped_column(String(300))  # redacted host:port/db, no password
+    # postgres = a user database; datasets = the built-in source holding imported CSV/API tables,
+    # scoped to the orrery_datasets schema so app tables (chats etc.) are never exposed to queries.
+    kind: Mapped[str] = mapped_column(String(20), default="postgres")
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class Dataset(Base):
+    """An imported data source (uploaded CSV/Excel file or a REST API endpoint) materialized as a
+    table in the orrery_datasets schema — queryable by dashboards like any database table (BI-style).
+    API datasets remember their URL so they can be refreshed; header secrets live in the keychain."""
+    __tablename__ = "datasets"
+
+    id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(120))
+    table_name: Mapped[str] = mapped_column(String(80), unique=True)  # ds_<slug> inside orrery_datasets
+    kind: Mapped[str] = mapped_column(String(10))                     # file | api
+    source: Mapped[str | None] = mapped_column(String(500), nullable=True)  # filename or URL (no secrets)
+    row_count: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
 
 class Dashboard(Base):

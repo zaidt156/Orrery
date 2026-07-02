@@ -15,7 +15,7 @@ from backend.core import appconfig, database
 from backend.core.config import settings
 from backend.core.observability import new_request_id
 from backend.core.paths import resource_path
-from backend.features import admin, app_updates, artifacts, chat, dashboards, data, evaluate, exports, feedback, filepreview, local_models, mcp, projects, rag, route_telemetry, skills, team, usage
+from backend.features import admin, app_updates, artifacts, chat, dashboards, data, datasets, evaluate, exports, feedback, filepreview, local_models, mcp, projects, rag, route_telemetry, skills, team, usage
 from backend.features import files as file_library
 from backend.providers import accounts, ai, catalog
 from backend.security import secrets
@@ -241,6 +241,18 @@ class McpUpdate(BaseModel):
 class DefaultsBody(BaseModel):
     model: str = ""
     effort: str = ""  # "" (standard) | low | high | xhigh
+
+
+class DatasetFileBody(BaseModel):
+    name: str = ""
+    filename: str = ""
+    content: str = ""  # raw text for CSV, base64 for Excel
+
+
+class DatasetApiBody(BaseModel):
+    name: str = ""
+    url: str = ""
+    headers: dict[str, str] = {}  # auth headers -> keychain, never stored in the DB
 
 
 class EvaluateBody(BaseModel):
@@ -692,6 +704,44 @@ def create_app(session_token: str) -> FastAPI:
             raise HTTPException(status_code=404, detail=str(e))
         except Exception as e:  # noqa: BLE001
             raise HTTPException(status_code=400, detail=secrets.redact_url(str(e))[:160])
+
+    # --- imported datasets (CSV/Excel uploads + REST APIs, materialized as queryable tables) ---
+    @r.get("/datasets")
+    async def datasets_list() -> dict:
+        return {"datasets": await datasets.list_datasets()}
+
+    @r.post("/datasets/file")
+    async def dataset_from_file(body: DatasetFileBody) -> dict:
+        try:
+            return await datasets.create_from_file(body.name, body.filename, body.content)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=f"Import failed: {str(e)[:200]}")
+
+    @r.post("/datasets/api")
+    async def dataset_from_api(body: DatasetApiBody) -> dict:
+        try:
+            return await datasets.create_from_api(body.name, body.url, body.headers or None)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=f"API import failed: {str(e)[:200]}")
+
+    @r.post("/datasets/{did}/refresh")
+    async def dataset_refresh(did: str) -> dict:
+        try:
+            return await datasets.refresh_dataset(did)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=f"Refresh failed: {str(e)[:200]}")
+
+    @r.delete("/datasets/{did}")
+    async def dataset_delete(did: str) -> dict:
+        if not await datasets.delete_dataset(did):
+            raise HTTPException(status_code=404, detail="Dataset not found")
+        return {"deleted": True}
 
     # --- dashboards (AI-designed specs; refresh re-runs saved read-only SQL, no model call) ---
     @r.get("/dashboards")

@@ -1293,3 +1293,19 @@ Next: prompt/answer evaluation (compare candidate answers with an AI judge, on d
   it costs extra model calls, so it's a per-message action, not an always-on pipeline.
 
 Next: the architecture split (shared tool registry + per-feature API routers), then Automations.
+
+
+## Step 97 - BI connectors: CSV/Excel uploads and REST APIs become queryable data (July 2, 2026)
+
+- Dashboards can now pull from more than Postgres. The "Connect new data source" form in the
+  Dashboards tab has three modes: PostgreSQL (connection string), CSV/Excel file upload, and REST API
+  (JSON, with optional auth headers). Files and API responses are imported as real tables - column
+  types inferred (numbers vs text), rows capped at 50k - under a dedicated "Workspace datasets"
+  source, which dashboards query like any database (and can mix with other connections per widget).
+- Isolation both ways: the datasets source sees ONLY the imported tables (never chats/projects/app
+  tables), and normal database connections never see the datasets schema. Identifiers are sanitized
+  and quoted, values parameterized, API auth headers live in the OS keychain, responses are size-
+  capped. API datasets are refreshable (re-fetch -> rebuild the table); file datasets re-import.
+- Also confirmed the Settings -> General tab is fully functional end to end: Branding (logo upload,
+  live header update), Privacy (PII redaction modes), Defaults (default model + reasoning depth),
+  and Integrations (real MCP servers with working toggles).
