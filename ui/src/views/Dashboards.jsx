@@ -165,7 +165,7 @@ export default function Dashboards() {
 
   async function openModelEditor(cid) {
     setModelConn(cid); setModelsOpen(true); setErr("");
-    setModelDraft({ name: "", base: "", joins: [] });
+    setModelDraft({ name: "", tables: [], links: [] });
     try {
       const [sm, dm] = await Promise.all([getSchemaMap(cid), listDataModels(cid)]);
       setSchemaMap(sm.tables || {});
@@ -173,13 +173,46 @@ export default function Dashboards() {
     } catch (e) { setErr(String(e.message || e)); }
   }
 
+  // Best-guess join keys when a table is added: customers.id = orders.customer_id (singular/plural
+  // tolerant), else any shared column name, else same-named id columns.
+  function suggestLink(newTable, existingTables) {
+    const cols = schemaMap[newTable] || [];
+    const stem = (t) => t.replace(/^ds_/, "").replace(/s$/, "");
+    for (const prev of existingTables) {
+      const prevCols = schemaMap[prev] || [];
+      const fkToPrev = cols.find((c) => c === `${stem(prev)}_id`);
+      if (fkToPrev && prevCols.includes("id")) return { left: `${prev}.id`, right: `${newTable}.${fkToPrev}` };
+      const fkToNew = prevCols.find((c) => c === `${stem(newTable)}_id`);
+      if (fkToNew && cols.includes("id")) return { left: `${prev}.${fkToNew}`, right: `${newTable}.id` };
+      const shared = cols.find((c) => c !== "id" && prevCols.includes(c));
+      if (shared) return { left: `${prev}.${shared}`, right: `${newTable}.${shared}` };
+    }
+    const first = existingTables[0];
+    return { left: first ? `${first}.${(schemaMap[first] || [])[0] || "id"}` : "", right: `${newTable}.${cols[0] || "id"}` };
+  }
+
+  function toggleModelTable(t) {
+    setModelDraft((d) => {
+      if (d.tables.includes(t)) {
+        // removing a table rebuilds the chain with fresh suggestions so links stay consistent
+        const tables = d.tables.filter((x) => x !== t);
+        const links = tables.slice(1).map((tt, i) => suggestLink(tt, tables.slice(0, i + 1)));
+        return { ...d, tables, links };
+      }
+      const links = d.tables.length ? [...d.links, suggestLink(t, d.tables)] : d.links;
+      return { ...d, tables: [...d.tables, t], links };
+    });
+  }
+
   async function saveModel() {
-    if (!modelDraft.name.trim() || !modelDraft.base || !modelDraft.joins.length) return;
+    const { name, tables, links } = modelDraft;
+    if (!name.trim() || tables.length < 2) return;
     setBusy(true); setErr("");
     try {
-      await createDataModel(modelConn, modelDraft.name.trim(), { base: modelDraft.base, joins: modelDraft.joins });
+      const joins = tables.slice(1).map((t, i) => ({ table: t, left: links[i]?.left || "", right: links[i]?.right || "", type: "left" }));
+      await createDataModel(modelConn, name.trim(), { base: tables[0], joins });
       setDataModelsList((await listDataModels(modelConn)).models || []);
-      setModelDraft({ name: "", base: "", joins: [] });
+      setModelDraft({ name: "", tables: [], links: [] });
     } catch (e) { setErr(String(e.message || e)); } finally { setBusy(false); }
   }
 
@@ -439,42 +472,67 @@ export default function Dashboards() {
                     ))}
                   </div>
                 )}
+                <p className="dm-hint">Click the tables that belong together — Orrery links them on matching key columns
+                  (adjust a key by clicking it on a card).</p>
+                <div className="dm-tablebar">
+                  {Object.keys(schemaMap).map((t) => (
+                    <button key={t} className={`dm-chip${modelDraft.tables.includes(t) ? " on" : ""}`} onClick={() => toggleModelTable(t)}>
+                      {t.replace(/^ds_/, "")}
+                    </button>
+                  ))}
+                </div>
+                {modelDraft.tables.length > 0 && (
+                  <div className="dm-canvas">
+                    {modelDraft.tables.map((t, i) => {
+                      const link = i > 0 ? modelDraft.links[i - 1] : null;
+                      const keyCols = new Set(
+                        [link?.left, link?.right, modelDraft.links[i]?.left, modelDraft.links[i]?.right]
+                          .filter(Boolean).filter((r) => r.startsWith(`${t}.`)).map((r) => r.slice(t.length + 1)),
+                      );
+                      return (
+                        <div key={t} className="dm-node">
+                          {i > 0 && (
+                            <div className="dm-connector">
+                              <span className="dm-wire" />
+                              <div className="dm-keys">
+                                <select value={link?.left || ""} onChange={(e) => setModelDraft((d) => { const links = [...d.links]; links[i - 1] = { ...links[i - 1], left: e.target.value }; return { ...d, links }; })}>
+                                  {modelDraft.tables.slice(0, i).flatMap((pt) => (schemaMap[pt] || []).map((c) => (
+                                    <option key={`${pt}.${c}`} value={`${pt}.${c}`}>{pt.replace(/^ds_/, "")}.{c}</option>
+                                  )))}
+                                </select>
+                                <span className="dm-eq">⟷</span>
+                                <select value={link?.right || ""} onChange={(e) => setModelDraft((d) => { const links = [...d.links]; links[i - 1] = { ...links[i - 1], right: e.target.value }; return { ...d, links }; })}>
+                                  {(schemaMap[t] || []).map((c) => <option key={c} value={`${t}.${c}`}>{t.replace(/^ds_/, "")}.{c}</option>)}
+                                </select>
+                              </div>
+                              <span className="dm-wire" />
+                            </div>
+                          )}
+                          <div className="dm-card">
+                            <div className="dm-card-head">
+                              {t.replace(/^ds_/, "")}
+                              <button title="Remove table" onClick={() => toggleModelTable(t)}>×</button>
+                            </div>
+                            <div className="dm-cols">
+                              {(schemaMap[t] || []).slice(0, 9).map((c) => (
+                                <span key={c} className={`dm-col${keyCols.has(c) ? " key" : ""}`}>{c}</span>
+                              ))}
+                              {(schemaMap[t] || []).length > 9 && <span className="dm-col more">+{(schemaMap[t] || []).length - 9} more</span>}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
                 <div className="dash-connect-row">
                   <input style={{ flex: 1 }} placeholder="Model name (e.g. Orders with customers)" value={modelDraft.name} onChange={(e) => setModelDraft((d) => ({ ...d, name: e.target.value }))} />
-                  <select value={modelDraft.base} onChange={(e) => setModelDraft((d) => ({ ...d, base: e.target.value, joins: [] }))}>
-                    <option value="">Base table…</option>
-                    {Object.keys(schemaMap).map((t) => <option key={t} value={t}>{t}</option>)}
-                  </select>
-                </div>
-                {modelDraft.joins.map((j, i) => (
-                  <div key={i} className="dash-connect-row dash-join-row">
-                    <select value={j.table} onChange={(e) => setModelDraft((d) => { const joins = [...d.joins]; joins[i] = { ...joins[i], table: e.target.value, right: "" }; return { ...d, joins }; })}>
-                      <option value="">Join table…</option>
-                      {Object.keys(schemaMap).filter((t) => t !== modelDraft.base).map((t) => <option key={t} value={t}>{t}</option>)}
-                    </select>
-                    <select value={j.left} onChange={(e) => setModelDraft((d) => { const joins = [...d.joins]; joins[i] = { ...joins[i], left: e.target.value }; return { ...d, joins }; })}>
-                      <option value="">on column…</option>
-                      {[modelDraft.base, ...modelDraft.joins.slice(0, i).map((x) => x.table)].filter(Boolean).flatMap((t) =>
-                        (schemaMap[t] || []).map((c) => <option key={`${t}.${c}`} value={`${t}.${c}`}>{t}.{c}</option>))}
-                    </select>
-                    <span className="dash-join-eq">=</span>
-                    <select value={j.right} onChange={(e) => setModelDraft((d) => { const joins = [...d.joins]; joins[i] = { ...joins[i], right: e.target.value }; return { ...d, joins }; })}>
-                      <option value="">column…</option>
-                      {(schemaMap[j.table] || []).map((c) => <option key={c} value={`${j.table}.${c}`}>{j.table}.{c}</option>)}
-                    </select>
-                    <button className="icon-btn" title="Remove join" onClick={() => setModelDraft((d) => ({ ...d, joins: d.joins.filter((_x, k) => k !== i) }))}>×</button>
-                  </div>
-                ))}
-                <div className="dash-connect-row">
-                  <button className="btn ghost sm" disabled={!modelDraft.base} onClick={() => setModelDraft((d) => ({ ...d, joins: [...d.joins, { table: "", left: "", right: "", type: "left" }] }))}>
-                    + Add join
-                  </button>
                   <button className="btn primary sm" onClick={saveModel}
-                    disabled={busy || !modelDraft.name.trim() || !modelDraft.base || !modelDraft.joins.length || modelDraft.joins.some((j) => !j.table || !j.left || !j.right)}>
+                    disabled={busy || !modelDraft.name.trim() || modelDraft.tables.length < 2}>
                     {busy ? "Validating…" : "Save model"}
                   </button>
-                  <small>Validated against the live schema; nothing is written to your database.</small>
                 </div>
+                <small className="dm-hint">Validated against the live schema; nothing is written to your database.</small>
               </div>
             )}
 

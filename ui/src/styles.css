@@ -892,6 +892,28 @@ body{
 .dash-model-chip button:hover{color:#e06666}
 .dash-join-row select{flex:1;min-width:0}
 .dash-join-eq{color:var(--faint);font-family:var(--font-mono)}
+/* visual model canvas: table cards chained by key connectors (BI model view) */
+.dm-hint{font-size:11px;color:var(--faint);margin:0;line-height:1.5}
+.dm-tablebar{display:flex;gap:6px;flex-wrap:wrap}
+.dm-chip{background:var(--bg2);border:1px solid var(--line);border-radius:20px;color:var(--muted);padding:5px 13px;font-size:11.5px;font-family:var(--font-mono);cursor:pointer}
+.dm-chip:hover{border-color:var(--amber)}
+.dm-chip.on{border-color:var(--amber);color:var(--amber);background:rgba(242,177,78,.07)}
+.dm-canvas{display:flex;align-items:center;gap:0;overflow-x:auto;padding:14px 4px}
+.dm-node{display:flex;align-items:center;flex:none}
+.dm-card{width:170px;border:1px solid var(--line);border-radius:11px;background:var(--bg2);overflow:hidden;box-shadow:0 6px 18px rgba(2,5,17,.35)}
+.dm-card-head{display:flex;align-items:center;justify-content:space-between;background:var(--bg3,#1c2233);padding:8px 11px;font-size:12px;font-weight:600;color:var(--ice)}
+.dm-card-head button{background:none;border:none;color:var(--faint);cursor:pointer;font-size:13px}
+.dm-card-head button:hover{color:#e06666}
+.dm-cols{display:flex;flex-direction:column;padding:7px 11px;gap:3px;max-height:150px;overflow-y:auto}
+.dm-col{font-family:var(--font-mono);font-size:10.5px;color:var(--muted)}
+.dm-col.key{color:var(--amber);font-weight:700}
+.dm-col.key::before{content:"⚷ "}
+.dm-col.more{color:var(--faint);font-style:italic}
+.dm-connector{display:flex;flex-direction:column;align-items:center;gap:4px;padding:0 8px;flex:none}
+.dm-wire{display:block;width:2px;height:14px;background:var(--amber);opacity:.55}
+.dm-keys{display:flex;flex-direction:column;align-items:center;gap:2px}
+.dm-keys select{max-width:150px;background:var(--bg1);border:1px solid var(--amber);border-radius:7px;color:var(--amber);padding:4px 7px;font-size:10px;font-family:var(--font-mono);outline:none}
+.dm-eq{color:var(--amber);font-size:13px;line-height:1}
 /* transforms editor */
 .dash-transform-actions{display:flex;align-items:center;gap:8px;padding:0 14px 12px}
 .dash-transform-actions small{color:var(--faint);font-size:10.5px}
