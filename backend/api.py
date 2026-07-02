@@ -15,7 +15,7 @@ from backend.core import appconfig, database
 from backend.core.config import settings
 from backend.core.observability import new_request_id
 from backend.core.paths import resource_path
-from backend.features import admin, app_updates, artifacts, chat, data, exports, feedback, filepreview, local_models, mcp, projects, rag, route_telemetry, skills, team, usage
+from backend.features import admin, app_updates, artifacts, chat, dashboards, data, exports, feedback, filepreview, local_models, mcp, projects, rag, route_telemetry, skills, team, usage
 from backend.features import files as file_library
 from backend.providers import accounts, ai, catalog
 from backend.security import secrets
@@ -234,6 +234,17 @@ class McpUpdate(BaseModel):
     command: str | None = None
     url: str | None = None
     enabled: bool | None = None
+
+
+class DashboardCreate(BaseModel):
+    model: str
+    connection_ids: list[str] = []
+    description: str = Field(default="", max_length=4000)
+
+
+class DashboardRevise(BaseModel):
+    model: str
+    instruction: str = Field(default="", max_length=4000)
 
 
 class AdminToken(BaseModel):
@@ -654,6 +665,58 @@ def create_app(session_token: str) -> FastAPI:
             raise HTTPException(status_code=404, detail=str(e))
         except Exception as e:  # noqa: BLE001
             raise HTTPException(status_code=400, detail=secrets.redact_url(str(e))[:160])
+
+    # --- dashboards (AI-designed specs; refresh re-runs saved read-only SQL, no model call) ---
+    @r.get("/dashboards")
+    async def dashboards_list() -> dict:
+        return {"dashboards": await dashboards.list_dashboards()}
+
+    @r.post("/dashboards")
+    async def dashboard_create(body: DashboardCreate) -> dict:
+        try:
+            return await dashboards.create_dashboard(body.model, body.connection_ids, body.description)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+    @r.get("/dashboards/{did}")
+    async def dashboard_get(did: str) -> dict:
+        out = await dashboards.get_dashboard(did)
+        if out is None:
+            raise HTTPException(status_code=404, detail="Dashboard not found")
+        return out
+
+    @r.post("/dashboards/{did}/run")
+    async def dashboard_run(did: str) -> dict:
+        out = await dashboards.run_dashboard(did)
+        if out is None:
+            raise HTTPException(status_code=404, detail="Dashboard not found")
+        return out
+
+    @r.post("/dashboards/{did}/revise")
+    async def dashboard_revise(did: str, body: DashboardRevise) -> dict:
+        try:
+            out = await dashboards.revise_dashboard(did, body.model, body.instruction)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        if out is None:
+            raise HTTPException(status_code=404, detail="Dashboard not found")
+        return out
+
+    @r.post("/dashboards/{did}/rollback")
+    async def dashboard_rollback(did: str) -> dict:
+        try:
+            out = await dashboards.rollback_dashboard(did)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        if out is None:
+            raise HTTPException(status_code=404, detail="Dashboard not found")
+        return out
+
+    @r.delete("/dashboards/{did}")
+    async def dashboard_delete(did: str) -> dict:
+        if not await dashboards.delete_dashboard(did):
+            raise HTTPException(status_code=404, detail="Dashboard not found")
+        return {"deleted": True}
 
     # --- document collections (RAG) ---
     @r.get("/collections")

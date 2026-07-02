@@ -21,6 +21,7 @@ FEATURES: dict[str, tuple[str, bool]] = {
     "deep_research": ("Deep Research", True),
     "ontology":     ("Ontologies as chat context", True),
     "file_gen":     ("File generation", True),
+    "dashboards":   ("Dashboards", True),
     "media":        ("Media Hub", True),
     "automations":  ("Automations", True),
     "agents":       ("Agents", True),

@@ -13,6 +13,7 @@
     "@fontsource-variable/bricolage-grotesque": "^5.1.0",
     "@fontsource/ibm-plex-mono": "^5.1.0",
     "@fontsource/ibm-plex-sans": "^5.1.0",
+    "echarts": "^6.1.0",
     "highlight.js": "^11.11.1",
     "lucide-react": "1.21.0",
     "react": "^18.3.1",

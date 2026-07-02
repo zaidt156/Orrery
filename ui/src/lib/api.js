@@ -146,6 +146,16 @@ export const listTables = (id) => apiGet(`/api/connections/${id}/tables`);
 export const browseTable = (id, schema, table, limit = 100) =>
   apiGet(`/api/connections/${id}/browse?schema=${encodeURIComponent(schema)}&table=${encodeURIComponent(table)}&limit=${limit}`);
 
+// Dashboards: the AI designs the spec; refresh re-runs saved read-only SQL (no model call)
+export const listDashboards = () => apiGet("/api/dashboards");
+export const createDashboard = (model, connection_ids, description) =>
+  apiSend("/api/dashboards", "POST", { model, connection_ids, description });
+export const runDashboard = (id) => apiSend(`/api/dashboards/${id}/run`, "POST");
+export const reviseDashboard = (id, model, instruction) =>
+  apiSend(`/api/dashboards/${id}/revise`, "POST", { model, instruction });
+export const rollbackDashboard = (id) => apiSend(`/api/dashboards/${id}/rollback`, "POST");
+export const deleteDashboard = (id) => apiSend(`/api/dashboards/${id}`, "DELETE");
+
 export const listCollections = () => apiGet("/api/collections");
 export const createCollection = (name) => apiSend("/api/collections", "POST", { name });
 export const deleteCollection = (id) => apiSend(`/api/collections/${id}`, "DELETE");

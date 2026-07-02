@@ -136,6 +136,30 @@ async def delete_connection(cid: str) -> bool:
     return True
 
 
+async def run_readonly_query(cid: str, sql: str, row_cap: int = ROW_CAP):
+    """Run one query against a connection in the DB-enforced read-only path (dashboards, tools)."""
+    return await _run_readonly(_engine(cid), sql, row_cap=row_cap)
+
+
+async def schema_overview(cid: str, max_tables: int = 40, max_columns: int = 24) -> str:
+    """Compact 'table(col type, …)' listing a model can design queries against."""
+    _cols, rows = await _run_readonly(
+        _engine(cid),
+        "SELECT table_schema, table_name, column_name, data_type FROM information_schema.columns "
+        "WHERE table_schema NOT IN ('pg_catalog', 'information_schema') "
+        "ORDER BY table_schema, table_name, ordinal_position",
+        row_cap=max_tables * max_columns * 2,
+    )
+    tables: dict[str, list[str]] = {}
+    for schema, table, col, dtype in rows:
+        key = f"{schema}.{table}" if schema != "public" else table
+        cols = tables.setdefault(key, [])
+        if len(cols) < max_columns:
+            cols.append(f"{col} {dtype}")
+    lines = [f"- {name}({', '.join(cols)})" for name, cols in list(tables.items())[:max_tables]]
+    return "\n".join(lines)
+
+
 async def list_tables(cid: str) -> list[dict]:
     _cols, rows = await _run_readonly(
         _engine(cid),

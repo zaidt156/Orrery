@@ -1,122 +1,288 @@
-import { useState } from "react";
-import { SendIcon } from "../components/icons.jsx";
+import { useEffect, useRef, useState } from "react";
+import * as echarts from "echarts";
+import { Code2, Database, LayoutDashboard, Plus, RefreshCw, Trash2, Undo2, WandSparkles } from "lucide-react";
+import {
+  createDashboard, deleteDashboard, getModels, listDashboards, listDataConnections,
+  reviseDashboard, rollbackDashboard, runDashboard,
+} from "../lib/api.js";
 
-const LIST = [
-  { name: "Sales overview", pip: ["live", "LIVE"], meta: ["built by claude-sonnet-4-6", "5 widgets · refreshes 15 min"] },
-  { name: "Support health", pip: ["live", "LIVE"], meta: ["built by gpt-4o", "4 widgets · refreshes hourly"] },
-  { name: "Infra costs", pip: ["paused", "DRAFT"], meta: ["built by llama3 · local"] },
-];
+// Dashboards: the AI is the designer, not the renderer. The user describes the dashboard and picks
+// the model + data connection(s); the model writes each widget's SQL (validated read-only) and picks
+// chart types. Opening/refreshing re-runs the SAVED SQL — no model call. Every widget's SQL is
+// viewable (security.md §3: AI-written SQL is shown, never hidden).
+const CHART_COLORS = ["#f2b14e", "#82ade8", "#54c08a", "#e06666", "#b58ee8", "#5fc4c9", "#e8a2c0"];
 
-const BARS = [
-  ["Atlas Pro", 100, "$84.2k"],
-  ["Nimbus API", 62, "$52.4k"],
-  ["Field Kit", 38, "$31.9k"],
-  ["Halo Add-on", 15, "$12.6k"],
-];
+function chartOption(widget) {
+  const cols = widget.columns || [];
+  const rows = widget.rows || [];
+  const xi = Math.max(0, cols.indexOf(widget.x));
+  let yi = cols.indexOf(widget.y);
+  if (yi < 0) yi = cols.length > 1 ? (xi === 0 ? 1 : 0) : 0;
+  const labels = rows.map((r) => String(r[xi]));
+  const values = rows.map((r) => Number(r[yi]) || 0);
+  const base = {
+    color: CHART_COLORS,
+    textStyle: { fontFamily: "inherit" },
+    tooltip: { trigger: widget.type === "pie" ? "item" : "axis" },
+    grid: { left: 46, right: 14, top: 18, bottom: 32 },
+  };
+  if (widget.type === "pie") {
+    return {
+      ...base,
+      series: [{
+        type: "pie", radius: ["38%", "72%"],
+        label: { color: "#9aa3b5", fontSize: 10 },
+        data: rows.map((r) => ({ name: String(r[xi]), value: Number(r[yi]) || 0 })),
+      }],
+    };
+  }
+  return {
+    ...base,
+    xAxis: { type: "category", data: labels, axisLabel: { color: "#9aa3b5", fontSize: 10 } },
+    yAxis: { type: "value", axisLabel: { color: "#9aa3b5", fontSize: 10 }, splitLine: { lineStyle: { color: "rgba(255,255,255,.06)" } } },
+    series: [{ type: widget.type === "line" ? "line" : "bar", data: values, smooth: true }],
+  };
+}
+
+function Chart({ widget }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!ref.current) return undefined;
+    const chart = echarts.init(ref.current, null, { renderer: "canvas" });
+    chart.setOption(chartOption(widget));
+    const onResize = () => chart.resize();
+    window.addEventListener("resize", onResize);
+    return () => { window.removeEventListener("resize", onResize); chart.dispose(); };
+  }, [widget]);
+  return <div className="dash-chart" ref={ref} />;
+}
+
+function StatWidget({ widget }) {
+  const cols = widget.columns || [];
+  const row = (widget.rows || [])[0] || [];
+  let vi = row.findIndex((c) => typeof c === "number");
+  if (vi < 0) vi = 0;
+  const value = row[vi];
+  const shown = typeof value === "number"
+    ? (Math.abs(value) >= 1000 ? value.toLocaleString() : String(Math.round(value * 100) / 100))
+    : String(value ?? "—");
+  return (
+    <div className="dash-stat">
+      <b>{shown}</b>
+      <small>{cols[vi] || ""}</small>
+    </div>
+  );
+}
+
+function TableWidget({ widget }) {
+  const cols = widget.columns || [];
+  const rows = (widget.rows || []).slice(0, 50);
+  return (
+    <div className="dash-table">
+      <table>
+        <thead><tr>{cols.map((c) => <th key={c}>{c}</th>)}</tr></thead>
+        <tbody>
+          {rows.map((r, i) => <tr key={i}>{r.map((c, j) => <td key={j}>{String(c ?? "")}</td>)}</tr>)}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function Widget({ widget }) {
+  const [showSql, setShowSql] = useState(false);
+  return (
+    <div className={`dash-widget dash-${widget.type}`}>
+      <div className="dash-widget-head">
+        <span className="dash-widget-title">{widget.title}</span>
+        <span className="dash-widget-src" title={`Queries: ${widget.connection || "database"}`}><Database />{widget.connection || ""}</span>
+        <button className={`icon-btn${showSql ? " on" : ""}`} title="Show the SQL this widget runs" onClick={() => setShowSql((v) => !v)}>
+          <Code2 />
+        </button>
+      </div>
+      {showSql && <pre className="dash-sql">{widget.sql}</pre>}
+      {widget.error ? (
+        <div className="dash-error">{widget.error}</div>
+      ) : widget.type === "stat" ? (
+        <StatWidget widget={widget} />
+      ) : widget.type === "table" ? (
+        <TableWidget widget={widget} />
+      ) : (
+        <Chart widget={widget} />
+      )}
+    </div>
+  );
+}
 
 export default function Dashboards() {
-  const [active, setActive] = useState(0);
+  const [items, setItems] = useState([]);
+  const [activeId, setActiveId] = useState("");
+  const [board, setBoard] = useState(null); // run result (widgets with live data)
+  const [models, setModels] = useState([]);
+  const [connections, setConnections] = useState([]);
+  const [creating, setCreating] = useState(false);
+  const [desc, setDesc] = useState("");
+  const [model, setModel] = useState("");
+  const [selectedConns, setSelectedConns] = useState([]);
+  const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState("");
+  const [reviseText, setReviseText] = useState("");
+
+  async function load(nextActive) {
+    const d = await listDashboards();
+    setItems(d.dashboards || []);
+    const chosen = nextActive ?? (d.dashboards?.[0]?.id || "");
+    if (chosen) await openBoard(chosen);
+    else { setActiveId(""); setBoard(null); }
+  }
+
+  useEffect(() => {
+    load().catch((e) => setErr(String(e.message || e)));
+    getModels().then((m) => { setModels(m.models || []); setModel((m.models || [])[0]?.id || ""); }).catch(() => {});
+    listDataConnections().then((c) => setConnections(c.connections || [])).catch(() => {});
+  }, []);
+
+  async function openBoard(id) {
+    setErr(""); setActiveId(id); setCreating(false); setLoading(true); setBoard(null);
+    try { setBoard(await runDashboard(id)); }
+    catch (e) { setErr(String(e.message || e)); }
+    finally { setLoading(false); }
+  }
+
+  async function build() {
+    if (!desc.trim() || !model || selectedConns.length === 0) return;
+    setBusy(true); setErr("");
+    try {
+      const d = await createDashboard(model, selectedConns, desc.trim());
+      setDesc(""); setCreating(false);
+      await load(d.id);
+    } catch (e) { setErr(String(e.message || e)); } finally { setBusy(false); }
+  }
+
+  async function revise() {
+    if (!reviseText.trim() || !activeId || !model) return;
+    setBusy(true); setErr("");
+    try {
+      await reviseDashboard(activeId, model, reviseText.trim());
+      setReviseText("");
+      await load(activeId);
+    } catch (e) { setErr(String(e.message || e)); } finally { setBusy(false); }
+  }
+
+  async function rollback() {
+    if (!activeId) return;
+    setBusy(true); setErr("");
+    try { await rollbackDashboard(activeId); await load(activeId); }
+    catch (e) { setErr(String(e.message || e)); } finally { setBusy(false); }
+  }
+
+  async function remove() {
+    if (!activeId || !window.confirm("Delete this dashboard?")) return;
+    try { await deleteDashboard(activeId); await load(""); } catch (e) { setErr(String(e.message || e)); }
+  }
+
+  function toggleConn(id) {
+    setSelectedConns((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
+  }
+
+  const active = items.find((d) => d.id === activeId);
+  const showCreate = creating || (!items.length && !activeId);
+
   return (
-    <section className="view">
-      <aside className="auto-side">
-        <button className="btn primary">+ New dashboard</button>
-        <div style={{ fontFamily: "var(--font-mono)", fontSize: "9px", color: "var(--faint)", lineHeight: 1.7, padding: "0 3px" }}>
-          describe it in plain words ·<br />pick the model that builds it
-        </div>
-        <div className="convo-list">
-          {LIST.map((d, i) => (
-            <div key={d.name} className={`wf${i === active ? " active" : ""}`} tabIndex={0} onClick={() => setActive(i)}>
-              <div className="w-name">{d.name} <span className={`status-pip ${d.pip[0]}`}>{d.pip[1]}</span></div>
-              <div className="w-meta">{d.meta[0]}{d.meta[1] && <><br />{d.meta[1]}</>}</div>
+    <section className="view projects-view">
+      <aside className="project-side">
+        <button className="btn primary project-new" onClick={() => { setCreating(true); setActiveId(""); setBoard(null); setErr(""); }}>
+          <Plus /> New dashboard
+        </button>
+        <div className="project-list project-tree">
+          {items.length === 0 && !creating && <div className="convo-empty">Describe a dashboard and a model builds it from your data.</div>}
+          {items.map((d) => (
+            <div key={d.id} className={`project-node${d.id === activeId ? " active" : ""}`}>
+              <button className="project-item" onClick={() => openBoard(d.id)}>
+                <LayoutDashboard />
+                <span>
+                  <b>{d.name}</b>
+                  <small>{d.widgets.length} widgets · {(d.model || "").split("/").pop()}</small>
+                </span>
+              </button>
             </div>
           ))}
         </div>
       </aside>
 
-      <div className="auto-main">
-        <div className="auto-toolbar">
-          <span className="view-title">Sales overview</span>
-          <span className="pill"><b className="mono" style={{ color: "var(--ice)", fontWeight: 500, fontSize: "10.5px" }}>built by claude-sonnet-4-6</b></span>
-          <span className="pill">auto-refresh · 15 min</span>
-          <div className="grow" />
-          <button className="btn primary">↻ Refresh now</button>
-          <button className="btn ghost">Share</button>
-          <button className="btn ghost" aria-label="More">⋯</button>
-        </div>
-
-        <div className="dash-wrap">
-          <div className="dash-grid">
-            <div className="widget">
-              <div className="w-label">Revenue · this month</div>
-              <div className="stat-num">$168.4k</div>
-              <div className="stat-delta up2">▲ +12% vs May</div>
-              <div className="w-sql">SELECT SUM(total) FROM orders WHERE created_at &gt;= date_trunc('month', now())</div>
-            </div>
-            <div className="widget">
-              <div className="w-label">Orders</div>
-              <div className="stat-num">1,284</div>
-              <div className="stat-delta up2">▲ +6.1%</div>
-              <div className="w-sql">SELECT COUNT(*) FROM orders WHERE …</div>
-            </div>
-
-            <div className="widget span2">
-              <div className="w-label">Revenue · last 30 days <span className="w-by">claude-sonnet-4-6</span></div>
-              <svg className="spark" viewBox="0 0 320 100" aria-hidden="true">
-                <defs>
-                  <linearGradient id="lg1" x1="0" y1="0" x2="1" y2="0">
-                    <stop offset="0" stopColor="#9DB9F0" /><stop offset="1" stopColor="#F2B14E" />
-                  </linearGradient>
-                </defs>
-                <path d="M10,76 L54,66 L98,71 L142,54 L186,60 L230,41 L274,46 L312,22" fill="none" stroke="url(#lg1)" strokeWidth="1.6" />
-                <g fill="#E8ECF8">
-                  <circle cx="10" cy="76" r="2" /><circle cx="54" cy="66" r="2" /><circle cx="98" cy="71" r="2" />
-                  <circle cx="142" cy="54" r="2" /><circle cx="186" cy="60" r="2" /><circle cx="230" cy="41" r="2" /><circle cx="274" cy="46" r="2" />
-                </g>
-                <circle cx="312" cy="22" r="3" fill="#F2B14E" />
-              </svg>
-              <div className="w-sql">SELECT date(created_at), SUM(total) FROM orders GROUP BY 1 ORDER BY 1</div>
-            </div>
-
-            <div className="widget span2">
-              <div className="w-label">Top products <span className="w-by">claude-sonnet-4-6</span></div>
-              <div className="bars">
-                {BARS.map(([name, pct, val]) => (
-                  <div className="bar-row" key={name}>
-                    <span className="b-name">{name}</span>
-                    <div className="bar-track"><div className="bar-fill" style={{ width: `${pct}%` }} /></div>
-                    <span className="b-val">{val}</span>
-                  </div>
+      <main className="project-main">
+        {showCreate ? (
+          <div className="dash-create">
+            <h2><WandSparkles /> Describe your dashboard</h2>
+            <p>Pick the data it reads, the model that designs it, and say what you want to see. The model
+              writes read-only SQL (always visible per widget); refreshes re-run the saved queries with
+              no model cost.</p>
+            <label className="dash-form-label">Data connections (pick one or more)</label>
+            {connections.length === 0 ? (
+              <div className="project-muted">No data connections yet — add one in the Data tab first.</div>
+            ) : (
+              <div className="dash-conn-list">
+                {connections.map((c) => (
+                  <label key={c.id} className={`dash-conn${selectedConns.includes(c.id) ? " on" : ""}`}>
+                    <input type="checkbox" checked={selectedConns.includes(c.id)} onChange={() => toggleConn(c.id)} />
+                    <Database /> {c.name} <small>{c.display}</small>
+                  </label>
                 ))}
               </div>
-              <div className="w-sql">SELECT product, SUM(total) FROM orders GROUP BY product ORDER BY 2 DESC LIMIT 4</div>
+            )}
+            <label className="dash-form-label">Built by</label>
+            <select value={model} onChange={(e) => setModel(e.target.value)}>
+              {models.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+            </select>
+            <label className="dash-form-label">What should it show?</label>
+            <textarea
+              rows={3} value={desc} onChange={(e) => setDesc(e.target.value)}
+              placeholder="e.g. Revenue overview: monthly totals, top products, active customers, and a table of the latest orders"
+            />
+            {err && <div className="chat-banner">{err}</div>}
+            <button className="btn primary" onClick={build} disabled={busy || !desc.trim() || !model || !selectedConns.length}>
+              {busy ? "Designing…" : "Build dashboard"}
+            </button>
+          </div>
+        ) : (
+          <>
+            <div className="project-head">
+              <span className="dash-title">{board?.name || active?.name || ""}</span>
+              <small className="dash-by">built by {((board?.model || active?.model) || "").split("/").pop()}</small>
+              <div className="grow" />
+              <button className="btn" onClick={() => openBoard(activeId)} disabled={loading}><RefreshCw /> Refresh</button>
+              {(board?.versions || 0) > 0 && (
+                <button className="btn ghost" onClick={rollback} disabled={busy} title="Restore the previous version"><Undo2 /> Roll back</button>
+              )}
+              <button className="btn ghost" onClick={remove} disabled={busy}><Trash2 /></button>
             </div>
 
-            <div className="widget span2">
-              <div className="w-label">Latest orders <span className="w-by">added by gpt-4o</span></div>
-              <table className="mini-table">
-                <tbody>
-                  <tr><th>CUSTOMER</th><th>PRODUCT</th><th>TOTAL</th></tr>
-                  <tr><td>Meridian Co</td><td>Atlas Pro</td><td>$1,920</td></tr>
-                  <tr><td>Halberd Labs</td><td>Nimbus API</td><td>$640</td></tr>
-                  <tr><td>Outland LLC</td><td>Field Kit</td><td>$275</td></tr>
-                </tbody>
-              </table>
-              <div className="w-sql">SELECT customer, product, total FROM orders ORDER BY created_at DESC LIMIT 3</div>
+            {err && <div className="chat-banner">{err}</div>}
+            {loading && <div className="project-muted" style={{ padding: "18px 4px" }}>Running the saved queries…</div>}
+
+            {board && (
+              <div className="dash-grid2">
+                {board.widgets.map((w, i) => <Widget key={`${w.title}-${i}`} widget={w} />)}
+              </div>
+            )}
+
+            <div className="dash-revise">
+              <WandSparkles />
+              <input
+                value={reviseText}
+                onChange={(e) => setReviseText(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") revise(); }}
+                placeholder='Revise with AI — e.g. "add a widget with weekly signups"'
+              />
+              <select value={model} onChange={(e) => setModel(e.target.value)} title="Model that applies the revision">
+                {models.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+              </select>
+              <button className="btn" onClick={revise} disabled={busy || !reviseText.trim()}>{busy ? "Working…" : "Apply"}</button>
             </div>
-
-            <div className="widget span2 card add" style={{ minHeight: 0 }}>+ Add a widget — or pin one from Chat</div>
-          </div>
-        </div>
-
-        <div className="revise">
-          <div className="composer-box">
-            <span className="pill model-pill" style={{ flex: "none" }}><b>claude-sonnet-4-6</b> ⌄</span>
-            <input placeholder="Change this dashboard — add a refunds widget, make revenue weekly…" />
-            <button className="send" aria-label="Apply"><SendIcon /></button>
-          </div>
-          <div className="hint2">designed by AI once — refreshing just re-runs the saved queries on your live data, no AI needed</div>
-        </div>
-      </div>
+          </>
+        )}
+      </main>
     </section>
   );
 }

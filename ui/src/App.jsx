@@ -64,7 +64,7 @@ const TABS = [
   { key: "data", label: "Data", Icon: Database, View: Data },
   { key: "ontology", label: "Ontology", Icon: Brain, View: Ontology, feature: "ontology" },
   { key: "skills", label: "Skills", Icon: Sparkles, View: Skills },
-  { key: "dash", label: "Dashboards", Icon: LayoutDashboard, View: Dashboards },
+  { key: "dash", label: "Dashboards", Icon: LayoutDashboard, View: Dashboards, feature: "dashboards" },
   { key: "auto", label: "Automations", Icon: Workflow, View: Automations, feature: "automations" },
   { key: "agents", label: "Agents", Icon: Bot, View: Agents, feature: "agents" },
   { key: "media", label: "Media Hub", Icon: Images, View: Media, feature: "media" },

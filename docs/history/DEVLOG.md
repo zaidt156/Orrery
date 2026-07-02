@@ -1238,3 +1238,22 @@ Next: rebuild the release with these fixes; consider a macOS DMG via the same El
   their installer to tagged releases next to the portable zips.
 
 Next: tag a release (v*) to let CI produce all four artifacts; consider code signing later.
+
+
+## Step 94 - Dashboards are real: AI designs, Orrery renders (July 2, 2026)
+
+- The Dashboards tab is no longer a mockup. Describe what you want to see, pick the model that
+  designs it and one or MORE data connections (multi-source dashboards - each widget records which
+  connection it queries). The model reads each connection's schema and returns a widget spec: stat
+  cards, line/bar/pie charts (Apache ECharts), and tables.
+- Safety, per the security standard: every AI-written query is parse-checked (sqlglot - exactly one
+  SELECT, nothing data-modifying), runs in the database-enforced read-only path with timeouts and row
+  caps, and is always visible per widget (the SQL button). Opening or refreshing re-runs the SAVED
+  queries - no model call, no token cost, no new unseen SQL.
+- Revise in plain words ("add a weekly signups widget") with any model; every revision snapshots the
+  previous version, and Roll back restores it in one click. Dashboards are per-user in team mode and
+  admins can turn the whole tab off with the new 'dashboards' feature flag.
+- Also this session: context sizes are now per-model (no more picking 1M on a 200K model), Claude
+  plan gained the Fable 5 variant, and the model chip shows a clean short name with a PLAN badge.
+
+Next: review ontology/MCP/skills for improvements; then Automations (the engine + canvas).

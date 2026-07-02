@@ -804,6 +804,46 @@ body{
 .pending-pill{margin-left:7px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--amber);border:1px solid var(--amber);border-radius:20px;padding:1px 6px;vertical-align:middle}
 .admin-feature small{font-family:var(--font-mono);font-size:10px;color:var(--faint)}
 .admin-note{font-size:11.5px;color:var(--faint);margin:0}
+/* Dashboards (real): create form, widget grid, charts */
+.dash-create{max-width:640px;margin:26px auto;padding:0 22px;display:flex;flex-direction:column;gap:10px;width:100%}
+.dash-create h2{display:flex;align-items:center;gap:9px;font-family:var(--font-display);font-size:20px;margin:0}
+.dash-create h2 svg{width:20px;height:20px;color:var(--amber)}
+.dash-create p{color:var(--muted);font-size:12.5px;line-height:1.55;margin:0 0 6px}
+.dash-form-label{font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-top:6px}
+.dash-create select,.dash-create textarea{background:var(--bg1);border:1px solid var(--line);border-radius:9px;color:var(--text);padding:9px 11px;font-size:13px;outline:none}
+.dash-create textarea:focus,.dash-create select:focus{border-color:var(--amber)}
+.dash-create .btn{align-self:flex-start;margin-top:8px}
+.dash-conn-list{display:flex;flex-direction:column;gap:7px}
+.dash-conn{display:flex;align-items:center;gap:9px;border:1px solid var(--line);border-radius:9px;background:var(--bg1);padding:9px 12px;font-size:13px;cursor:pointer}
+.dash-conn.on{border-color:var(--amber)}
+.dash-conn svg{width:14px;height:14px;color:var(--faint)}
+.dash-conn small{color:var(--faint);font-family:var(--font-mono);font-size:10.5px;margin-left:auto}
+.dash-title{font-family:var(--font-display);font-size:17px;font-weight:600}
+.dash-by{color:var(--faint);font-family:var(--font-mono);font-size:10px}
+.dash-grid2{flex:1;overflow-y:auto;display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;padding:14px 18px;align-content:start}
+.dash-widget{border:1px solid var(--line);border-radius:12px;background:var(--bg1);padding:12px 14px;display:flex;flex-direction:column;gap:8px;min-height:120px}
+.dash-widget.dash-line,.dash-widget.dash-bar,.dash-widget.dash-pie{grid-column:span 2;min-height:240px}
+.dash-widget.dash-table{grid-column:1/-1}
+.dash-widget-head{display:flex;align-items:center;gap:8px}
+.dash-widget-title{font-size:12.5px;font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dash-widget-src{display:flex;align-items:center;gap:4px;color:var(--faint);font-family:var(--font-mono);font-size:9.5px;max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dash-widget-src svg{width:11px;height:11px;flex:none}
+.dash-widget .icon-btn.on{color:var(--amber)}
+.dash-sql{margin:0;background:var(--bg2);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-family:var(--font-mono);font-size:10.5px;color:var(--muted);white-space:pre-wrap;word-break:break-word;max-height:140px;overflow-y:auto}
+.dash-chart{flex:1;min-height:180px}
+.dash-stat{flex:1;display:flex;flex-direction:column;justify-content:center;gap:3px;padding:4px 2px}
+.dash-stat b{font-family:var(--font-display);font-size:30px;font-weight:600;color:var(--ice)}
+.dash-stat small{color:var(--faint);font-family:var(--font-mono);font-size:10px;text-transform:uppercase;letter-spacing:.05em}
+.dash-error{flex:1;display:flex;align-items:center;color:#e06666;font-size:12px;line-height:1.5}
+.dash-table{overflow:auto;max-height:320px}
+.dash-table table{width:100%;border-collapse:collapse;font-size:12px}
+.dash-table th{position:sticky;top:0;background:var(--bg1);text-align:left;color:var(--faint);font-family:var(--font-mono);font-size:9.5px;text-transform:uppercase;letter-spacing:.05em;padding:6px 10px;border-bottom:1px solid var(--line)}
+.dash-table td{padding:6px 10px;border-bottom:1px solid var(--line-soft);color:var(--muted)}
+.dash-revise{display:flex;align-items:center;gap:8px;border-top:1px solid var(--line);padding:11px 18px;background:var(--bg1)}
+.dash-revise svg{width:15px;height:15px;color:var(--amber);flex:none}
+.dash-revise input{flex:1;background:var(--bg2);border:1px solid var(--line);border-radius:9px;color:var(--text);padding:9px 12px;font-size:13px;outline:none}
+.dash-revise input:focus{border-color:var(--amber)}
+.dash-revise select{max-width:220px;background:var(--bg2);border:1px solid var(--line);border-radius:8px;color:var(--muted);padding:8px 9px;font-size:11.5px;outline:none}
 /* admin sections + team access */
 .admin-section{border:1px solid var(--line);border-radius:12px;background:var(--bg1);padding:14px 16px;display:flex;flex-direction:column;gap:12px}
 .admin-section-label{display:flex;align-items:center;gap:7px;font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
