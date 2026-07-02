@@ -101,8 +101,9 @@ def model_provider(model_id: str) -> str:
 
 
 # Context-window sizes for routes litellm can't look up. Plan CLIs run the provider's standard
-# context (not long-context betas); local/custom models vary, so their fallbacks stay conservative —
-# this is the history budget Orrery trims to, so overstating it makes models silently lose context.
+# context; explicit "[1m]" plan variants opt into long context. Local/custom fallbacks stay
+# conservative — this is the history budget Orrery trims to, so overstating it makes models
+# silently lose context.
 _PLAN_CONTEXT: dict[str, int] = {
     "claude_plan": 200_000,
     "chatgpt_plan": 272_000,
@@ -110,13 +111,36 @@ _PLAN_CONTEXT: dict[str, int] = {
 }
 _DEFAULT_CONTEXT = 131_072
 _LOCAL_DEFAULT_CONTEXT = 32_768
+_1M = 1_000_000
+
+# Anthropic models with long-context support: 1M on the API via the context-1m beta header, and on
+# the Claude CLI plan via the "[1m]" model suffix. Prefix-matched on the bare model name.
+_ANTHROPIC_1M_PREFIXES = ("claude-sonnet-4", "claude-sonnet-5", "claude-opus-4-8", "claude-fable-5")
+
+
+def supports_1m_context(model_id: str) -> bool:
+    bare = model_id.split("/")[-1]
+    return any(bare.startswith(p) for p in _ANTHROPIC_1M_PREFIXES)
+
+
+def _claude_plan_flag(model_id: str) -> str:
+    from backend.providers import manifest
+    for vid, _label, flag in manifest.variants("claude_plan"):
+        if vid == model_id:
+            return flag or ""
+    return ""
 
 
 def model_context_window(model_id: str) -> int:
     """Max usable context for a model, so the UI only offers sizes the model actually has."""
     provider = model_provider(model_id)
+    if provider == "claude_plan":
+        # "[1m]" variants run the CLI's long-context mode (e.g. claude-fable-5[1m])
+        return _1M if "[1m]" in _claude_plan_flag(model_id) else _PLAN_CONTEXT[provider]
     if provider in _PLAN_CONTEXT:
         return _PLAN_CONTEXT[provider]
+    if provider == "anthropic" and supports_1m_context(model_id):
+        return _1M  # stream_chat sends the context-1m beta header for these
     try:
         info = _load_litellm().get_model_info(model_id)
         known = int(info.get("max_input_tokens") or info.get("max_tokens") or 0)
@@ -579,6 +603,9 @@ async def stream_chat(
         kwargs["model"] = model_id
         if api_key:
             kwargs["api_key"] = api_key
+        if provider == "anthropic" and supports_1m_context(model_id):
+            # long-context beta: harmless under 200K input, enables up to 1M above it
+            kwargs["extra_headers"] = {"anthropic-beta": "context-1m-2025-08-07"}
         if provider == "ollama":
             kwargs["api_base"] = _OLLAMA_BASE
             from backend.features import local_models

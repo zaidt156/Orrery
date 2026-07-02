@@ -5,8 +5,11 @@
     "variants": [
       ["claude_plan/default", "Claude plan - adaptive thinking", null],
       ["claude_plan/fable", "Claude plan - Fable 5 - adaptive thinking", "claude-fable-5"],
+      ["claude_plan/fable-1m", "Claude plan - Fable 5 - 1M context", "claude-fable-5[1m]"],
       ["claude_plan/opus", "Claude plan - Opus - adaptive thinking", "claude-opus-4-8"],
+      ["claude_plan/opus-1m", "Claude plan - Opus 4.8 - 1M context", "claude-opus-4-8[1m]"],
       ["claude_plan/sonnet", "Claude plan - Sonnet 5 - adaptive thinking", "claude-sonnet-5"],
+      ["claude_plan/sonnet-1m", "Claude plan - Sonnet 5 - 1M context", "claude-sonnet-5[1m]"],
       ["claude_plan/haiku", "Claude plan - Haiku - fast", "claude-haiku-4-5"]
     ]
   },
