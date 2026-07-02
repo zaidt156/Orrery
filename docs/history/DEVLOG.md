@@ -1309,3 +1309,14 @@ Next: the architecture split (shared tool registry + per-feature API routers), t
 - Also confirmed the Settings -> General tab is fully functional end to end: Branding (logo upload,
   live header update), Privacy (PII redaction modes), Defaults (default model + reasoning depth),
   and Integrations (real MCP servers with working toggles).
+
+
+## Step 98 - Chat attachments accept Office documents again (July 2, 2026)
+
+- Fixed the Chat composer file picker. It was still limited to images, PDFs, and text/code files, so
+  Word documents were rejected even though Projects/Ontology already supported document ingestion.
+- Chat now accepts `.docx`, `.pptx`, `.xlsx`, and `.xlsm` files, reads them as binary data URLs, and
+  extracts their text locally before sending context to the model. Unsupported legacy `.doc` files now
+  get a clear "save as .docx" message instead of silently failing.
+- Uploaded Office documents are also indexed into the chat's durable file memory, so later turns can
+  retrieve them through the same per-chat RAG path as PDFs and text files.

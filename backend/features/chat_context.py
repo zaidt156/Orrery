@@ -35,6 +35,53 @@ def _pdf_text(data_url: str) -> str:
         return ""
 
 
+def _office_text(name: str, data_url: str) -> str:
+    """Extract text from Office Open XML files locally, without sending the binary to the model."""
+    try:
+        b64 = data_url.split(",", 1)[1] if "," in data_url else data_url
+        raw = io.BytesIO(base64.b64decode(b64))
+        low = (name or "").lower()
+        if low.endswith(".docx"):
+            from docx import Document
+
+            doc = Document(raw)
+            parts = [p.text for p in doc.paragraphs if p.text.strip()]
+            for table in doc.tables:
+                for row in table.rows:
+                    cells = [cell.text.strip() for cell in row.cells if cell.text.strip()]
+                    if cells:
+                        parts.append("\t".join(cells))
+            return "\n".join(parts).strip()
+        if low.endswith((".xlsx", ".xlsm")):
+            from openpyxl import load_workbook
+
+            wb = load_workbook(raw, read_only=True, data_only=True)
+            parts: list[str] = []
+            try:
+                for ws in wb.worksheets:
+                    parts.append(f"# {ws.title}")
+                    for row in ws.iter_rows(values_only=True):
+                        cells = [str(cell) for cell in row if cell is not None]
+                        if cells:
+                            parts.append("\t".join(cells))
+            finally:
+                wb.close()
+            return "\n".join(parts).strip()
+        if low.endswith(".pptx"):
+            from pptx import Presentation
+
+            prs = Presentation(raw)
+            parts = []
+            for slide in prs.slides:
+                for shape in slide.shapes:
+                    if getattr(shape, "has_text_frame", False) and shape.text.strip():
+                        parts.append(shape.text.strip())
+            return "\n".join(parts).strip()
+    except Exception:  # noqa: BLE001 — unreadable Office docs should not break the chat turn
+        return ""
+    return ""
+
+
 def _content_parts(text: str, attachments: list[dict]) -> tuple[str, list[dict]]:
     """Split a turn into (combined_text, image_blocks): text/PDF files are inlined as text,
     images become blocks and also leave a textual marker so later turns know they existed."""
@@ -53,6 +100,10 @@ def _content_parts(text: str, attachments: list[dict]) -> tuple[str, list[dict]]
             extracted = _pdf_text(content)
             body = extracted or "[No extractable text — may be a scanned/image-only PDF.]"
             text_parts.append(f"\n\n--- {name} (PDF) ---\n{body}")
+        elif kind == "file" and re.search(r"\.(docx|xlsx|xlsm|pptx)$", name, re.IGNORECASE):
+            extracted = _office_text(name, content)
+            body = extracted or "[No extractable text found in this Office document.]"
+            text_parts.append(f"\n\n--- {name} ---\n{body}")
         else:  # text file — inline its contents
             text_parts.append(f"\n\n--- {name} ---\n{content}")
     return "".join(text_parts).strip(), images

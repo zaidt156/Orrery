@@ -2,8 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import * as echarts from "echarts";
 import { Code2, Database, LayoutDashboard, Layers, Plus, RefreshCw, Trash2, Undo2, WandSparkles } from "lucide-react";
 import {
-  addDataConnection, createDashboard, createDatasetFromApi, createDatasetFromFile, deleteDashboard,
-  getModels, listDashboards, listDataConnections, reviseDashboard, rollbackDashboard, runDashboard,
+  addDataConnection, createDashboard, createDataModel, createDatasetFromApi, createDatasetFromFile,
+  createWorkspace, deleteDashboard, deleteDataModel, getModels, getSchemaMap, listDashboards,
+  listDataConnections, listDataModels, listWorkspaces, reviseDashboard, rollbackDashboard,
+  runDashboard, setDashboardLayout, setDashboardTransforms,
 } from "../lib/api.js";
 
 // Dashboards: the AI is the designer, not the renderer. The user describes the dashboard and picks
@@ -135,6 +137,16 @@ export default function Dashboards() {
   const [connHeaders, setConnHeaders] = useState("");
   const [showTransforms, setShowTransforms] = useState(false);
   const fileRef = useRef(null);
+  const [workspaces, setWorkspaces] = useState([]);
+  const [wsId, setWsId] = useState("");           // import target workspace
+  const [newWsName, setNewWsName] = useState("");
+  const [modelsOpen, setModelsOpen] = useState(false);
+  const [modelConn, setModelConn] = useState(""); // connection the join editor works on
+  const [schemaMap, setSchemaMap] = useState({}); // {table: [columns]}
+  const [dataModels, setDataModelsList] = useState([]);
+  const [modelDraft, setModelDraft] = useState({ name: "", base: "", joins: [] });
+  const [editTransforms, setEditTransforms] = useState(null); // working copy while editing
+  const dragIndex = useRef(null);
 
   async function load(nextActive) {
     const d = await listDashboards();
@@ -148,7 +160,62 @@ export default function Dashboards() {
     load().catch((e) => setErr(String(e.message || e)));
     getModels().then((m) => { setModels(m.models || []); setModel((m.models || [])[0]?.id || ""); }).catch(() => {});
     listDataConnections().then((c) => setConnections(c.connections || [])).catch(() => {});
+    listWorkspaces().then((w) => { setWorkspaces(w.workspaces || []); setWsId((w.workspaces || [])[0]?.id || ""); }).catch(() => {});
   }, []);
+
+  async function openModelEditor(cid) {
+    setModelConn(cid); setModelsOpen(true); setErr("");
+    setModelDraft({ name: "", base: "", joins: [] });
+    try {
+      const [sm, dm] = await Promise.all([getSchemaMap(cid), listDataModels(cid)]);
+      setSchemaMap(sm.tables || {});
+      setDataModelsList(dm.models || []);
+    } catch (e) { setErr(String(e.message || e)); }
+  }
+
+  async function saveModel() {
+    if (!modelDraft.name.trim() || !modelDraft.base || !modelDraft.joins.length) return;
+    setBusy(true); setErr("");
+    try {
+      await createDataModel(modelConn, modelDraft.name.trim(), { base: modelDraft.base, joins: modelDraft.joins });
+      setDataModelsList((await listDataModels(modelConn)).models || []);
+      setModelDraft({ name: "", base: "", joins: [] });
+    } catch (e) { setErr(String(e.message || e)); } finally { setBusy(false); }
+  }
+
+  async function removeModel(id) {
+    try { await deleteDataModel(id); setDataModelsList((await listDataModels(modelConn)).models || []); }
+    catch (e) { setErr(String(e.message || e)); }
+  }
+
+  async function addWorkspace() {
+    if (!newWsName.trim()) return;
+    try {
+      const w = await createWorkspace(newWsName.trim());
+      const list = (await listWorkspaces()).workspaces || [];
+      setWorkspaces(list); setWsId(w.id); setNewWsName("");
+      listDataConnections().then((c) => setConnections(c.connections || [])).catch(() => {});
+    } catch (e) { setErr(String(e.message || e)); }
+  }
+
+  async function saveTransforms() {
+    setBusy(true); setErr("");
+    try {
+      await setDashboardTransforms(activeId, editTransforms);
+      setEditTransforms(null);
+      await openBoard(activeId);
+    } catch (e) { setErr(String(e.message || e)); } finally { setBusy(false); }
+  }
+
+  async function onWidgetDrop(target) {
+    const from = dragIndex.current;
+    dragIndex.current = null;
+    if (from === null || from === target || !board) return;
+    const order = board.widgets.map((_w, i) => i);
+    order.splice(target, 0, order.splice(from, 1)[0]);
+    setBoard((b) => ({ ...b, widgets: order.map((i) => b.widgets[i]) }));  // instant, then persist
+    try { await setDashboardLayout(activeId, order); } catch (e) { setErr(String(e.message || e)); }
+  }
 
   async function openBoard(id) {
     setErr(""); setActiveId(id); setCreating(false); setLoading(true); setBoard(null);
@@ -219,8 +286,8 @@ export default function Dashboards() {
         const i = line.indexOf(":") >= 0 ? line.indexOf(":") : line.indexOf("=");
         if (i > 0) headers[line.slice(0, i).trim()] = line.slice(i + 1).trim();
       }
-      await createDatasetFromApi(connName.trim(), connUrl.trim(), headers);
-      await refreshConnectionsAndSelect();
+      await createDatasetFromApi(connName.trim(), connUrl.trim(), headers, wsId);
+      await refreshConnectionsAndSelect(wsId);
     } catch (e) { setErr(String(e.message || e)); } finally { setBusy(false); }
   }
 
@@ -240,8 +307,8 @@ export default function Dashboards() {
       } else {
         content = await file.text();
       }
-      await createDatasetFromFile(connName.trim() || file.name.replace(/\.[^.]+$/, ""), file.name, content);
-      await refreshConnectionsAndSelect();
+      await createDatasetFromFile(connName.trim() || file.name.replace(/\.[^.]+$/, ""), file.name, content, wsId);
+      await refreshConnectionsAndSelect(wsId);
     } catch (e2) { setErr(String(e2.message || e2)); } finally { setBusy(false); }
   }
 
@@ -294,34 +361,44 @@ export default function Dashboards() {
             {connectOpen ? (
               <div className="dash-connect-form">
                 <div className="dash-connect-modes">
-                  {[["postgres", "PostgreSQL"], ["file", "CSV / Excel file"], ["api", "REST API (JSON)"]].map(([id, label]) => (
+                  {[["postgres", "Database"], ["file", "CSV / Excel / JSON file"], ["api", "REST API / Google Sheet"]].map(([id, label]) => (
                     <button key={id} className={`dash-mode${connMode === id ? " on" : ""}`} onClick={() => setConnMode(id)}>{label}</button>
                   ))}
                 </div>
+                {connMode !== "postgres" && (
+                  <div className="dash-connect-row">
+                    <small>Import into workspace:</small>
+                    <select value={wsId} onChange={(e) => setWsId(e.target.value)}>
+                      {workspaces.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+                    </select>
+                    <input style={{ flex: 1 }} placeholder="…or new workspace name" value={newWsName} onChange={(e) => setNewWsName(e.target.value)} />
+                    <button className="btn ghost sm" onClick={addWorkspace} disabled={!newWsName.trim()}>Create</button>
+                  </div>
+                )}
                 <input placeholder={connMode === "file" ? "Dataset name (optional — file name is used)" : "Name (e.g. warehouse)"} value={connName} onChange={(e) => setConnName(e.target.value)} />
                 {connMode === "postgres" && (
                   <>
-                    <input placeholder="postgres://user:password@host:5432/dbname" value={connUrl} onChange={(e) => setConnUrl(e.target.value)} spellCheck={false} />
+                    <input placeholder="postgres://…  ·  mysql://…  ·  sqlite:///C:/path/data.db" value={connUrl} onChange={(e) => setConnUrl(e.target.value)} spellCheck={false} />
                     <div className="dash-connect-row">
                       <button className="btn primary sm" onClick={connectData} disabled={busy || !connUrl.trim()}>{busy ? "Connecting…" : "Connect"}</button>
                       <button className="btn ghost sm" onClick={() => setConnectOpen(false)}>Cancel</button>
-                      <small>The connection string is stored only in your OS keychain.</small>
+                      <small>PostgreSQL, MySQL/MariaDB, or SQLite. Stored only in your OS keychain; queried read-only.</small>
                     </div>
                   </>
                 )}
                 {connMode === "file" && (
                   <>
-                    <input ref={fileRef} type="file" accept=".csv,.tsv,.xlsx,.xls,.xlsm,text/csv" hidden onChange={connectFile} />
+                    <input ref={fileRef} type="file" accept=".csv,.tsv,.json,.xlsx,.xls,.xlsm,text/csv,application/json" hidden onChange={connectFile} />
                     <div className="dash-connect-row">
                       <button className="btn primary sm" onClick={() => fileRef.current?.click()} disabled={busy}>{busy ? "Importing…" : "Choose file & import"}</button>
                       <button className="btn ghost sm" onClick={() => setConnectOpen(false)}>Cancel</button>
-                      <small>Becomes a table under “Workspace datasets” — dashboards query it like a database.</small>
+                      <small>CSV, Excel, or JSON becomes a table in the chosen workspace.</small>
                     </div>
                   </>
                 )}
                 {connMode === "api" && (
                   <>
-                    <input placeholder="https://api.example.com/v1/orders" value={connUrl} onChange={(e) => setConnUrl(e.target.value)} spellCheck={false} />
+                    <input placeholder="https://api.example.com/v1/orders — or a shared Google Sheets link" value={connUrl} onChange={(e) => setConnUrl(e.target.value)} spellCheck={false} />
                     <textarea
                       className="dash-connect-headers" rows={2} spellCheck={false}
                       placeholder={"Auth headers if needed (one per line):\nAuthorization: Bearer sk-..."}
@@ -330,7 +407,7 @@ export default function Dashboards() {
                     <div className="dash-connect-row">
                       <button className="btn primary sm" onClick={connectApi} disabled={busy || !connUrl.trim()}>{busy ? "Fetching…" : "Fetch & import"}</button>
                       <button className="btn ghost sm" onClick={() => setConnectOpen(false)}>Cancel</button>
-                      <small>JSON records become a refreshable table; headers stay in your OS keychain.</small>
+                      <small>JSON records or a link-shared Google Sheet become a refreshable table; headers stay in your keychain.</small>
                     </div>
                   </>
                 )}
@@ -338,6 +415,69 @@ export default function Dashboards() {
             ) : (
               <button className="btn ghost sm dash-connect-btn" onClick={() => setConnectOpen(true)}><Plus /> Connect new data source</button>
             )}
+            <div className="dash-connect-row" style={{ marginTop: 2 }}>
+              <button className="btn ghost sm" onClick={() => (modelsOpen ? setModelsOpen(false) : openModelEditor(selectedConns[0] || connections[0]?.id))} disabled={!connections.length}>
+                <Layers /> Connect tables (data models)
+              </button>
+              <small>Join related tables on key columns — dashboards then use them as one dataset.</small>
+            </div>
+            {modelsOpen && (
+              <div className="dash-model-editor">
+                <div className="dash-connect-row">
+                  <small>Connection:</small>
+                  <select value={modelConn} onChange={(e) => openModelEditor(e.target.value)}>
+                    {connections.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                </div>
+                {dataModels.length > 0 && (
+                  <div className="dash-model-list">
+                    {dataModels.map((m) => (
+                      <span key={m.id} className="dash-model-chip">
+                        <Layers /> {m.name}
+                        <button title="Delete model" onClick={() => removeModel(m.id)}>×</button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <div className="dash-connect-row">
+                  <input style={{ flex: 1 }} placeholder="Model name (e.g. Orders with customers)" value={modelDraft.name} onChange={(e) => setModelDraft((d) => ({ ...d, name: e.target.value }))} />
+                  <select value={modelDraft.base} onChange={(e) => setModelDraft((d) => ({ ...d, base: e.target.value, joins: [] }))}>
+                    <option value="">Base table…</option>
+                    {Object.keys(schemaMap).map((t) => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                </div>
+                {modelDraft.joins.map((j, i) => (
+                  <div key={i} className="dash-connect-row dash-join-row">
+                    <select value={j.table} onChange={(e) => setModelDraft((d) => { const joins = [...d.joins]; joins[i] = { ...joins[i], table: e.target.value, right: "" }; return { ...d, joins }; })}>
+                      <option value="">Join table…</option>
+                      {Object.keys(schemaMap).filter((t) => t !== modelDraft.base).map((t) => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                    <select value={j.left} onChange={(e) => setModelDraft((d) => { const joins = [...d.joins]; joins[i] = { ...joins[i], left: e.target.value }; return { ...d, joins }; })}>
+                      <option value="">on column…</option>
+                      {[modelDraft.base, ...modelDraft.joins.slice(0, i).map((x) => x.table)].filter(Boolean).flatMap((t) =>
+                        (schemaMap[t] || []).map((c) => <option key={`${t}.${c}`} value={`${t}.${c}`}>{t}.{c}</option>))}
+                    </select>
+                    <span className="dash-join-eq">=</span>
+                    <select value={j.right} onChange={(e) => setModelDraft((d) => { const joins = [...d.joins]; joins[i] = { ...joins[i], right: e.target.value }; return { ...d, joins }; })}>
+                      <option value="">column…</option>
+                      {(schemaMap[j.table] || []).map((c) => <option key={c} value={`${j.table}.${c}`}>{j.table}.{c}</option>)}
+                    </select>
+                    <button className="icon-btn" title="Remove join" onClick={() => setModelDraft((d) => ({ ...d, joins: d.joins.filter((_x, k) => k !== i) }))}>×</button>
+                  </div>
+                ))}
+                <div className="dash-connect-row">
+                  <button className="btn ghost sm" disabled={!modelDraft.base} onClick={() => setModelDraft((d) => ({ ...d, joins: [...d.joins, { table: "", left: "", right: "", type: "left" }] }))}>
+                    + Add join
+                  </button>
+                  <button className="btn primary sm" onClick={saveModel}
+                    disabled={busy || !modelDraft.name.trim() || !modelDraft.base || !modelDraft.joins.length || modelDraft.joins.some((j) => !j.table || !j.left || !j.right)}>
+                    {busy ? "Validating…" : "Save model"}
+                  </button>
+                  <small>Validated against the live schema; nothing is written to your database.</small>
+                </div>
+              </div>
+            )}
+
             <label className="dash-form-label">Built by</label>
             <select value={model} onChange={(e) => setModel(e.target.value)}>
               {models.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
@@ -368,27 +508,73 @@ export default function Dashboards() {
             {err && <div className="chat-banner">{err}</div>}
             {loading && <div className="project-muted" style={{ padding: "18px 4px" }}>Running the saved queries…</div>}
 
-            {board && (board.transforms?.length || 0) > 0 && (
+            {board && (
               <div className="dash-transforms">
                 <button className="dash-transforms-head" onClick={() => setShowTransforms((v) => !v)}>
-                  <Layers /> Transforms ({board.transforms.length}) — prepared datasets widgets build on
+                  <Layers /> Transforms ({(board.transforms || []).length}) — prepared datasets widgets build on
                   <span className="pill-caret">{showTransforms ? "▴" : "▾"}</span>
                 </button>
-                {showTransforms && board.transforms.map((t) => (
-                  <div key={t.name} className="dash-transform">
-                    <div className="dash-transform-head">
-                      <code>{t.name}</code>
-                      <small>{t.description || "prepared dataset"}</small>
+                {showTransforms && editTransforms === null && (
+                  <>
+                    {(board.transforms || []).map((t) => (
+                      <div key={t.name} className="dash-transform">
+                        <div className="dash-transform-head">
+                          <code>{t.name}</code>
+                          <small>{t.description || "prepared dataset"}</small>
+                        </div>
+                        <pre className="dash-sql">{t.sql}</pre>
+                      </div>
+                    ))}
+                    <div className="dash-transform-actions">
+                      <button className="btn ghost sm" onClick={() => setEditTransforms((board.transforms || []).map((t) => ({ ...t })))}>
+                        {(board.transforms || []).length ? "Edit transforms" : "Add a transform"}
+                      </button>
                     </div>
-                    <pre className="dash-sql">{t.sql}</pre>
+                  </>
+                )}
+                {showTransforms && editTransforms !== null && (
+                  <div className="dash-transform-edit">
+                    {editTransforms.map((t, i) => (
+                      <div key={i} className="dash-transform">
+                        <div className="dash-transform-head">
+                          <input className="dash-tname" placeholder="name (snake_case)" value={t.name}
+                            onChange={(e) => setEditTransforms((p) => p.map((x, k) => (k === i ? { ...x, name: e.target.value } : x)))} />
+                          <select value={t.connection_id || board.connections[0]}
+                            onChange={(e) => setEditTransforms((p) => p.map((x, k) => (k === i ? { ...x, connection_id: e.target.value } : x)))}>
+                            {board.connections.map((cid) => <option key={cid} value={cid}>{connections.find((c) => c.id === cid)?.name || "connection"}</option>)}
+                          </select>
+                          <button className="icon-btn" title="Remove" onClick={() => setEditTransforms((p) => p.filter((_x, k) => k !== i))}>×</button>
+                        </div>
+                        <textarea className="dash-tsql" rows={3} spellCheck={false} placeholder="ONE read-only SELECT that cleans/joins/reshapes data"
+                          value={t.sql} onChange={(e) => setEditTransforms((p) => p.map((x, k) => (k === i ? { ...x, sql: e.target.value } : x)))} />
+                      </div>
+                    ))}
+                    <div className="dash-transform-actions">
+                      <button className="btn ghost sm" onClick={() => setEditTransforms((p) => [...p, { name: "", connection_id: board.connections[0], sql: "", description: "" }])}>+ Add</button>
+                      <button className="btn primary sm" onClick={saveTransforms} disabled={busy}>{busy ? "Validating…" : "Save transforms"}</button>
+                      <button className="btn ghost sm" onClick={() => setEditTransforms(null)}>Cancel</button>
+                      <small>Each transform must be a single read-only SELECT — validated on save.</small>
+                    </div>
                   </div>
-                ))}
+                )}
               </div>
             )}
 
             {board && (
               <div className="dash-grid2">
-                {board.widgets.map((w, i) => <Widget key={`${w.title}-${i}`} widget={w} />)}
+                {board.widgets.map((w, i) => (
+                  <div
+                    key={`${w.title}-${i}`}
+                    className="dash-drag"
+                    draggable
+                    onDragStart={() => { dragIndex.current = i; }}
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={() => onWidgetDrop(i)}
+                    title="Drag to rearrange — the layout is saved"
+                  >
+                    <Widget widget={w} />
+                  </div>
+                ))}
               </div>
             )}
 

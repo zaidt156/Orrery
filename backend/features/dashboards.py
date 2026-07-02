@@ -19,7 +19,7 @@ from sqlalchemy import select
 
 from backend.core.database import get_sessionmaker
 from backend.core.models import Dashboard, DataConnection
-from backend.features import data, team
+from backend.features import data, datamodels, skills, team
 from backend.providers import ai
 
 log = logging.getLogger("orrery.dashboards")
@@ -192,7 +192,10 @@ async def _schemas_block(connection_ids: list[str]) -> str:
         except Exception as exc:  # noqa: BLE001
             raise ValueError(f"Couldn't read the schema of connection {cid[:8]}…: {str(exc)[:120]}")
         parts.append(f'connection_id "{cid}":\n{overview or "- (no tables found)"}')
-    return "\n\n".join(parts)
+    block = "\n\n".join(parts)
+    # user-defined relationship models are pre-joined datasets the designer can query by name
+    models = await datamodels.models_as_transforms(connection_ids)
+    return block + datamodels.describe_models(models)
 
 
 async def _ask_model(model: str, prompt: str) -> dict:
@@ -215,8 +218,10 @@ async def _build_spec(model: str, connection_ids: list[str], prompt: str) -> tup
     raw = await _ask_model(model, prompt)
     allowed = set(connection_ids)
     default_conn = connection_ids[0]
+    model_ctes = await datamodels.models_as_transforms(connection_ids)
+    reserved = {m["name"] for m in model_ctes}
     transforms, widgets, dropped = [], [], []
-    seen_names: set[str] = set()
+    seen_names: set[str] = set(reserved)  # spec transforms may not shadow data-model names
     for t in (raw.get("transforms") or [])[:MAX_TRANSFORMS]:
         cleaned, why = _clean_transform(t, allowed, default_conn)
         if cleaned and cleaned["name"] not in seen_names:
@@ -229,8 +234,8 @@ async def _build_spec(model: str, connection_ids: list[str], prompt: str) -> tup
         if cleaned is None:
             dropped.append(why or "invalid")
             continue
-        # the widget must also be valid WITH its transforms attached (that's what actually runs)
-        err = validate_widget_sql(effective_widget_sql(cleaned, transforms))
+        # the widget must also be valid WITH its transforms + data models attached (what actually runs)
+        err = validate_widget_sql(effective_widget_sql(cleaned, transforms + model_ctes))
         if err:
             dropped.append(f"{cleaned['title']}: {err}")
             continue
@@ -295,6 +300,9 @@ async def create_dashboard(model: str, connection_ids: list[str], description: s
     schemas = await _schemas_block(connection_ids)
     prompt = _SPEC_PROMPT.format(max_widgets=MAX_WIDGETS, max_transforms=MAX_TRANSFORMS,
                                  schemas=schemas, description=description.strip())
+    guidance = skills.skills_prompt(f"dashboard visualization chart {description}")
+    if guidance:  # the dashboard-design skill: chart choice, aggregation, labeling rules
+        prompt = f"{guidance}\n\n{prompt}"
     name, spec, dropped = await _build_spec(model, connection_ids, prompt)
     async with get_sessionmaker()() as s:
         row = Dashboard(
@@ -326,7 +334,9 @@ async def run_dashboard(did: str) -> dict | None:
         spec = _load_spec(row)
         base = _dict(row, spec)
     conn_names = await _connection_names([str(w.get("connection_id")) for w in spec.get("widgets", [])])
-    transforms = spec.get("transforms", [])
+    # widgets can reference spec transforms AND user-defined data models (joined tables) as CTEs
+    model_ctes = await datamodels.models_as_transforms(spec.get("connections", []))
+    transforms = list(spec.get("transforms", [])) + model_ctes
     results = []
     for w in spec.get("widgets", []):
         item = dict(w)
@@ -380,6 +390,56 @@ async def revise_dashboard(did: str, model: str, instruction: str) -> dict | Non
     if dropped:
         out["dropped"] = dropped
     return out
+
+
+async def set_transforms(did: str, transforms: list[dict]) -> dict | None:
+    """Manual transform editing: validate each entry, snapshot the old spec, save."""
+    async with get_sessionmaker()() as s:
+        row = await _get_owned(s, did)
+        if row is None:
+            return None
+        spec = _load_spec(row)
+        allowed = set(spec.get("connections") or [str(row.connection_id)])
+        default_conn = next(iter(allowed))
+        cleaned_list, errors = [], []
+        seen: set[str] = set()
+        for t in transforms[:MAX_TRANSFORMS]:
+            cleaned, why = _clean_transform(t, allowed, default_conn)
+            if cleaned and cleaned["name"] not in seen:
+                cleaned_list.append(cleaned)
+                seen.add(cleaned["name"])
+            elif why:
+                errors.append(why)
+        if errors:
+            raise ValueError("; ".join(errors)[:300])
+        try:
+            history = json.loads(row.history) if row.history else []
+        except (ValueError, TypeError):
+            history = []
+        history.append({"name": row.name, "model": row.model, "spec": spec})
+        row.history = json.dumps(history[-10:])
+        spec["transforms"] = cleaned_list
+        row.spec = json.dumps(spec)
+        await s.commit()
+        await s.refresh(row)
+        return _dict(row, spec)
+
+
+async def set_layout(did: str, order: list[int]) -> dict | None:
+    """Persist the user's drag-rearranged widget order (AI designs; the user arranges)."""
+    async with get_sessionmaker()() as s:
+        row = await _get_owned(s, did)
+        if row is None:
+            return None
+        spec = _load_spec(row)
+        widgets = spec.get("widgets", [])
+        if sorted(order) != list(range(len(widgets))):
+            raise ValueError("Layout order must be a permutation of the current widgets.")
+        spec["widgets"] = [widgets[i] for i in order]
+        row.spec = json.dumps(spec)
+        await s.commit()
+        await s.refresh(row)
+        return _dict(row, spec)
 
 
 async def rollback_dashboard(did: str) -> dict | None:

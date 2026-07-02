@@ -536,6 +536,15 @@ class _TurnContext:
     collection_id: str | None = None  # this chat's own attachment collection (durable file memory)
 
 
+def _is_indexable_attachment(attachment: dict) -> bool:
+    if not attachment.get("content"):
+        return False
+    if attachment.get("kind") in ("text", "pdf"):
+        return True
+    name = str(attachment.get("name") or "").lower()
+    return name.endswith((".docx", ".xlsx", ".xlsm", ".pptx"))
+
+
 async def _prepare_turn(cid: uuid.UUID, user_content: str, attachments: list[dict]) -> _TurnContext | None:
     """Load the conversation + history and persist the incoming user message. None if missing."""
     owner = await team.current_owner_id()
@@ -572,7 +581,7 @@ async def _prepare_turn(cid: uuid.UUID, user_content: str, attachments: list[dic
     # Durable file memory: index this turn's uploaded files into the chat's own collection so they
     # stay retrievable (via RAG) no matter how long the conversation grows. Done outside the session
     # because it embeds; failures here must never break the turn.
-    indexable = [a for a in attachments if a.get("content") and a.get("kind") in ("text", "pdf")]
+    indexable = [a for a in attachments if _is_indexable_attachment(a)]
     if indexable:
         try:
             if not conv_collection:

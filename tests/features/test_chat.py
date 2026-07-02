@@ -1,5 +1,7 @@
 import asyncio
+import base64
 import contextlib
+import io
 import uuid
 
 import pytest
@@ -36,6 +38,28 @@ def test_build_user_content_bad_pdf_gives_placeholder():
     out = chat._build_user_content("", atts)
     assert isinstance(out, str)
     assert "x.pdf (PDF)" in out
+
+
+def test_build_user_content_docx_file_inlined():
+    from docx import Document
+
+    buf = io.BytesIO()
+    doc = Document()
+    doc.add_paragraph("DOCBODY123")
+    doc.save(buf)
+    encoded = base64.b64encode(buf.getvalue()).decode("ascii")
+    atts = [{"kind": "file", "name": "notes.docx", "content": f"data:application/vnd.openxmlformats-officedocument.wordprocessingml.document;base64,{encoded}"}]
+
+    out = chat._build_user_content("summarize", atts)
+
+    assert isinstance(out, str)
+    assert "notes.docx" in out
+    assert "DOCBODY123" in out
+
+
+def test_office_attachments_are_indexable_for_chat_memory():
+    assert chat._is_indexable_attachment({"kind": "file", "name": "notes.docx", "content": "x"})
+    assert chat._is_indexable_attachment({"kind": "image", "name": "photo.png", "content": "x"}) is False
 
 
 def test_db_content_records_attachment_note():

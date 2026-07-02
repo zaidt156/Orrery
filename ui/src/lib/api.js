@@ -158,12 +158,20 @@ export const setDefaults = (model, effort) => apiSend("/api/defaults", "PUT", { 
 
 // Imported datasets (CSV/Excel uploads + REST APIs) — BI-style sources for dashboards
 export const listDatasets = () => apiGet("/api/datasets");
-export const createDatasetFromFile = (name, filename, content) =>
-  apiSend("/api/datasets/file", "POST", { name, filename, content });
-export const createDatasetFromApi = (name, url, headers) =>
-  apiSend("/api/datasets/api", "POST", { name, url, headers });
+export const createDatasetFromFile = (name, filename, content, workspace_id = "") =>
+  apiSend("/api/datasets/file", "POST", { name, filename, content, workspace_id });
+export const createDatasetFromApi = (name, url, headers, workspace_id = "") =>
+  apiSend("/api/datasets/api", "POST", { name, url, headers, workspace_id });
 export const refreshDataset = (id) => apiSend(`/api/datasets/${id}/refresh`, "POST");
 export const deleteDataset = (id) => apiSend(`/api/datasets/${id}`, "DELETE");
+export const listWorkspaces = () => apiGet("/api/workspaces");
+export const createWorkspace = (name) => apiSend("/api/workspaces", "POST", { name });
+export const getSchemaMap = (cid) => apiGet(`/api/connections/${cid}/schema-map`);
+export const listDataModels = (cid) => apiGet(`/api/datamodels?connection_id=${encodeURIComponent(cid || "")}`);
+export const createDataModel = (connection_id, name, spec) => apiSend("/api/datamodels", "POST", { connection_id, name, spec });
+export const deleteDataModel = (id) => apiSend(`/api/datamodels/${id}`, "DELETE");
+export const setDashboardTransforms = (id, transforms) => apiSend(`/api/dashboards/${id}/transforms`, "PUT", { transforms });
+export const setDashboardLayout = (id, order) => apiSend(`/api/dashboards/${id}/layout`, "PUT", { order });
 
 // Dashboards: the AI designs the spec; refresh re-runs saved read-only SQL (no model call)
 export const listDashboards = () => apiGet("/api/dashboards");
@@ -245,6 +253,7 @@ const TEXT_EXT = /\.(txt|md|markdown|csv|tsv|json|ya?ml|xml|html?|css|js|jsx|ts|
 export function readFileAsAttachment(file) {
   const name = file.name || "file";
   const isText = TEXT_EXT.test(name) || (file.type || "").startsWith("text/");
+  const isImage = (file.type || "").startsWith("image/");
   const isPdf = /\.pdf$/i.test(name) || file.type === "application/pdf";
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -253,7 +262,7 @@ export function readFileAsAttachment(file) {
       resolve({
         name,
         mime: file.type || "",
-        kind: isPdf ? "pdf" : isText ? "text" : "file",
+        kind: isImage ? "image" : isPdf ? "pdf" : isText ? "text" : "file",
         content: String(reader.result || ""),
       });
     if (isText) reader.readAsText(file);

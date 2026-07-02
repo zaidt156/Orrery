@@ -22,7 +22,7 @@ import {
   updateConversation, deleteConversation, streamMessage, regenerateMessage,
   downloadMessageExport, streamCodeImage, createArtifact, previewExport, saveClientFile,
   downloadGeneratedFile, previewGeneratedFile, stopGeneration, resumeGeneration, listProjects, saveReasoning,
-  getDefaults,
+  getDefaults, readFileAsAttachment,
 } from "../lib/api.js";
 import {
   EXPORT_FORMATS, requestedFileFormats, precedingUserText,
@@ -78,6 +78,15 @@ const PROVIDER_NAME = {
   chatgpt_plan: "Codex / ChatGPT plan",
   gemini_plan: "Google CLI",
 };
+
+const CHAT_ATTACHMENT_ACCEPT = [
+  "image/*", "application/pdf", ".pdf", "text/*",
+  ".docx", ".pptx", ".xlsx", ".xlsm",
+  ".md", ".markdown", ".csv", ".tsv", ".json", ".txt", ".py", ".js", ".ts", ".jsx", ".tsx",
+  ".html", ".css", ".yml", ".yaml", ".xml", ".log", ".sql", ".ini", ".toml",
+].join(",");
+const CHAT_TEXT_EXT = /\.(txt|md|markdown|csv|tsv|json|ya?ml|xml|html?|css|js|jsx|ts|tsx|py|java|c|cpp|cs|go|rs|rb|php|sh|sql|ini|toml|log)$/i;
+const CHAT_OFFICE_EXT = /\.(docx|pptx|xlsx|xlsm)$/i;
 
 export default function Chat() {
   const [convos, setConvos] = useState([]);
@@ -502,15 +511,6 @@ export default function Chat() {
     navigator.clipboard?.writeText(String(text || ""));
   }
 
-  function readFile(file, kind) {
-    return new Promise((resolve) => {
-      const r = new FileReader();
-      r.onload = () => resolve({ name: file.name, mime: file.type, kind, content: r.result });
-      if (kind === "image" || kind === "pdf") r.readAsDataURL(file);
-      else r.readAsText(file);
-    });
-  }
-
   async function handleFiles(e) {
     const files = Array.from(e.target.files || []);
     e.target.value = "";
@@ -518,11 +518,15 @@ export default function Chat() {
     for (const f of files) {
       const isImage = f.type.startsWith("image/");
       const isPdf = f.type === "application/pdf" || /\.pdf$/i.test(f.name);
-      const isText = f.type.startsWith("text/") || /\.(md|csv|json|txt|py|js|ts|jsx|tsx|html|css|ya?ml|log|sql)$/i.test(f.name);
-      const kind = isImage ? "image" : isPdf ? "pdf" : isText ? "text" : null;
-      if (!kind) { setBanner(`Unsupported file type (skipped ${f.name}).`); continue; }
+      const isText = f.type.startsWith("text/") || CHAT_TEXT_EXT.test(f.name);
+      const isOffice = CHAT_OFFICE_EXT.test(f.name);
+      if (!isImage && !isPdf && !isText && !isOffice) {
+        const legacyWord = /\.doc$/i.test(f.name) ? " Legacy .doc files are not readable yet; save as .docx and attach again." : "";
+        setBanner(`Unsupported file type (skipped ${f.name}).${legacyWord}`);
+        continue;
+      }
       if (f.size > 12 * 1024 * 1024) { setBanner(`${f.name} is too large (max 12 MB).`); continue; }
-      ok.push(await readFile(f, kind));
+      ok.push(await readFileAsAttachment(f));
     }
     if (ok.length) setAttachments((p) => [...p, ...ok]);
   }
@@ -854,10 +858,10 @@ export default function Chat() {
               type="file"
               multiple
               hidden
-              accept="image/*,application/pdf,.pdf,text/*,.md,.csv,.json,.txt,.py,.js,.ts,.jsx,.tsx,.html,.css,.yml,.yaml,.log,.sql"
+              accept={CHAT_ATTACHMENT_ACCEPT}
               onChange={handleFiles}
             />
-            <button className="icon-btn" aria-label="Attach file" title="Attach images or text files" onClick={() => fileRef.current?.click()}><AttachIcon /></button>
+            <button className="icon-btn" aria-label="Attach file" title="Attach images, PDFs, Office docs, or text files" onClick={() => fileRef.current?.click()}><AttachIcon /></button>
             <button
               className={`research-toggle${researchMode ? " on" : ""}`}
               aria-pressed={researchMode}

@@ -15,7 +15,7 @@ from backend.core import appconfig, database
 from backend.core.config import settings
 from backend.core.observability import new_request_id
 from backend.core.paths import resource_path
-from backend.features import admin, app_updates, artifacts, chat, dashboards, data, datasets, evaluate, exports, feedback, filepreview, local_models, mcp, projects, rag, route_telemetry, skills, team, usage
+from backend.features import admin, app_updates, artifacts, chat, dashboards, data, datamodels, datasets, evaluate, exports, feedback, filepreview, local_models, mcp, projects, rag, route_telemetry, skills, team, usage
 from backend.features import files as file_library
 from backend.providers import accounts, ai, catalog
 from backend.security import secrets
@@ -246,13 +246,33 @@ class DefaultsBody(BaseModel):
 class DatasetFileBody(BaseModel):
     name: str = ""
     filename: str = ""
-    content: str = ""  # raw text for CSV, base64 for Excel
+    content: str = ""  # raw text for CSV/JSON, base64 for Excel
+    workspace_id: str = ""
 
 
 class DatasetApiBody(BaseModel):
     name: str = ""
     url: str = ""
     headers: dict[str, str] = {}  # auth headers -> keychain, never stored in the DB
+    workspace_id: str = ""
+
+
+class WorkspaceBody(BaseModel):
+    name: str = ""
+
+
+class DataModelBody(BaseModel):
+    connection_id: str
+    name: str = ""
+    spec: dict = {}  # {"base": "orders", "joins": [{"table","left","right","type"}]}
+
+
+class TransformsBody(BaseModel):
+    transforms: list[dict] = []
+
+
+class LayoutBody(BaseModel):
+    order: list[int] = []
 
 
 class EvaluateBody(BaseModel):
@@ -713,7 +733,7 @@ def create_app(session_token: str) -> FastAPI:
     @r.post("/datasets/file")
     async def dataset_from_file(body: DatasetFileBody) -> dict:
         try:
-            return await datasets.create_from_file(body.name, body.filename, body.content)
+            return await datasets.create_from_file(body.name, body.filename, body.content, body.workspace_id or None)
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
         except Exception as e:  # noqa: BLE001
@@ -722,11 +742,51 @@ def create_app(session_token: str) -> FastAPI:
     @r.post("/datasets/api")
     async def dataset_from_api(body: DatasetApiBody) -> dict:
         try:
-            return await datasets.create_from_api(body.name, body.url, body.headers or None)
+            return await datasets.create_from_api(body.name, body.url, body.headers or None, body.workspace_id or None)
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
         except Exception as e:  # noqa: BLE001
             raise HTTPException(status_code=400, detail=f"API import failed: {str(e)[:200]}")
+
+    @r.get("/workspaces")
+    async def workspaces_list() -> dict:
+        return {"workspaces": await datasets.list_workspaces()}
+
+    @r.post("/workspaces")
+    async def workspace_create(body: WorkspaceBody) -> dict:
+        try:
+            return await datasets.create_workspace(body.name)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+    @r.get("/connections/{cid}/schema-map")
+    async def connection_schema_map(cid: str) -> dict:
+        """{table: [columns]} — feeds the data-model join editor's dropdowns."""
+        try:
+            m = await datamodels._schema_map(cid)  # noqa: SLF001 — shared metadata helper
+            return {"tables": {t: list(cols.keys()) for t, cols in m.items()}}
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=secrets.redact_url(str(e))[:160])
+
+    # --- data models: user-connected tables (joins), validated against the live schema ---
+    @r.get("/datamodels")
+    async def datamodels_list(connection_id: str = "") -> dict:
+        return {"models": await datamodels.list_models(connection_id or None)}
+
+    @r.post("/datamodels")
+    async def datamodel_create(body: DataModelBody) -> dict:
+        try:
+            return await datamodels.create_model(body.connection_id, body.name, body.spec)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=f"Model failed: {secrets.redact_url(str(e))[:200]}")
+
+    @r.delete("/datamodels/{mid}")
+    async def datamodel_delete(mid: str) -> dict:
+        if not await datamodels.delete_model(mid):
+            raise HTTPException(status_code=404, detail="Model not found")
+        return {"deleted": True}
 
     @r.post("/datasets/{did}/refresh")
     async def dataset_refresh(did: str) -> dict:
@@ -773,6 +833,26 @@ def create_app(session_token: str) -> FastAPI:
     async def dashboard_revise(did: str, body: DashboardRevise) -> dict:
         try:
             out = await dashboards.revise_dashboard(did, body.model, body.instruction)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        if out is None:
+            raise HTTPException(status_code=404, detail="Dashboard not found")
+        return out
+
+    @r.put("/dashboards/{did}/transforms")
+    async def dashboard_set_transforms(did: str, body: TransformsBody) -> dict:
+        try:
+            out = await dashboards.set_transforms(did, body.transforms)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        if out is None:
+            raise HTTPException(status_code=404, detail="Dashboard not found")
+        return out
+
+    @r.put("/dashboards/{did}/layout")
+    async def dashboard_set_layout(did: str, body: LayoutBody) -> dict:
+        try:
+            out = await dashboards.set_layout(did, body.order)
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
         if out is None:

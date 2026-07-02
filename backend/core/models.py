@@ -226,9 +226,22 @@ class DataConnection(Base):
     id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(120))
     display: Mapped[str] = mapped_column(String(300))  # redacted host:port/db, no password
-    # postgres = a user database; datasets = the built-in source holding imported CSV/API tables,
-    # scoped to the orrery_datasets schema so app tables (chats etc.) are never exposed to queries.
+    # postgres = a user database; datasets = a workspace of imported CSV/API tables, scoped to its
+    # own schema (db_schema) so app tables (chats etc.) are never exposed to queries.
     kind: Mapped[str] = mapped_column(String(20), default="postgres")
+    db_schema: Mapped[str | None] = mapped_column(String(80), nullable=True)  # datasets workspaces only
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class DataModel(Base):
+    """A user-defined relationship model: a base table joined to related tables on key columns
+    (BI-style 'connect your tables'). Stored as a JSON spec; rendered to validated SQL on use."""
+    __tablename__ = "data_models"
+
+    id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    connection_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), index=True)
+    name: Mapped[str] = mapped_column(String(120))
+    spec: Mapped[str] = mapped_column(Text)  # {"base": "orders", "joins": [{table,left,right,type}]}
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -240,8 +253,9 @@ class Dataset(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(120))
-    table_name: Mapped[str] = mapped_column(String(80), unique=True)  # ds_<slug> inside orrery_datasets
+    table_name: Mapped[str] = mapped_column(String(80), unique=True)  # ds_<slug> inside its schema
     kind: Mapped[str] = mapped_column(String(10))                     # file | api
+    db_schema: Mapped[str] = mapped_column(String(80), default="orrery_datasets")  # workspace schema
     source: Mapped[str | None] = mapped_column(String(500), nullable=True)  # filename or URL (no secrets)
     row_count: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

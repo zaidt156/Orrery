@@ -108,3 +108,5 @@ yarl==1.24.2
 zipp==4.1.0
 ddgs==9.14.4
 sqlglot==30.12.0
+aiomysql==0.3.2
+aiosqlite==0.22.1

@@ -57,3 +57,8 @@ ddgs>=6.0
 # SQL validation for Dashboards (security.md 2/3): parse + assert single read-only SELECT before
 # any AI-written widget query runs. The database READ ONLY transaction remains the enforcement.
 sqlglot>=30.0
+
+# BI connectors: MySQL/MariaDB + SQLite dashboards sources (pure-Python async drivers).
+# Read-only enforced at connection level (init_command / PRAGMA query_only).
+aiomysql>=0.2
+aiosqlite>=0.20

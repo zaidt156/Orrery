@@ -133,6 +133,8 @@ async def run_migrations() -> None:
         await conn.execute(text("ALTER TABLE projects ADD COLUMN IF NOT EXISTS owner_id VARCHAR(36)"))
         # Data sources: connection kind (postgres | datasets) + the datasets schema for imports
         await conn.execute(text("ALTER TABLE data_connections ADD COLUMN IF NOT EXISTS kind VARCHAR(20) NOT NULL DEFAULT 'postgres'"))
+        await conn.execute(text("ALTER TABLE data_connections ADD COLUMN IF NOT EXISTS db_schema VARCHAR(80)"))
+        await conn.execute(text("ALTER TABLE datasets ADD COLUMN IF NOT EXISTS db_schema VARCHAR(80) NOT NULL DEFAULT 'orrery_datasets'"))
         await conn.execute(text("CREATE SCHEMA IF NOT EXISTS orrery_datasets"))
         # Team mode: member-authored skills/MCP need admin approval before they go team-wide
         await conn.execute(text("ALTER TABLE user_skills ADD COLUMN IF NOT EXISTS owner_id VARCHAR(36)"))

@@ -879,7 +879,31 @@ body{
 .dash-connect-form input:focus{border-color:var(--amber)}
 .dash-connect-row{display:flex;align-items:center;gap:8px}
 .dash-connect-row small{color:var(--faint);font-size:10.5px}
-.dash-connect-modes{display:flex;gap:6px}
+.dash-connect-modes{display:flex;gap:6px;flex-wrap:wrap}
+.dash-connect-row select{background:var(--bg2);border:1px solid var(--line);border-radius:7px;color:var(--text);padding:7px 9px;font-size:11.5px;outline:none;max-width:220px}
+/* data-model (connect tables) editor */
+.dash-model-editor{display:flex;flex-direction:column;gap:8px;border:1px solid var(--line);border-radius:10px;background:var(--bg1);padding:11px 13px}
+.dash-model-editor input{background:var(--bg2);border:1px solid var(--line);border-radius:7px;color:var(--text);padding:7px 9px;font-size:12px;outline:none}
+.dash-model-editor input:focus{border-color:var(--amber)}
+.dash-model-list{display:flex;gap:6px;flex-wrap:wrap}
+.dash-model-chip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:20px;background:var(--bg2);padding:4px 10px;font-size:11.5px}
+.dash-model-chip svg{width:12px;height:12px;color:var(--amber)}
+.dash-model-chip button{background:none;border:none;color:var(--faint);cursor:pointer;font-size:13px;padding:0 2px}
+.dash-model-chip button:hover{color:#e06666}
+.dash-join-row select{flex:1;min-width:0}
+.dash-join-eq{color:var(--faint);font-family:var(--font-mono)}
+/* transforms editor */
+.dash-transform-actions{display:flex;align-items:center;gap:8px;padding:0 14px 12px}
+.dash-transform-actions small{color:var(--faint);font-size:10.5px}
+.dash-transform-edit{display:flex;flex-direction:column;gap:4px}
+.dash-tname{flex:1;background:var(--bg2);border:1px solid var(--line);border-radius:7px;color:var(--ice);padding:6px 9px;font-size:11.5px;font-family:var(--font-mono);outline:none}
+.dash-transform-head select{background:var(--bg2);border:1px solid var(--line);border-radius:7px;color:var(--muted);padding:6px 8px;font-size:11px;outline:none}
+.dash-tsql{width:100%;background:var(--bg2);border:1px solid var(--line);border-radius:8px;color:var(--text);padding:8px 10px;font-size:11.5px;font-family:var(--font-mono);outline:none;resize:vertical}
+.dash-tsql:focus{border-color:var(--amber)}
+/* draggable widgets (AI designs, the user arranges) */
+.dash-drag{cursor:grab}
+.dash-drag:active{cursor:grabbing}
+.dash-drag:hover{outline:1px dashed var(--line);outline-offset:3px;border-radius:12px}
 .dash-mode{background:var(--bg2);border:1px solid var(--line);border-radius:20px;color:var(--muted);padding:5px 12px;font-size:11px;cursor:pointer}
 .dash-mode.on{border-color:var(--amber);color:var(--amber)}
 .dash-connect-headers{background:var(--bg2);border:1px solid var(--line);border-radius:7px;color:var(--text);padding:8px 10px;font-size:11.5px;font-family:var(--font-mono);outline:none;resize:vertical}
