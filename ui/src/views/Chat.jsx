@@ -436,8 +436,15 @@ export default function Chat() {
       if (streamResult?.done === false && isActive()) {
         try {
           const full = await getConversation(cid);
-          if (full.running) appendStep(setMessages, "Connection ended before completion; reopen this chat to reattach if it is still running.");
-          else setMessages(full.messages.map(hydrateReasoning));
+          if (full.running) {
+            appendStep(setMessages, "Connection ended before completion; reattaching to the running response...");
+            const resumed = await resumeGeneration(cid, (ev) => {
+              if (isActive()) handleEvent(ev);
+            }, ctrl.signal);
+            if (resumed?.done === false) appendStep(setMessages, "The response is still running in the background.");
+          } else {
+            setMessages(full.messages.map(hydrateReasoning));
+          }
         } catch {
           setLast({ streaming: false });
         }

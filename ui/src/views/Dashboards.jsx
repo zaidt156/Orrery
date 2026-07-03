@@ -123,6 +123,7 @@ export default function Dashboards() {
   const [models, setModels] = useState([]);
   const [connections, setConnections] = useState([]);
   const [creating, setCreating] = useState(false);
+  const [step, setStep] = useState(1); // new-dashboard wizard: 1 data → 2 requirements → 3 model → 4 build
   const [desc, setDesc] = useState("");
   const [model, setModel] = useState("");
   const [selectedConns, setSelectedConns] = useState([]);
@@ -375,7 +376,7 @@ export default function Dashboards() {
   return (
     <section className="view projects-view">
       <aside className="project-side">
-        <button className="btn primary project-new" onClick={() => { setCreating(true); setActiveId(""); setBoard(null); setErr(""); }}>
+        <button className="btn primary project-new" onClick={() => { setCreating(true); setStep(1); setActiveId(""); setBoard(null); setErr(""); }}>
           <Plus /> New dashboard
         </button>
         <div className="project-list project-tree">
@@ -397,89 +398,117 @@ export default function Dashboards() {
       <main className="project-main">
         {showCreate ? (
           <div className="dash-create">
-            <h2><WandSparkles /> Describe your dashboard</h2>
-            <p>Pick the data it reads, the model that designs it, and say what you want to see. The model
-              writes read-only SQL (always visible per widget); refreshes re-run the saved queries with
-              no model cost.</p>
-            <label className="dash-form-label">Data connections (pick one or more)</label>
-            {connections.length === 0 && !connectOpen && (
-              <div className="project-muted">No data connections yet — connect one below.</div>
-            )}
-            {connections.length > 0 && (
-              <div className="dash-conn-list">
-                {connections.map((c) => (
-                  <label key={c.id} className={`dash-conn${selectedConns.includes(c.id) ? " on" : ""}`}>
-                    <input type="checkbox" checked={selectedConns.includes(c.id)} onChange={() => toggleConn(c.id)} />
-                    <Database /> {c.name} <small>{c.display}</small>
-                  </label>
-                ))}
-              </div>
-            )}
-            {connectOpen ? (
-              <div className="dash-connect-form">
-                <div className="dash-connect-modes">
-                  {[["postgres", "Database"], ["file", "CSV / Excel / JSON file"], ["api", "REST API / Google Sheet"]].map(([id, label]) => (
-                    <button key={id} className={`dash-mode${connMode === id ? " on" : ""}`} onClick={() => setConnMode(id)}>{label}</button>
-                  ))}
-                </div>
-                {connMode !== "postgres" && (
-                  <div className="dash-connect-row">
-                    <small>Import into workspace:</small>
-                    <select value={wsId} onChange={(e) => setWsId(e.target.value)}>
-                      {workspaces.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
-                    </select>
-                    <input style={{ flex: 1 }} placeholder="…or new workspace name" value={newWsName} onChange={(e) => setNewWsName(e.target.value)} />
-                    <button className="btn ghost sm" onClick={addWorkspace} disabled={!newWsName.trim()}>Create</button>
+            <h2><WandSparkles /> New dashboard</h2>
+            <div className="wiz-steps">
+              {[[1, "Data sets"], [2, "Requirements"], [3, "Data model"], [4, "Build"]].map(([n, label]) => (
+                <button
+                  key={n}
+                  className={`wiz-step${step === n ? " on" : ""}${step > n ? " done" : ""}`}
+                  onClick={() => { if (n < step) setStep(n); }}
+                >
+                  <span className="wiz-num">{step > n ? "\u2713" : n}</span> {label}
+                </button>
+              ))}
+            </div>
+
+            {step === 1 && (
+              <>
+                <p className="wiz-hint">Add every data set this dashboard needs: databases, files, APIs, Google Sheets.
+                  Pick as many as you want; you connect them into a model in step 3.</p>
+                {connections.length > 0 && (
+                  <div className="dash-conn-list">
+                    {connections.map((c) => (
+                      <label key={c.id} className={`dash-conn${selectedConns.includes(c.id) ? " on" : ""}`}>
+                        <input type="checkbox" checked={selectedConns.includes(c.id)} onChange={() => toggleConn(c.id)} />
+                        <Database /> {c.name} <small>{c.display}</small>
+                      </label>
+                    ))}
                   </div>
                 )}
-                <input placeholder={connMode === "file" ? "Dataset name (optional — file name is used)" : "Name (e.g. warehouse)"} value={connName} onChange={(e) => setConnName(e.target.value)} />
-                {connMode === "postgres" && (
-                  <>
-                    <input placeholder="postgres://…  ·  mysql://…  ·  sqlite:///C:/path/data.db" value={connUrl} onChange={(e) => setConnUrl(e.target.value)} spellCheck={false} />
-                    <div className="dash-connect-row">
-                      <button className="btn primary sm" onClick={connectData} disabled={busy || !connUrl.trim()}>{busy ? "Connecting…" : "Connect"}</button>
-                      <button className="btn ghost sm" onClick={() => setConnectOpen(false)}>Cancel</button>
-                      <small>PostgreSQL, MySQL/MariaDB, or SQLite. Stored only in your OS keychain; queried read-only.</small>
+                {connectOpen ? (
+                  <div className="dash-connect-form">
+                    <div className="dash-connect-modes">
+                      {[["postgres", "Database"], ["file", "CSV / Excel / JSON file"], ["api", "REST API / Google Sheet"]].map(([id, label]) => (
+                        <button key={id} className={`dash-mode${connMode === id ? " on" : ""}`} onClick={() => setConnMode(id)}>{label}</button>
+                      ))}
                     </div>
-                  </>
+                    {connMode !== "postgres" && (
+                      <div className="dash-connect-row">
+                        <small>Import into workspace:</small>
+                        <select value={wsId} onChange={(e) => setWsId(e.target.value)}>
+                          {workspaces.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+                        </select>
+                        <input style={{ flex: 1 }} placeholder="or new workspace name" value={newWsName} onChange={(e) => setNewWsName(e.target.value)} />
+                        <button className="btn ghost sm" onClick={addWorkspace} disabled={!newWsName.trim()}>Create</button>
+                      </div>
+                    )}
+                    <input placeholder={connMode === "file" ? "Dataset name (optional)" : "Name (e.g. warehouse)"} value={connName} onChange={(e) => setConnName(e.target.value)} />
+                    {connMode === "postgres" && (
+                      <>
+                        <input placeholder="postgres://...  |  mysql://...  |  sqlite:///C:/path/data.db" value={connUrl} onChange={(e) => setConnUrl(e.target.value)} spellCheck={false} />
+                        <div className="dash-connect-row">
+                          <button className="btn primary sm" onClick={connectData} disabled={busy || !connUrl.trim()}>{busy ? "Connecting..." : "Connect"}</button>
+                          <button className="btn ghost sm" onClick={() => setConnectOpen(false)}>Cancel</button>
+                          <small>PostgreSQL, MySQL/MariaDB, or SQLite. Stored only in your OS keychain; queried read-only.</small>
+                        </div>
+                      </>
+                    )}
+                    {connMode === "file" && (
+                      <>
+                        <input ref={fileRef} type="file" accept=".csv,.tsv,.json,.xlsx,.xls,.xlsm,text/csv,application/json" hidden onChange={connectFile} />
+                        <div className="dash-connect-row">
+                          <button className="btn primary sm" onClick={() => fileRef.current?.click()} disabled={busy}>{busy ? "Importing..." : "Choose file & import"}</button>
+                          <button className="btn ghost sm" onClick={() => setConnectOpen(false)}>Cancel</button>
+                          <small>CSV, Excel, or JSON becomes a table in the chosen workspace.</small>
+                        </div>
+                      </>
+                    )}
+                    {connMode === "api" && (
+                      <>
+                        <input placeholder="https://api.example.com/v1/orders  or a shared Google Sheets link" value={connUrl} onChange={(e) => setConnUrl(e.target.value)} spellCheck={false} />
+                        <textarea
+                          className="dash-connect-headers" rows={2} spellCheck={false}
+                          placeholder={"Auth headers if needed (one per line):\nAuthorization: Bearer sk-..."}
+                          value={connHeaders} onChange={(e) => setConnHeaders(e.target.value)}
+                        />
+                        <div className="dash-connect-row">
+                          <button className="btn primary sm" onClick={connectApi} disabled={busy || !connUrl.trim()}>{busy ? "Fetching..." : "Fetch & import"}</button>
+                          <button className="btn ghost sm" onClick={() => setConnectOpen(false)}>Cancel</button>
+                          <small>JSON records or a link-shared Google Sheet become a refreshable table; headers stay in your keychain.</small>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                ) : (
+                  <button className="btn ghost sm dash-connect-btn" onClick={() => setConnectOpen(true)}><Plus /> Add a data set</button>
                 )}
-                {connMode === "file" && (
-                  <>
-                    <input ref={fileRef} type="file" accept=".csv,.tsv,.json,.xlsx,.xls,.xlsm,text/csv,application/json" hidden onChange={connectFile} />
-                    <div className="dash-connect-row">
-                      <button className="btn primary sm" onClick={() => fileRef.current?.click()} disabled={busy}>{busy ? "Importing…" : "Choose file & import"}</button>
-                      <button className="btn ghost sm" onClick={() => setConnectOpen(false)}>Cancel</button>
-                      <small>CSV, Excel, or JSON becomes a table in the chosen workspace.</small>
-                    </div>
-                  </>
-                )}
-                {connMode === "api" && (
-                  <>
-                    <input placeholder="https://api.example.com/v1/orders — or a shared Google Sheets link" value={connUrl} onChange={(e) => setConnUrl(e.target.value)} spellCheck={false} />
-                    <textarea
-                      className="dash-connect-headers" rows={2} spellCheck={false}
-                      placeholder={"Auth headers if needed (one per line):\nAuthorization: Bearer sk-..."}
-                      value={connHeaders} onChange={(e) => setConnHeaders(e.target.value)}
-                    />
-                    <div className="dash-connect-row">
-                      <button className="btn primary sm" onClick={connectApi} disabled={busy || !connUrl.trim()}>{busy ? "Fetching…" : "Fetch & import"}</button>
-                      <button className="btn ghost sm" onClick={() => setConnectOpen(false)}>Cancel</button>
-                      <small>JSON records or a link-shared Google Sheet become a refreshable table; headers stay in your keychain.</small>
-                    </div>
-                  </>
-                )}
-              </div>
-            ) : (
-              <button className="btn ghost sm dash-connect-btn" onClick={() => setConnectOpen(true)}><Plus /> Connect new data source</button>
+                <div className="wiz-nav">
+                  <span className="wiz-count">{selectedConns.length} data source(s) selected</span>
+                  <button className="btn primary" disabled={!selectedConns.length} onClick={() => setStep(2)}>Continue</button>
+                </div>
+              </>
             )}
-            <div className="dash-connect-row" style={{ marginTop: 2 }}>
-              <button className="btn ghost sm" onClick={() => (modelsOpen ? setModelsOpen(false) : openModelEditor(selectedConns[0] || connections[0]?.id))} disabled={!connections.length}>
-                <Layers /> Connect tables (data models)
-              </button>
-              <small>Join related tables on key columns — dashboards then use them as one dataset.</small>
-            </div>
-            {modelsOpen && (
-              <div className="dash-model-editor">
+
+            {step === 2 && (
+              <>
+                <p className="wiz-hint">Define the requirements: what questions must this dashboard answer,
+                  which numbers matter, and how you want them broken down.</p>
+                <textarea
+                  rows={6} value={desc} onChange={(e) => setDesc(e.target.value)}
+                  placeholder={"e.g.\n- Total revenue and month-over-month growth\n- Revenue by customer and by product\n- Orders trend over the last 12 months\n- A table of the 20 most recent orders"}
+                />
+                <div className="wiz-nav">
+                  <button className="btn ghost" onClick={() => setStep(1)}>Back</button>
+                  <button className="btn primary" disabled={!desc.trim()} onClick={() => { openModelEditor(selectedConns[0] || connections[0]?.id); setStep(3); }}>Continue</button>
+                </div>
+              </>
+            )}
+
+            {step === 3 && (
+              <>
+                <p className="wiz-hint">Connect related tables into a model: the dashboard treats each model as one
+                  pre-joined dataset. Skip this if your data is a single table.</p>
+                <div className="dash-model-editor">
                 <div className="dash-model-head">
                   <div>
                     <b>Data model builder</b>
@@ -599,83 +628,44 @@ export default function Dashboards() {
                     ))}
                   </div>
                 )}
-                <p className="dm-hint">Click the tables that belong together — Orrery links them on matching key columns
-                  (adjust a key by clicking it on a card).</p>
-                <div className="dm-tablebar">
-                  {Object.keys(schemaMap).map((t) => (
-                    <button key={t} className={`dm-chip${modelDraft.tables.includes(t) ? " on" : ""}`} onClick={() => toggleModelTable(t)}>
-                      {t.replace(/^ds_/, "")}
-                    </button>
-                  ))}
-                </div>
-                {modelDraft.tables.length > 0 && (
-                  <div className="dm-canvas">
-                    {modelDraft.tables.map((t, i) => {
-                      const link = i > 0 ? modelDraft.links[i - 1] : null;
-                      const keyCols = new Set(
-                        [link?.left, link?.right, modelDraft.links[i]?.left, modelDraft.links[i]?.right]
-                          .filter(Boolean).filter((r) => r.startsWith(`${t}.`)).map((r) => r.slice(t.length + 1)),
-                      );
-                      return (
-                        <div key={t} className="dm-node">
-                          {i > 0 && (
-                            <div className="dm-connector">
-                              <span className="dm-wire" />
-                              <div className="dm-keys">
-                                <select value={link?.left || ""} onChange={(e) => setModelDraft((d) => { const links = [...d.links]; links[i - 1] = { ...links[i - 1], left: e.target.value }; return { ...d, links }; })}>
-                                  {modelDraft.tables.slice(0, i).flatMap((pt) => (schemaMap[pt] || []).map((c) => (
-                                    <option key={`${pt}.${c}`} value={`${pt}.${c}`}>{pt.replace(/^ds_/, "")}.{c}</option>
-                                  )))}
-                                </select>
-                                <span className="dm-eq">⟷</span>
-                                <select value={link?.right || ""} onChange={(e) => setModelDraft((d) => { const links = [...d.links]; links[i - 1] = { ...links[i - 1], right: e.target.value }; return { ...d, links }; })}>
-                                  {(schemaMap[t] || []).map((c) => <option key={c} value={`${t}.${c}`}>{t.replace(/^ds_/, "")}.{c}</option>)}
-                                </select>
-                              </div>
-                              <span className="dm-wire" />
-                            </div>
-                          )}
-                          <div className="dm-card">
-                            <div className="dm-card-head">
-                              {t.replace(/^ds_/, "")}
-                              <button title="Remove table" onClick={() => toggleModelTable(t)}>×</button>
-                            </div>
-                            <div className="dm-cols">
-                              {(schemaMap[t] || []).slice(0, 9).map((c) => (
-                                <span key={c} className={`dm-col${keyCols.has(c) ? " key" : ""}`}>{c}</span>
-                              ))}
-                              {(schemaMap[t] || []).length > 9 && <span className="dm-col more">+{(schemaMap[t] || []).length - 9} more</span>}
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
                 <div className="dash-connect-row">
                   <input style={{ flex: 1 }} placeholder="Model name (e.g. Orders with customers)" value={modelDraft.name} onChange={(e) => setModelDraft((d) => ({ ...d, name: e.target.value }))} />
                   <button className="btn primary sm" onClick={saveModel}
                     disabled={busy || !modelDraft.name.trim() || modelDraft.tables.length < 2}>
-                    {busy ? "Validating…" : "Save model"}
+                    {busy ? "Validating..." : "Save model"}
                   </button>
+                  <small className="dm-hint">Validated against the live schema; nothing is written to your data.</small>
                 </div>
-                <small className="dm-hint">Validated against the live schema; nothing is written to your database.</small>
-              </div>
+                </div>
+                <div className="wiz-nav">
+                  <button className="btn ghost" onClick={() => setStep(2)}>Back</button>
+                  <button className="btn primary" onClick={() => setStep(4)}>{dataModels.length ? "Continue" : "Skip (no joins needed)"}</button>
+                </div>
+              </>
             )}
 
-            <label className="dash-form-label">Built by</label>
-            <select value={model} onChange={(e) => setModel(e.target.value)}>
-              {models.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
-            </select>
-            <label className="dash-form-label">What should it show?</label>
-            <textarea
-              rows={3} value={desc} onChange={(e) => setDesc(e.target.value)}
-              placeholder="e.g. Revenue overview: monthly totals, top products, active customers, and a table of the latest orders"
-            />
+            {step === 4 && (
+              <>
+                <div className="wiz-summary">
+                  <span><b>{selectedConns.length}</b><small>data source(s)</small></span>
+                  <span><b>{dataModels.length}</b><small>data model(s)</small></span>
+                  <span><b>{desc.trim().split(/\n+/).filter(Boolean).length}</b><small>requirement line(s)</small></span>
+                </div>
+                <label className="dash-form-label">Built by</label>
+                <select value={model} onChange={(e) => setModel(e.target.value)}>
+                  {models.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+                </select>
+                <p className="wiz-hint">The model designs every widget from your requirements and models. All SQL stays
+                  visible per widget, and refreshes re-run the saved queries with no model cost.</p>
+                <div className="wiz-nav">
+                  <button className="btn ghost" onClick={() => setStep(3)}>Back</button>
+                  <button className="btn primary" onClick={build} disabled={busy || !desc.trim() || !model || !selectedConns.length}>
+                    {busy ? "Designing..." : "Build dashboard"}
+                  </button>
+                </div>
+              </>
+            )}
             {err && <div className="chat-banner">{err}</div>}
-            <button className="btn primary" onClick={build} disabled={busy || !desc.trim() || !model || !selectedConns.length}>
-              {busy ? "Designing…" : "Build dashboard"}
-            </button>
           </div>
         ) : (
           <>

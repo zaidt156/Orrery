@@ -898,6 +898,23 @@ button.attach-chip:hover{border-color:var(--amber); color:var(--text)}
 .dash-revise input:focus{border-color:var(--amber)}
 .dash-revise select{max-width:220px;background:var(--bg2);border:1px solid var(--line);border-radius:8px;color:var(--muted);padding:8px 9px;font-size:11.5px;outline:none}
 .dash-connect-btn{align-self:flex-start}
+/* new-dashboard wizard: data sets → requirements → model → build */
+.wiz-steps{display:flex;gap:8px;flex-wrap:wrap;margin:2px 0 6px}
+.wiz-step{display:inline-flex;align-items:center;gap:8px;background:var(--bg1);border:1px solid var(--line);border-radius:99px;color:var(--faint);padding:7px 15px 7px 8px;font-size:12px;font-weight:600;cursor:default}
+.wiz-step.done{color:var(--muted);cursor:pointer}
+.wiz-step.done:hover{border-color:var(--ice)}
+.wiz-step.on{border-color:var(--amber);color:var(--text)}
+.wiz-num{width:22px;height:22px;border-radius:50%;background:var(--bg2);border:1px solid var(--line);display:grid;place-items:center;font-family:var(--font-mono);font-size:11px}
+.wiz-step.on .wiz-num{background:var(--amber);border-color:var(--amber);color:#221805}
+.wiz-step.done .wiz-num{color:var(--green);border-color:var(--green)}
+.wiz-hint{font-size:12.5px;color:var(--muted);line-height:1.55;margin:0}
+.wiz-nav{display:flex;align-items:center;gap:10px;margin-top:6px}
+.wiz-nav .btn.primary{margin-left:auto}
+.wiz-count{font-family:var(--font-mono);font-size:11px;color:var(--faint)}
+.wiz-summary{display:flex;gap:10px;flex-wrap:wrap}
+.wiz-summary span{border:1px solid var(--line);border-radius:10px;background:var(--bg1);padding:10px 16px;display:flex;flex-direction:column;gap:2px}
+.wiz-summary b{font-family:var(--font-display);font-size:18px}
+.wiz-summary small{font-size:10.5px;color:var(--faint)}
 .defaults-select{max-width:280px;background:var(--bg2);border:1px solid var(--line);border-radius:8px;color:var(--text);padding:8px 10px;font-size:12px;outline:none}
 .defaults-select:focus{border-color:var(--amber)}
 /* answer evaluation (compare candidates + AI judge) */
