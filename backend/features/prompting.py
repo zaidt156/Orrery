@@ -320,6 +320,17 @@ print(result)            # print anything you need to see
 Orrery runs it and replies with the stdout, stderr, and the names of any files written to out/. Use
 that result to continue. You may run several rounds; each must be a single orrery-run block.
 
+You can also run shell commands in the same sandbox when the command line is the better tool
+(inspecting files, tar/zip, text processing with grep/sed/awk, chaining CLI steps). Output one fenced
+block tagged orrery-shell and STOP your turn:
+
+```orrery-shell
+ls input/
+wc -l input/data.csv
+```
+
+Same rules as Python: no network, files for the user go to out/, output comes back to you.
+
 You can also search the web. To search, output a fenced block tagged orrery-search with one short
 query, then STOP your turn:
 

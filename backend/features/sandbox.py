@@ -134,9 +134,20 @@ def _build_manifest(
 
 def run_code(code: str) -> SandboxResult:
     """Run Python in the sandbox and return its logs plus any files it wrote to out/."""
-    if not code or not code.strip():
+    return _run_entry(code, "main.py", ["python", "main.py"])
+
+
+def run_shell(script: str) -> SandboxResult:
+    """Run a shell script in the SAME hardened container (no network, read-only root, dropped caps,
+    non-root, cpu/memory/pids caps). Shell adds no exposure Python didn't already have inside the
+    box — it just lets the model use the container's CLI tools directly."""
+    return _run_entry(script, "script.sh", ["sh", "script.sh"])
+
+
+def _run_entry(entry_content: str, entry_name: str, argv: list[str]) -> SandboxResult:
+    if not entry_content or not entry_content.strip():
         raise SandboxError("There is no code to run.")
-    if len(code) > _MAX_CODE_CHARS:
+    if len(entry_content) > _MAX_CODE_CHARS:
         raise SandboxError("The generated code is too large to run.")
 
     run_id = uuid.uuid4().hex[:12]
@@ -147,7 +158,7 @@ def run_code(code: str) -> SandboxResult:
     input_dir.mkdir()
     workspace_dir.mkdir()
     out_dir.mkdir()
-    (workdir / "main.py").write_text(code, encoding="utf-8")
+    (workdir / entry_name).write_text(entry_content, encoding="utf-8", newline="\n")
     name = f"orrery-sbx-{run_id}"
 
     command = [
@@ -159,7 +170,7 @@ def run_code(code: str) -> SandboxResult:
         "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
         "--user", "1000:1000",
         "-v", f"{workdir}:/work", "-w", "/work",
-        IMAGE, "python", "main.py",
+        IMAGE, *argv,
     ]
 
     timed_out = False

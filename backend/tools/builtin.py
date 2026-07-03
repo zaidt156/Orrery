@@ -94,6 +94,28 @@ class RunPythonTool(Tool):
         }
 
 
+class RunShellConfig(BaseModel):
+    script: str = Field(min_length=1, max_length=60_000)
+
+
+@register_tool("run_shell")
+class RunShellTool(Tool):
+    label = "Run shell commands (sandbox)"
+    category = "code"
+    config_model = RunShellConfig
+
+    async def execute(self, config: RunShellConfig) -> dict:
+        from backend.features import sandbox
+        if not sandbox.image_ready():
+            raise RuntimeError("The code sandbox is offline (Docker isn't running or the image isn't built).")
+        result = await asyncio.to_thread(sandbox.run_shell, config.script)
+        return {
+            "exit_code": result.exit_code, "timed_out": result.timed_out,
+            "stdout": result.stdout[:8000], "stderr": result.stderr[:4000],
+            "files": [f.name for f in result.files],
+        }
+
+
 class DashboardRefreshConfig(BaseModel):
     dashboard_id: str = Field(min_length=8)
 

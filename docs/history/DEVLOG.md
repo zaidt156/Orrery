@@ -1399,3 +1399,14 @@ Next: user to clarify the 'API limit' symptom; then the router split -> Automati
 
 Next: refactor chat.py into a modular package (user ask; also api.py routers), Data tab dataset
 management, app-like density for Settings/Admin.
+
+
+## Step 103 - Shell commands in the sandbox (July 3, 2026)
+
+- The model can now run shell commands, not just Python, inside the SAME hardened container: no
+  network, read-only root, dropped capabilities, non-root user, cpu/memory/process caps, wall-clock
+  timeout. A new orrery-shell block joins orrery-run in the chat tool loop (grep/sed/awk, archives,
+  file inspection, CLI chains); files written to out/ come back as cards like always. Also exposed
+  as run_shell in the shared tool registry for Automations/Agents.
+- Verified live: commands executed, output files returned, and the network confirmed dead from
+  inside the container (download attempt blocked).

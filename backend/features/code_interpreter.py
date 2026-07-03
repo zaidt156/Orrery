@@ -32,7 +32,7 @@ _STDOUT_FEEDBACK_CHARS = 6000
 
 _FENCE = "```orrery-"
 _CLOSE = "```"
-_KINDS = ("run", "search", "tool")
+_KINDS = ("run", "shell", "search", "tool")
 _HOLDBACK = len("```orrery-search")  # hold back enough to detect the longest opener
 
 
@@ -258,6 +258,30 @@ async def run(
                     metadata={"exit_code": result.exit_code, "files": len(produced)},
                 )
                 echo += f"\n\n```orrery-run\n{body}\n```"
+                observations.append(_sandbox_observation(result, produced))
+            elif kind == "shell":
+                yield trace.step(
+                    "Running shell commands", "Executing in the secure sandbox (no network, capped, isolated).",
+                    kind="tool", status="running", phase="execute", metadata={"run": run_index + 1},
+                )
+                try:
+                    result = await asyncio.to_thread(sandbox.run_shell, body)
+                except sandbox.SandboxError as exc:
+                    yield trace.error("Sandbox unavailable", str(exc))
+                    echo += f"\n\n```orrery-shell\n{body}\n```"
+                    observations.append(f"[sandbox error] {exc}. Answer without running commands.")
+                    continue
+                produced = _store_files(result)
+                if produced:
+                    all_files.extend(produced)
+                    yield stream_events.files(produced)
+                yield trace.step(
+                    "Commands finished" if result.ok else "Command run had issues",
+                    f"exit {result.exit_code}, {len(produced)} file(s)" + (" — timed out" if result.timed_out else ""),
+                    kind="result", status="done" if result.ok else "warning", phase="execute",
+                    metadata={"exit_code": result.exit_code, "files": len(produced)},
+                )
+                echo += f"\n\n```orrery-shell\n{body}\n```"
                 observations.append(_sandbox_observation(result, produced))
             elif kind == "search":
                 if not allow_web:
