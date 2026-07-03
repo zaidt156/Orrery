@@ -575,7 +575,7 @@ async def _prepare_turn(cid: uuid.UUID, user_content: str, attachments: list[dic
                 select(Message).where(Message.conversation_id == cid).order_by(Message.created_at)
             )
         ).scalars().all()
-        messages = [{"role": m.role, "content": m.context or m.content} for m in history]
+        messages = _model_history(history)
         messages.append({"role": "user", "content": _build_user_content(user_content, attachments)})
 
         # Attachment metadata rides in artifacts so reloads render real chips (name+kind), not a
@@ -649,6 +649,17 @@ def _outer_title_for_plan(plan) -> str:
     if route == "audio":
         return "Checking audio and voice capabilities"
     return f"Working through the request with {label.lower()}"
+
+
+def _model_history(history: list[Message]) -> list[dict]:
+    """Model-bound history. Only the MOST RECENT prior user turn keeps its full attachment text
+    (so "now shorten it" follow-ups work); older turns use their display text — earlier uploads
+    stop riding along forever and come back only via relevance-gated retrieval when they matter."""
+    last_user = max((i for i, m in enumerate(history) if m.role == "user"), default=-1)
+    return [
+        {"role": m.role, "content": (m.context or m.content) if i == last_user else (m.content or "")}
+        for i, m in enumerate(history)
+    ]
 
 
 def _outer_summary_for_plan(plan, *, has_attachments: bool) -> str:
@@ -1190,7 +1201,7 @@ async def regenerate(conv_id: str) -> AsyncIterator[dict]:
         if not history or history[-1].role != "user":
             yield stream_events.error("Nothing to regenerate.")
             return
-        messages = [{"role": m.role, "content": m.context or m.content} for m in history]
+        messages = _model_history(history)
 
     trusted_context = await project_store.trusted_context(project_id)
     budget_system = "\n\n".join(part for part in (system_prompt, trusted_context) if part)

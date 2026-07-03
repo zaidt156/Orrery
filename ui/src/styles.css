@@ -10,7 +10,15 @@
   --font-display:"Bricolage Grotesque Variable","Bricolage Grotesque",sans-serif;
   --font-ui:"IBM Plex Sans",system-ui,sans-serif;
   --font-mono:"IBM Plex Mono",monospace;
+  /* tell the engine this is a dark app: native widgets (select popups, scrollbars, date pickers)
+     render dark instead of flashing white/unreadable lists inside the webview */
+  color-scheme:dark;
 }
+select option{background:var(--bg2);color:var(--text)}
+.update-banner{display:flex;align-items:center;gap:10px;justify-content:center;background:linear-gradient(90deg,#1d2a52,#233462);border-bottom:1px solid var(--line);padding:7px 12px;font-size:12.5px}
+.update-banner a{color:var(--amber);font-weight:600}
+.update-banner button{background:none;border:none;color:var(--faint);cursor:pointer;font-size:15px;padding:0 4px}
+.update-banner button:hover{color:var(--text)}
 *{margin:0;padding:0;box-sizing:border-box}
 html,body,#root{height:100%}
 body{

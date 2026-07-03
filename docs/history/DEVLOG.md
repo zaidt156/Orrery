@@ -1363,3 +1363,20 @@ triggering, or blocking wrongly?).
 - **Branding:** uploading a logo now auto-enables the header (it was easy to upload and see nothing).
 
 Next: user to clarify the 'API limit' symptom; then the router split -> Automations.
+
+
+## Step 101 - Context depth fix, dark dropdowns, update prompt, v0.2.0 (July 3, 2026)
+
+- **The real context fix.** Beyond the retrieval gate: the FULL TEXT of every uploaded file was
+  riding inside the model-bound history on every later turn, which is why unrelated questions kept
+  "looking into" old uploads. Now only the most recent prior turn keeps its full attachment text
+  (so "now shorten it" still works); older uploads return only through relevance-gated retrieval
+  when the question actually matches them.
+- **Dropdowns behave.** The webview was rendering native light-theme select popups against the dark
+  UI (white flashes, unreadable lists). The app now declares itself dark to the engine
+  (color-scheme) and styles option lists explicitly.
+- **Update prompt.** When a newer GitHub release exists, a dismissable banner appears at the top of
+  the app with a download link (full details stay in Settings -> Updates). Version bumped to 0.2.0
+  for the first installable release.
+- Ops note: the app failing to boot during this session traced to Docker Desktop being off (Postgres
+  runs in Docker) - not an app bug; the DB error message says exactly that.

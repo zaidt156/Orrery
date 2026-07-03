@@ -24,12 +24,16 @@ def test_version_compare_handles_v_prefix():
 
 
 def test_update_check_sanitizes_release_payload(monkeypatch):
+    # a release one patch ahead of whatever the current version is — survives version bumps
+    parts = app_updates.APP_VERSION.split(".")
+    newer = ".".join([*parts[:-1], str(int(parts[-1]) + 1)])
+
     def fake_urlopen(_request, timeout):
         assert timeout == 6.0
         return _Response({
-            "tag_name": "v0.1.4",
-            "name": "Orrery v0.1.4",
-            "html_url": "https://github.com/zaidt156/Orrery/releases/tag/v0.1.4",
+            "tag_name": f"v{newer}",
+            "name": f"Orrery v{newer}",
+            "html_url": f"https://github.com/zaidt156/Orrery/releases/tag/v{newer}",
             "published_at": "2026-07-01T20:00:00Z",
             "assets": [
                 {"name": "Orrery-Windows.zip", "browser_download_url": "https://example.com/win.zip", "size": 123},
@@ -42,7 +46,7 @@ def test_update_check_sanitizes_release_payload(monkeypatch):
     result = app_updates.check_for_updates()
 
     assert result["ok"] is True
-    assert result["latest_version"] == "0.1.4"
+    assert result["latest_version"] == newer
     assert result["update_available"] is True
     assert result["assets"][0]["name"] == "Orrery-Windows.zip"
     assert result["assets"][1]["url"] == ""

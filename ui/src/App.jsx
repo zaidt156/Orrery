@@ -13,7 +13,7 @@ import {
   Sparkles,
   Workflow,
 } from "lucide-react";
-import { getAdmin, getBranding, getHealth, getTeam } from "./lib/api.js";
+import { getAdmin, getAppUpdate, getBranding, getHealth, getTeam } from "./lib/api.js";
 import { Logo } from "./components/icons.jsx";
 
 function BrandHeader() {
@@ -82,6 +82,7 @@ export default function App() {
   const [db, setDb] = useState("checking"); // checking | ok | error | down
   const [features, setFeatures] = useState(null); // null until loaded → show all tabs
   const [teamState, setTeamState] = useState(null); // null until loaded; {team_mode, locked, user}
+  const [update, setUpdate] = useState(null); // {latest_version, url} when a newer release exists
 
   useEffect(() => {
     let alive = true;
@@ -98,6 +99,14 @@ export default function App() {
     const loadTeam = () => getTeam().then((s) => alive && setTeamState(s)).catch(() => alive && setTeamState({ team_mode: false, locked: false }));
     loadFeatures();
     loadTeam();
+    // prompt once per session when a newer release exists (dismissable; details in Settings → Updates)
+    getAppUpdate()
+      .then((u) => {
+        if (alive && u?.update_available && !sessionStorage.getItem("orrery_update_dismissed")) {
+          setUpdate({ version: u.latest_version, url: u.release_url });
+        }
+      })
+      .catch(() => {});
     window.addEventListener("orrery-features-changed", loadFeatures);
     window.addEventListener("orrery-team-changed", loadTeam);
     return () => {
@@ -124,6 +133,16 @@ export default function App() {
 
   return (
     <div className="app">
+      {update && (
+        <div className="update-banner">
+          <span>Orrery {update.version} is available.</span>
+          <a href={update.url} target="_blank" rel="noreferrer">Download the update</a>
+          <button
+            aria-label="Dismiss"
+            onClick={() => { sessionStorage.setItem("orrery_update_dismissed", "1"); setUpdate(null); }}
+          >×</button>
+        </div>
+      )}
       <BrandHeader />
       <div className="app-body">
         <nav className="rail" aria-label="Main navigation">
