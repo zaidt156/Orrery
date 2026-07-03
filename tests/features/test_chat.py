@@ -126,7 +126,7 @@ async def test_generate_adds_markdown_format_instructions(monkeypatch):
         return None
 
     monkeypatch.setattr(chat.ai, "stream_chat", fake_stream_chat)
-    monkeypatch.setattr(chat, "_persist_assistant", fake_persist_assistant)
+    monkeypatch.setattr(chat.persistence, "_persist_assistant", fake_persist_assistant)
 
     events = []
     async for event in chat._generate(
@@ -161,7 +161,7 @@ async def test_generate_returns_saved_message_id(monkeypatch):
         return "00000000-0000-0000-0000-000000000099"
 
     monkeypatch.setattr(chat.ai, "stream_chat", fake_stream_chat)
-    monkeypatch.setattr(chat, "_persist_assistant", fake_persist_assistant)
+    monkeypatch.setattr(chat.persistence, "_persist_assistant", fake_persist_assistant)
 
     events = [
         event
@@ -206,10 +206,10 @@ async def test_stream_reply_dispatches_image_route(monkeypatch):
         yield {"artifact": {"kind": "svg"}}
         yield {"done": True}
 
-    monkeypatch.setattr(chat, "_prepare_turn", fake_prepare_turn)
+    monkeypatch.setattr(chat.router, "_prepare_turn", fake_prepare_turn)
     monkeypatch.setattr(chat.project_store, "trusted_context", fake_trusted_context)
     monkeypatch.setattr(chat.route_telemetry, "record_plan", fake_record_plan)
-    monkeypatch.setattr(chat, "_route_image", fake_route_image)
+    monkeypatch.setattr(chat.router, "_route_image", fake_route_image)
 
     events = [
         event
@@ -249,11 +249,11 @@ async def test_stream_reply_file_route_can_fall_back_to_model_reply(monkeypatch)
         yield {"delta": "fallback answer"}
         yield {"done": True}
 
-    monkeypatch.setattr(chat, "_prepare_turn", fake_prepare_turn)
+    monkeypatch.setattr(chat.router, "_prepare_turn", fake_prepare_turn)
     monkeypatch.setattr(chat.project_store, "trusted_context", fake_trusted_context)
     monkeypatch.setattr(chat.route_telemetry, "record_plan", fake_record_plan)
-    monkeypatch.setattr(chat, "_route_file", fake_route_file)
-    monkeypatch.setattr(chat, "_route_model_reply", fake_route_model_reply)
+    monkeypatch.setattr(chat.router, "_route_file", fake_route_file)
+    monkeypatch.setattr(chat.router, "_route_model_reply", fake_route_model_reply)
 
     events = [
         event
@@ -301,14 +301,14 @@ async def test_stream_reply_file_route_sandbox_miss_uses_docspec(monkeypatch):
         yield stream_events.delta("plain fallback")
         yield stream_events.done()
 
-    monkeypatch.setattr(chat, "_prepare_turn", fake_prepare_turn)
+    monkeypatch.setattr(chat.router, "_prepare_turn", fake_prepare_turn)
     monkeypatch.setattr(chat.project_store, "trusted_context", fake_trusted_context)
     monkeypatch.setattr(chat.route_telemetry, "record_plan", fake_record_plan)
     monkeypatch.setattr(chat.route_telemetry, "record_outcome", fake_record_outcome)
     monkeypatch.setattr(chat.sandbox, "image_ready", lambda: True)
     monkeypatch.setattr(chat.filegen, "run", fake_filegen_run)
-    monkeypatch.setattr(chat, "_deliver_docspec", fake_deliver_docspec)
-    monkeypatch.setattr(chat, "_route_model_reply", fake_route_model_reply)
+    monkeypatch.setattr(chat.router, "_deliver_docspec", fake_deliver_docspec)
+    monkeypatch.setattr(chat.router, "_route_model_reply", fake_route_model_reply)
 
     events = [
         event
@@ -355,14 +355,14 @@ async def test_stream_reply_file_route_full_fallback_to_model_reply(monkeypatch)
         yield stream_events.delta("fallback answer")
         yield stream_events.done()
 
-    monkeypatch.setattr(chat, "_prepare_turn", fake_prepare_turn)
+    monkeypatch.setattr(chat.router, "_prepare_turn", fake_prepare_turn)
     monkeypatch.setattr(chat.project_store, "trusted_context", fake_trusted_context)
     monkeypatch.setattr(chat.route_telemetry, "record_plan", fake_record_plan)
     monkeypatch.setattr(chat.route_telemetry, "record_outcome", fake_record_outcome)
     monkeypatch.setattr(chat.sandbox, "image_ready", lambda: True)
     monkeypatch.setattr(chat.filegen, "run", fake_filegen_run)
-    monkeypatch.setattr(chat, "_deliver_docspec", fake_deliver_docspec)
-    monkeypatch.setattr(chat, "_route_model_reply", fake_route_model_reply)
+    monkeypatch.setattr(chat.router, "_deliver_docspec", fake_deliver_docspec)
+    monkeypatch.setattr(chat.router, "_route_model_reply", fake_route_model_reply)
 
     events = [
         event
@@ -391,8 +391,8 @@ async def test_stream_reply_dispatches_research_route(monkeypatch):
         yield {"delta": "research report"}
         yield {"done": True}
 
-    monkeypatch.setattr(chat, "_prepare_turn", fake_prepare_turn)
-    monkeypatch.setattr(chat, "_route_research", fake_route_research)
+    monkeypatch.setattr(chat.router, "_prepare_turn", fake_prepare_turn)
+    monkeypatch.setattr(chat.router, "_route_research", fake_route_research)
 
     events = [
         event
@@ -425,11 +425,11 @@ async def test_stream_reply_dispatches_project_create_route(monkeypatch):
         yield {"project": {"id": "p1", "name": args[2]}}
         yield {"done": True}
 
-    monkeypatch.setattr(chat, "_prepare_turn", fake_prepare_turn)
+    monkeypatch.setattr(chat.router, "_prepare_turn", fake_prepare_turn)
     monkeypatch.setattr(chat.project_store, "trusted_context", fake_trusted_context)
     monkeypatch.setattr(chat.project_store, "name_from_prompt", lambda text: "Acme rollout")
     monkeypatch.setattr(chat.route_telemetry, "record_plan", fake_record_plan)
-    monkeypatch.setattr(chat, "_route_project_create", fake_route_project_create)
+    monkeypatch.setattr(chat.router, "_route_project_create", fake_route_project_create)
 
     events = [
         event
@@ -464,10 +464,10 @@ async def test_stream_reply_dispatches_audio_to_file_route(monkeypatch):
         yield {"files": [{"kind": "file", "name": "narration.wav"}]}
         yield {"done": True}
 
-    monkeypatch.setattr(chat, "_prepare_turn", fake_prepare_turn)
+    monkeypatch.setattr(chat.router, "_prepare_turn", fake_prepare_turn)
     monkeypatch.setattr(chat.project_store, "trusted_context", fake_trusted_context)
     monkeypatch.setattr(chat.route_telemetry, "record_plan", fake_record_plan)
-    monkeypatch.setattr(chat, "_route_file", fake_route_file)
+    monkeypatch.setattr(chat.router, "_route_file", fake_route_file)
 
     events = [
         event
@@ -487,7 +487,7 @@ async def test_stream_reply_missing_conversation_returns_error(monkeypatch):
     async def fake_prepare_turn(*args, **kwargs):
         return None
 
-    monkeypatch.setattr(chat, "_prepare_turn", fake_prepare_turn)
+    monkeypatch.setattr(chat.router, "_prepare_turn", fake_prepare_turn)
 
     events = [
         event
@@ -530,7 +530,7 @@ async def test_resume_running_task_streams_resumed_then_events(monkeypatch):
         yield stream_events.delta("second")
 
     conv_id = "00000000-0000-0000-0000-0000000000dd"
-    monkeypatch.setattr(chat, "_conv_title", fake_conv_title)
+    monkeypatch.setattr(chat.router, "_conv_title", fake_conv_title)
     monkeypatch.setattr(chat.taskbrain, "start", fake_start)
     monkeypatch.setattr(chat.taskbrain, "finish", fake_finish)
 
@@ -568,7 +568,7 @@ async def test_detached_run_surfaces_generator_errors(monkeypatch):
         yield stream_events.delta("before")
         raise RuntimeError("boom")
 
-    monkeypatch.setattr(chat, "_conv_title", fake_conv_title)
+    monkeypatch.setattr(chat.router, "_conv_title", fake_conv_title)
     monkeypatch.setattr(chat.taskbrain, "start", fake_start)
     monkeypatch.setattr(chat.taskbrain, "finish", fake_finish)
 
@@ -607,7 +607,7 @@ async def test_cancel_run_marks_detached_task_canceled(monkeypatch):
         yield stream_events.delta("late")
 
     conv_id = "00000000-0000-0000-0000-0000000000cc"
-    monkeypatch.setattr(chat, "_conv_title", fake_conv_title)
+    monkeypatch.setattr(chat.router, "_conv_title", fake_conv_title)
     monkeypatch.setattr(chat.taskbrain, "start", fake_start)
     monkeypatch.setattr(chat.taskbrain, "finish", fake_finish)
 

@@ -30,382 +30,12 @@ from backend.features.chat_context import (
 from backend.features.reasoning_trace import ReasoningTrace, ThinkStream
 from backend.providers import ai
 from backend.security import privacy
+from backend.features.chat import conversations, generation, persistence, retrieval
 
 _log = logging.getLogger("orrery.chat")
 
 
-def _owned_by(row, owner_id: str | None) -> bool:
-    return owner_id is None or getattr(row, "owner_id", None) == owner_id
 
-
-async def can_access_conversation(conv_id: str) -> bool:
-    """True when the current solo/team user can access this conversation.
-
-    Raises PermissionError for a locked team client via team.current_owner_id().
-    """
-    try:
-        cid = uuid.UUID(conv_id)
-    except ValueError:
-        return False
-    owner = await team.current_owner_id()
-    async with get_sessionmaker()() as s:
-        conv = await s.get(Conversation, cid)
-        return bool(conv is not None and _owned_by(conv, owner))
-
-
-async def list_conversations() -> list[dict]:
-    owner = await team.current_owner_id()  # team mode: only this user's chats; solo: None (all)
-    async with get_sessionmaker()() as s:
-        q = select(Conversation).order_by(Conversation.updated_at.desc())
-        if owner is not None:
-            q = q.where(Conversation.owner_id == owner)
-        rows = (await s.execute(q)).scalars().all()
-        return [
-            {
-                "id": str(c.id),
-                "project_id": str(c.project_id) if c.project_id else None,
-                "title": c.title,
-                "model": c.model,
-                "updated_at": c.updated_at.isoformat(),
-            }
-            for c in rows
-        ]
-
-
-async def create_conversation(
-    model: str,
-    system_prompt: str | None,
-    effort: str | None = None,
-    context_window: int = DEFAULT_CONTEXT_WINDOW,
-    project_id: str | None = None,
-) -> dict:
-    owner = await team.current_owner_id()
-    async with get_sessionmaker()() as s:
-        project_uuid = None
-        if project_id:
-            project = await s.get(Project, uuid.UUID(project_id))
-            if project is None or not _owned_by(project, owner):
-                raise ValueError("Project not found")
-            project_uuid = project.id
-        conv = Conversation(
-            project_id=project_uuid,
-            model=model,
-            system_prompt=system_prompt or None,
-            effort=effort or None,
-            context_window=min(int(context_window), ai.model_context_window(model)) if context_window else context_window,
-            owner_id=owner,
-        )
-        s.add(conv)
-        await s.commit()
-        await s.refresh(conv)
-        return {"id": str(conv.id), "project_id": str(conv.project_id) if conv.project_id else None,
-                "title": conv.title, "model": conv.model,
-                "system_prompt": conv.system_prompt, "effort": conv.effort,
-                "context_window": _effective_context_window(conv.context_window), "messages": []}
-
-
-async def get_conversation(conv_id: str) -> dict | None:
-    owner = await team.current_owner_id()
-    async with get_sessionmaker()() as s:
-        conv = await s.get(Conversation, uuid.UUID(conv_id))
-        if conv is None:
-            return None
-        if owner is not None and conv.owner_id != owner:  # team mode: can't open another user's chat
-            return None
-        msgs = (
-            await s.execute(
-                select(Message).where(Message.conversation_id == conv.id).order_by(Message.created_at)
-            )
-        ).scalars().all()
-        return {
-            "id": str(conv.id), "title": conv.title, "model": conv.model,
-            "project_id": str(conv.project_id) if conv.project_id else None,
-            "system_prompt": conv.system_prompt, "effort": conv.effort,
-            "context_window": _effective_context_window(conv.context_window),
-            "messages": [
-                {
-                    "id": str(m.id),
-                    "role": m.role,
-                    "content": m.content,
-                    "model": m.model,
-                    "artifacts": _message_artifacts(m.artifacts),
-                    "reasoning": _load_reasoning(m.reasoning),
-                }
-                for m in msgs
-            ],
-        }
-
-
-def _load_reasoning(raw: str | None) -> dict | None:
-    if not raw:
-        return None
-    try:
-        return json.loads(raw)
-    except (ValueError, TypeError):
-        return None
-
-
-async def attachment_text(conv_id: str, source: str) -> str | None:
-    """Extracted text of an uploaded attachment (from the chat's index) for the preview panel."""
-    owner = await team.current_owner_id()
-    async with get_sessionmaker()() as s:
-        conv = await s.get(Conversation, uuid.UUID(conv_id))
-        if conv is None or not _owned_by(conv, owner) or not conv.collection_id:
-            return None
-        collection = str(conv.collection_id)
-    text = await rag.document_text(collection, source)
-    return text or None
-
-
-async def save_reasoning(conv_id: str, message_id: str, reasoning: dict) -> bool:
-    """Persist the reasoning-panel snapshot for one assistant message so it survives reloads."""
-    try:
-        payload = json.dumps(reasoning)[:200_000]  # bounded; this is UI metadata, not the answer
-    except (TypeError, ValueError):
-        return False
-    owner = await team.current_owner_id()
-    async with get_sessionmaker()() as s:
-        message = await s.get(Message, uuid.UUID(message_id))
-        if message is None or str(message.conversation_id) != str(uuid.UUID(conv_id)):
-            return False
-        conv = await s.get(Conversation, message.conversation_id)
-        if conv is None or not _owned_by(conv, owner):
-            return False
-        message.reasoning = payload
-        await s.commit()
-        return True
-
-
-_UNSET = object()
-
-
-async def update_conversation(
-    conv_id: str,
-    *,
-    model=_UNSET,
-    system_prompt=_UNSET,
-    effort=_UNSET,
-    context_window=_UNSET,
-    project_id=_UNSET,
-) -> dict | None:
-    owner = await team.current_owner_id()
-    async with get_sessionmaker()() as s:
-        conv = await s.get(Conversation, uuid.UUID(conv_id))
-        if conv is None:
-            return None
-        if not _owned_by(conv, owner):
-            return None
-        if model is not _UNSET and model:
-            conv.model = model
-        if system_prompt is not _UNSET:
-            conv.system_prompt = (system_prompt or None)
-        if effort is not _UNSET:
-            conv.effort = (effort or None)
-        if context_window is not _UNSET:
-            conv.context_window = context_window
-        if conv.context_window:  # clamp to the (possibly new) model's real maximum
-            conv.context_window = min(int(conv.context_window), ai.model_context_window(conv.model))
-        if project_id is not _UNSET:
-            if project_id:
-                project = await s.get(Project, uuid.UUID(project_id))
-                if project is None or not _owned_by(project, owner):
-                    return None
-                conv.project_id = project.id
-            else:
-                conv.project_id = None
-        await s.commit()
-        await s.refresh(conv)
-        return {"id": str(conv.id), "project_id": str(conv.project_id) if conv.project_id else None,
-                "title": conv.title, "model": conv.model,
-                "system_prompt": conv.system_prompt, "effort": conv.effort,
-                "context_window": _effective_context_window(conv.context_window)}
-
-
-async def delete_conversation(conv_id: str) -> bool:
-    owner = await team.current_owner_id()
-    async with get_sessionmaker()() as s:
-        conv = await s.get(Conversation, uuid.UUID(conv_id))
-        if conv is None:
-            return False
-        if owner is not None and conv.owner_id != owner:  # team mode: can't delete another user's chat
-            return False
-        await s.delete(conv)
-        await s.commit()
-        return True
-
-
-_HTML_DOC = re.compile(r"(<!doctype html.*?</html\s*>|<html[\s>].*?</html\s*>)", re.IGNORECASE | re.DOTALL)
-
-
-def _html_artifact_from_reply(text: str) -> tuple[str, list[dict]] | None:
-    """A complete HTML document inside a reply becomes a real previewable file (like documents),
-    and the raw dump is replaced by a short line — users never asked to read source code."""
-    match = _HTML_DOC.search(text or "")
-    if not match or len(match.group(1)) < 700:
-        return None
-    html_doc = match.group(1)
-    title = re.search(r"<title>(.*?)</title>", html_doc, re.IGNORECASE | re.DOTALL)
-    slug = re.sub(r"[^a-z0-9]+", "-", (title.group(1).strip() if title else "page").lower()).strip("-")[:60] or "page"
-    try:
-        stored = file_library.store(f"{slug}.html", "text/html", html_doc.encode("utf-8"))
-    except ValueError:
-        return None
-    # strip the fenced/naked dump around the document from the visible reply
-    cleaned = _HTML_DOC.sub("", text)
-    cleaned = re.sub(r"```(?:html)?\s*```", "", cleaned).strip()
-    if not cleaned:
-        cleaned = f"Built **{title.group(1).strip() if title else 'your page'}** — preview or download it below."
-    return cleaned, [{"kind": "file", **stored}]
-
-
-async def _persist_assistant(
-    cid: uuid.UUID,
-    text: str,
-    model: str,
-    artifacts: list[dict] | None = None,
-) -> str:
-    if not artifacts:
-        converted = _html_artifact_from_reply(text)
-        if converted:
-            text, artifacts = converted
-    async with get_sessionmaker()() as s:
-        message = Message(
-            conversation_id=cid,
-            role="assistant",
-            content=text,
-            model=model,
-            artifacts=json.dumps(artifacts) if artifacts else None,
-        )
-        s.add(message)
-        conv = await s.get(Conversation, cid)
-        if conv is not None:
-            conv.updated_at = datetime.datetime.now(datetime.timezone.utc)
-        await s.commit()
-        await s.refresh(message)
-        return str(message.id)
-
-
-async def _generate(
-    cid: uuid.UUID,
-    model: str,
-    system_prompt: str | None,
-    messages: list[dict],
-    effort: str | None = None,
-    untrusted_context: str | None = None,
-    trusted_context: str | None = None,
-) -> AsyncIterator[dict]:
-    """Stream the assistant reply and persist it (saved even if the client cancels)."""
-    parts: list[str] = []
-    message_id: str | None = None
-    usage_out: dict = {}
-    user_text = _latest_user_text(messages)
-    formatted_prompt = build_system_prompt(  # explicit authority layers (app > skills > user > untrusted)
-        app_rules=FORMAT_INSTRUCTIONS,
-        skills_block=skills.skills_prompt(user_text),
-        user_preferences=system_prompt,
-        trusted_context=trusted_context,
-        untrusted_context=untrusted_context,
-    )
-    # Code/creative work (code, web apps, SVGs, diagrams, building things) always gets high effort.
-    gen_effort = filegen.quality_effort(model, effort) if _wants_high_effort(user_text) else effort
-    log_event(_log, "chat_generate_started", model=model, rag=bool(untrusted_context), effort=gen_effort or "default")
-    think = ThinkStream()  # strips provider/inline hidden reasoning; public trace is emitted separately
-    try:
-        async for delta in ai.stream_chat(model, messages, formatted_prompt, gen_effort, usage_out):
-            if isinstance(delta, ai.ReasoningDelta):
-                for ev in think.feed_reasoning(str(delta)):
-                    yield ev
-                continue
-            answer, events = think.feed(delta)  # strip inline <think> → reasoning steps; keep the answer
-            for ev in events:
-                yield ev
-            if answer:
-                parts.append(answer)
-                yield stream_events.delta(answer)
-        tail, events = think.finish()
-        for ev in events:
-            yield ev
-        if tail:
-            parts.append(tail)
-            yield stream_events.delta(tail)
-    except ai.MissingKeyError as exc:
-        yield stream_events.missing_key(exc.provider)
-        return
-    except Exception as exc:  # noqa: BLE001 — already sanitized by ai.stream_chat
-        log_event(_log, "chat_generate_failed", model=model, error=type(exc).__name__)
-        yield stream_events.error(str(exc))
-        # Persist the failed turn too — otherwise the error (and any partial answer) vanishes as soon
-        # as the user switches chats, leaving a user message with no reply and a hole in the context.
-        failed_text = _strip_think("".join(parts)).strip()
-        error_note = f"⚠️ The model call failed: {exc}"
-        failed_text = f"{failed_text}\n\n{error_note}" if failed_text else error_note
-        message_id = await _persist_assistant(cid, failed_text, model)
-        parts.clear()  # already persisted with the error note; don't re-persist in finally
-        yield stream_events.message_id(message_id)
-        return
-    finally:
-        if parts:  # runs on normal completion AND on client-cancel (GeneratorExit)
-            message_id = await _persist_assistant(cid, _strip_think("".join(parts)), model)
-    if message_id:
-        yield stream_events.message_id(message_id)
-    if usage_out.get("tokens_out") or usage_out.get("tokens_in"):
-        # exact per-message token count (API/custom routes report it); the UI shows a live
-        # estimate during streaming and replaces it with this exact count on completion
-        yield stream_events.message_usage(
-            usage_out.get("tokens_in"),
-            usage_out.get("tokens_out"),
-            usage_out.get("pricing_known", True),
-        )
-    if usage_out.get("cost") is not None and (usage_out.get("tokens_out") or usage_out.get("tokens_in")):
-        from backend.features import usage as usage_mod
-        await usage_mod.record(usage_out["provider"], usage_out["model"], usage_out["tokens_in"], usage_out["tokens_out"], usage_out["cost"])
-        yield stream_events.usage(await usage_mod.summary())  # live meter update
-    yield stream_events.done()
-
-
-async def _rag_context(model: str, collection_id: str, query: str) -> tuple[str | None, list[str]]:
-    """Retrieve top chunks from one collection (kept for callers that pass a single id)."""
-    return await _gather_rag(model, [collection_id], query)
-
-
-# Strict mode: the turn has its own attachments (the user is clearly talking about THOSE), or the
-# text is too short/vague to judge similarity reliably ("Do it") — old files must clear a much
-# higher bar to be pulled in, instead of tagging along on every message.
-_STRICT_MAX_DIST = 0.45
-
-
-async def _gather_rag(model: str, collection_ids: list[str], query: str, *, strict: bool = False) -> tuple[str | None, list[str]]:
-    """Retrieve and merge top chunks across every relevant collection (selected data + project files).
-
-    Searching all of them means project files are never dropped when "use my data" is also on, and a
-    project chat always sees its own files. Results are de-duplicated and redacted for cloud models.
-    """
-    is_local = ai.model_provider(model) == "ollama"
-    seen: set[tuple[str, str]] = set()
-    blocks: list[str] = []
-    sources: list[str] = []
-    for collection_id in dict.fromkeys(cid for cid in collection_ids if cid):  # dedupe, keep order
-        try:
-            results = await rag.search(collection_id, query, k=settings.rag_top_k)
-        except Exception:  # noqa: BLE001 — a retrieval failure on one collection shouldn't break the chat
-            continue
-        for r in results:
-            if strict and not r.get("kw") and r.get("dist", 1.0) > _STRICT_MAX_DIST:
-                continue  # not clearly about this message — leave the old file out
-            key = (r["source"], r["content"][:120])
-            if key in seen:
-                continue
-            seen.add(key)
-            blocks.append(f"[{r['source']}]\n{privacy.redact_for_model(r['content'], is_local)}")
-            if r["source"] not in sources:
-                sources.append(r["source"])
-    return ("\n\n".join(blocks) if blocks else None), sources
-
-
-def _vague_query(text: str) -> bool:
-    """Too little signal to judge file relevance (e.g. 'Do it', 'contineou', 'yes please')."""
-    meaningful = [w for w in re.findall(r"[A-Za-z0-9]+", text or "") if len(w) > 2]
-    return len(meaningful) < 4
 
 
 _FILE_FORMAT_PATTERNS = [
@@ -426,7 +56,7 @@ async def _conv_title(cid: uuid.UUID) -> str:
     owner = await team.current_owner_id()
     async with get_sessionmaker()() as s:
         conv = await s.get(Conversation, cid)
-        if conv is not None and not _owned_by(conv, owner):
+        if conv is not None and not conversations._owned_by(conv, owner):
             raise PermissionError("Conversation access denied.")
         return (conv.title if conv and conv.title else None) or "Orrery file"
 
@@ -485,92 +115,11 @@ async def _deliver_docspec(
         return
     idx = content.lower().find("```orrery-doc")
     summary = (content[:idx] if idx >= 0 else content).strip()[:300] or "Here is your file."
-    message_id = await _persist_assistant(cid, summary, model, produced)
+    message_id = await persistence._persist_assistant(cid, summary, model, produced)
     yield stream_events.delta(summary)
     yield stream_events.files(produced)
     yield stream_events.message_id(message_id)
     yield stream_events.done()
-
-
-# --- detached runs: keep generating + persisting even if the client navigates away ---
-_RUN_DONE = object()
-_run_queues: dict[str, asyncio.Queue] = {}
-_run_tasks: dict[str, asyncio.Task] = {}
-
-
-def start_detached(conv_id: str, source: AsyncIterator[dict]) -> asyncio.Queue:
-    """Drive a generation to completion in a background task (it persists in its own finally),
-    pushing events to a queue the HTTP request observes. Client disconnect stops the observer,
-    not the task — so the reply finishes and is saved regardless. Recorded in the Task Brain."""
-    cancel_run(conv_id)
-    queue: asyncio.Queue = asyncio.Queue()
-    _run_queues[conv_id] = queue
-
-    async def drive() -> None:
-        task_id: str | None = None
-        status = "done"
-        try:
-            try:  # the Task Brain ledger is best-effort and must NEVER hang or fail the generation
-                title = await asyncio.wait_for(_conv_title(uuid.UUID(conv_id)), timeout=5)
-                task_id = await asyncio.wait_for(taskbrain.start("chat", title, conv_id), timeout=5)
-            except Exception:  # noqa: BLE001 — ledger down/slow → just skip recording
-                task_id = None
-            async for event in source:
-                if "error" in event:
-                    status = "failed"
-                queue.put_nowait(event)
-        except asyncio.CancelledError:
-            status = "canceled"
-            raise
-        except Exception as exc:  # noqa: BLE001 — surface a sanitized error
-            status = "failed"
-            queue.put_nowait(stream_events.error(str(exc)))
-        finally:
-            queue.put_nowait(_RUN_DONE)
-            if _run_queues.get(conv_id) is queue:
-                _run_queues.pop(conv_id, None)
-            _run_tasks.pop(conv_id, None)
-            try:
-                await asyncio.wait_for(taskbrain.finish(task_id, status), timeout=5)
-            except Exception:  # noqa: BLE001 — ledger update is best-effort
-                pass
-
-    _run_tasks[conv_id] = asyncio.create_task(drive())
-    return queue
-
-
-async def observe(queue: asyncio.Queue) -> AsyncIterator[dict]:
-    while True:
-        event = await queue.get()
-        if event is _RUN_DONE:
-            return
-        yield event
-
-
-def is_running(conv_id: str) -> bool:
-    """True if a detached generation for this conversation is still in flight."""
-    return conv_id in _run_tasks
-
-
-async def resume(conv_id: str) -> AsyncIterator[dict]:
-    """Re-attach to an in-flight generation and stream its remaining events. If nothing is
-    running, signal done immediately so the client just reloads the (saved) conversation."""
-    queue = _run_queues.get(conv_id)
-    if queue is None:
-        yield stream_events.done()
-        return
-    yield stream_events.resumed()
-    async for event in observe(queue):
-        yield event
-    yield stream_events.done()
-
-
-def cancel_run(conv_id: str) -> None:
-    """Explicitly stop a run (the Stop button) — different from a client just navigating away."""
-    task = _run_tasks.pop(conv_id, None)
-    _run_queues.pop(conv_id, None)
-    if task and not task.done():
-        task.cancel()
 
 
 @dataclass(slots=True)
@@ -606,7 +155,7 @@ async def _prepare_turn(cid: uuid.UUID, user_content: str, attachments: list[dic
         conv = await s.get(Conversation, cid)
         if conv is None:
             return None
-        if not _owned_by(conv, owner):
+        if not conversations._owned_by(conv, owner):
             return None
         model, system_prompt, effort = conv.model, conv.system_prompt, conv.effort
         project_id = conv.project_id
@@ -763,7 +312,7 @@ async def _route_research(
     research_trusted = await project_store.trusted_context(project_id)
 
     async def _persist_research(text: str, arts: list[dict] | None) -> str:
-        return await _persist_assistant(cid, text, model, arts)
+        return await persistence._persist_assistant(cid, text, model, arts)
 
     async for event in research.run(
         model, query,
@@ -819,7 +368,7 @@ async def _route_project_create(
     project = await project_store.create_project(project_name)
     await project_store.set_conversation_project(str(cid), project["id"])
     message = f"Created project **{project['name']}** and attached this chat to it."
-    message_id = await _persist_assistant(cid, message, model)
+    message_id = await persistence._persist_assistant(cid, message, model)
     yield stream_events.project(project)
     yield stream_events.delta(message)
     if message_id:
@@ -838,7 +387,7 @@ async def _route_audio_unavailable(
     route_event_id: str | None,
 ) -> AsyncIterator[dict]:
     """Return a clear status when voice/audio providers are not configured."""
-    message_id = await _persist_assistant(cid, message, model)
+    message_id = await persistence._persist_assistant(cid, message, model)
     yield trace.warning("Audio route unavailable", "Voice playback/transcription providers are not configured yet.")
     yield stream_events.delta(message)
     if message_id:
@@ -890,7 +439,7 @@ async def _route_file(
                     continue
             if produced:
                 summary = result.get("summary") or "Here is your file."
-                message_id = await _persist_assistant(cid, summary, model, produced)
+                message_id = await persistence._persist_assistant(cid, summary, model, produced)
                 yield stream_events.delta(summary)
                 yield stream_events.files(produced)
                 yield stream_events.message_id(message_id)
@@ -978,7 +527,7 @@ async def _route_model_reply(
         )
 
         async def _persist(text: str, arts: list[dict] | None) -> str:
-            return await _persist_assistant(cid, text, model, arts)
+            return await persistence._persist_assistant(cid, text, model, arts)
 
         async for event in code_interpreter.run(
             model, formatted_prompt, limited_messages, gen_effort, trace=trace, persist=_persist,
@@ -1000,7 +549,7 @@ async def _route_model_reply(
                 "execution and sandbox file tools are unavailable this turn. Answering directly.",
                 kind="context", status="warning", phase="prepare",
             )
-        async for event in _generate(cid, model, gen_system, limited_messages, effort, rag_context, trusted_context):
+        async for event in generation._generate(cid, model, gen_system, limited_messages, effort, rag_context, trusted_context):
             if "error" in event:
                 outcome = "failed"
                 yield trace.error("Generation failed", event.get("error", "The model call failed."))
@@ -1056,7 +605,7 @@ async def stream_reply(
     # Vague follow-ups ("Do it", "yes go ahead") inherit the previous ask's intent, so a request for
     # an HTML dashboard doesn't lose its file route just because the confirmation was three words.
     plan_text = user_content
-    if _vague_query(user_content):
+    if retrieval._vague_query(user_content):
         prev = next(
             (m["content"] for m in reversed(messages[:-1])
              if m.get("role") == "user" and isinstance(m.get("content"), str) and m["content"].strip()),
@@ -1103,8 +652,8 @@ async def stream_reply(
     if rag_collections and user_content.strip():
         # Relevance first: with fresh attachments (the message is about THOSE) or a vague message,
         # stored files must clearly match before they're allowed into context at all.
-        strict = bool(attachments) or _vague_query(user_content)
-        block, sources = await _gather_rag(model, rag_collections, user_content, strict=strict)
+        strict = bool(attachments) or retrieval._vague_query(user_content)
+        block, sources = await retrieval._gather_rag(model, rag_collections, user_content, strict=strict)
         if block:
             rag_context = block
             yield stream_events.sources(sources)
@@ -1191,7 +740,7 @@ async def _deliver_code_image(
         "content": svg,
     }
     message = "Created a code-rendered SVG image from your prompt."
-    message_id = await _persist_assistant(cid, message, model, [artifact])
+    message_id = await persistence._persist_assistant(cid, message, model, [artifact])
     yield stream_events.artifact(artifact)
     yield stream_events.delta(message)
     yield stream_events.message_id(message_id)
@@ -1207,7 +756,7 @@ async def stream_code_image(conv_id: str, user_content: str) -> AsyncIterator[di
         if conv is None:
             yield stream_events.error("Conversation not found.")
             return
-        if not _owned_by(conv, owner):
+        if not conversations._owned_by(conv, owner):
             yield stream_events.error("Conversation not found.")
             return
         model, system_prompt, effort = conv.model, conv.system_prompt, conv.effort
@@ -1242,7 +791,7 @@ async def regenerate(conv_id: str) -> AsyncIterator[dict]:
         if conv is None:
             yield stream_events.error("Conversation not found.")
             return
-        if not _owned_by(conv, owner):
+        if not conversations._owned_by(conv, owner):
             yield stream_events.error("Conversation not found.")
             return
         model, system_prompt, effort = conv.model, conv.system_prompt, conv.effort
@@ -1273,7 +822,7 @@ async def regenerate(conv_id: str) -> AsyncIterator[dict]:
     yield trace.outer("Regenerating the answer", "Re-answering the last turn with the selected model.", status="running", phase="route")
     if trusted_context:
         yield trace.step("Preparing project context", "Loaded the current project's standing context and instructions.", kind="context", status="done", phase="context")
-    async for event in _generate(cid, model, system_prompt, messages, effort, trusted_context=trusted_context):
+    async for event in generation._generate(cid, model, system_prompt, messages, effort, trusted_context=trusted_context):
         if event.get("done"):
             yield trace.done("Finished streaming and saved the regenerated reply.")
             yield trace.summary()

@@ -18,6 +18,7 @@ import {
 import { AttachIcon, SendIcon } from "../components/icons.jsx";
 import Markdown from "../components/Markdown.jsx";
 import { isCodeImagePrompt } from "../lib/chatCommands.js";
+import { copyText } from "../lib/clipboard.js";
 import {
   getModels, listCollections, listConversations, getConversation, createConversation,
   updateConversation, deleteConversation, streamMessage, regenerateMessage,
@@ -510,8 +511,12 @@ export default function Chat() {
   }
 
   async function copy(text, key) {
-    const { copyText } = await import("../lib/clipboard.js");
-    if (await copyText(String(text || "")) && key) {
+    const ok = await copyText(String(text ?? ""));
+    if (!ok) {
+      setBanner("Copy failed. The desktop clipboard is not available right now.");
+      return;
+    }
+    if (key) {
       setCopiedKey(key);
       setTimeout(() => setCopiedKey((cur) => (cur === key ? "" : cur)), 1200);
     }

@@ -1410,3 +1410,16 @@ management, app-like density for Settings/Admin.
   as run_shell in the shared tool registry for Automations/Agents.
 - Verified live: commands executed, output files returned, and the network confirmed dead from
   inside the container (download attempt blocked).
+
+
+## Step 104 - chat.py split into a modular package (July 3, 2026)
+
+- The 1,280-line chat module is now a package with focused files: conversations (CRUD + ownership),
+  retrieval (relevance-gated file context), persistence (saving replies, HTML->file conversion),
+  generation (the streaming model call), runs (detached background generations), and router (turn
+  prep + task routes + the dispatcher). The public surface is unchanged - everything still imports
+  `backend.features.chat` - and cross-module calls go through module attributes so each function has
+  exactly one patch/extension point.
+- Zero behavior change: all 205 tests pass (only their patch targets moved to the owning modules),
+  and the app boots and serves normally. This is the modular-monolith shape the rest of the backend
+  (api.py routers next) will follow.

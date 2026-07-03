@@ -4,6 +4,7 @@ import {
   createTeamUser, deleteTeamUser, getAdmin, getTeam, listTeamUsers, setAdminFeatures, setAdminToken,
   setupTeam, signOutTeam, updateTeamUser,
 } from "../lib/api.js";
+import { copyText } from "../lib/clipboard.js";
 
 // Admin: feature flags + team access (identity, keys, roles). In team mode the controls are admin-only
 // and authorized by role; in single-user (solo) mode an optional token locks the feature toggles.
@@ -84,8 +85,10 @@ export default function Admin() {
   async function doSignOut() {
     try { await signOutTeam(); } finally { window.dispatchEvent(new CustomEvent("orrery-team-changed")); window.location.reload(); }
   }
-  function copyKey() {
-    navigator.clipboard?.writeText(issued.key).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); });
+  async function copyKey() {
+    if (!await copyText(issued.key)) return;
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
   }
 
   return (
@@ -112,7 +115,7 @@ export default function Admin() {
             <p>Copy it now — it's shown once and can't be retrieved later. Share it with that person privately.</p>
             <div className="key-reveal-row">
               <code>{issued.key}</code>
-              <button className="btn" onClick={copyKey}>{copied ? <><Check /> Copied</> : <><Copy /> Copy</>}</button>
+              <button className={`btn${copied ? " copied-pop" : ""}`} onClick={copyKey}>{copied ? <><Check /> Copied</> : <><Copy /> Copy</>}</button>
             </div>
             <button className="btn ghost sm" onClick={() => setIssued(null)}>I've saved it</button>
           </div>

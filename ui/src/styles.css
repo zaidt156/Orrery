@@ -196,6 +196,16 @@ body{
 .send{width:30px;height:30px;border-radius:8px;background:var(--amber);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#221805}
 .composer .hint{font-family:var(--font-mono); font-size:9.5px; color:var(--faint); margin-top:7px; padding-left:4px}
 .composer .send:disabled{opacity:.5; cursor:default}
+.icon-btn,.research-toggle,.send,.cmd-chip,.file-chip,.file-btn,.file-downloadall,.cb-copy,
+.msg-actions button,.prompt-actions button,.code-image figcaption button{
+  transition:transform .16s ease, background-color .16s ease, border-color .16s ease, color .16s ease, box-shadow .16s ease, opacity .16s ease;
+}
+.icon-btn:not(:disabled):active,.research-toggle:not(:disabled):active,.send:not(:disabled):active,.cmd-chip:not(:disabled):active,
+.file-chip:not(:disabled):active,.file-btn:not(:disabled):active,.file-downloadall:not(:disabled):active,.cb-copy:not(:disabled):active,
+.msg-actions button:not(:disabled):active,.prompt-actions button:not(:disabled):active,.code-image figcaption button:not(:disabled):active{
+  transform:translateY(1px) scale(.96);
+}
+.send:not(:disabled):hover{transform:translateY(-1px); box-shadow:0 6px 18px rgba(242,177,78,.18)}
 
 /* Phase 1: live chat bits */
 .convo-empty{font-size:11.5px; color:var(--faint); padding:8px 10px}
@@ -467,9 +477,23 @@ body{
 button.attach-chip{cursor:pointer}
 button.attach-chip:hover{border-color:var(--amber); color:var(--text)}
 /* copied feedback: quick pop on any copy control */
-@keyframes copied-pop{0%{transform:scale(1)}45%{transform:scale(1.25)}100%{transform:scale(1)}}
-.copied-pop{animation:copied-pop .35s ease; color:#54c08a !important; border-color:#54c08a !important}
-.cb-copy.flash{color:#54c08a}
+@keyframes copied-pop{
+  0%{transform:scale(.94); box-shadow:0 0 0 0 rgba(84,192,138,.28)}
+  45%{transform:scale(1.16); box-shadow:0 0 0 5px rgba(84,192,138,.12)}
+  100%{transform:scale(1); box-shadow:0 0 0 0 rgba(84,192,138,0)}
+}
+.copied-pop,.cb-copy.flash{
+  animation:copied-pop .38s cubic-bezier(.22,1,.36,1);
+  color:#54c08a !important;
+  border-color:#54c08a !important;
+  background:rgba(84,192,138,.1) !important;
+}
+.copied-pop svg{stroke:#54c08a}
+@media (prefers-reduced-motion: reduce){
+  .icon-btn,.research-toggle,.send,.cmd-chip,.file-chip,.file-btn,.file-downloadall,.cb-copy,
+  .msg-actions button,.prompt-actions button,.code-image figcaption button{transition:none}
+  .copied-pop,.cb-copy.flash{animation:none}
+}
 .code-image{margin:12px 0 4px;max-width:min(760px,72vw);border:1px solid var(--line);border-radius:8px;overflow:hidden;background:#fff}
 .code-image img{display:block;width:100%;height:auto;aspect-ratio:3/2;object-fit:contain;background:#fff}
 .code-image figcaption{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 9px;background:var(--bg1);color:var(--faint);font-family:var(--font-mono);font-size:10px}

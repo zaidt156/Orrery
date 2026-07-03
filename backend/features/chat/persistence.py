@@ -1,0 +1,61 @@
+"""Persisting assistant replies — including turning complete HTML documents into previewable files."""
+from __future__ import annotations
+
+import datetime
+import json
+import re
+import uuid
+
+from backend.core.database import get_sessionmaker
+from backend.core.models import Conversation, Message
+from backend.features import files as file_library
+
+_HTML_DOC = re.compile(r"(<!doctype html.*?</html\s*>|<html[\s>].*?</html\s*>)", re.IGNORECASE | re.DOTALL)
+
+
+def _html_artifact_from_reply(text: str) -> tuple[str, list[dict]] | None:
+    """A complete HTML document inside a reply becomes a real previewable file (like documents),
+    and the raw dump is replaced by a short line — users never asked to read source code."""
+    match = _HTML_DOC.search(text or "")
+    if not match or len(match.group(1)) < 700:
+        return None
+    html_doc = match.group(1)
+    title = re.search(r"<title>(.*?)</title>", html_doc, re.IGNORECASE | re.DOTALL)
+    slug = re.sub(r"[^a-z0-9]+", "-", (title.group(1).strip() if title else "page").lower()).strip("-")[:60] or "page"
+    try:
+        stored = file_library.store(f"{slug}.html", "text/html", html_doc.encode("utf-8"))
+    except ValueError:
+        return None
+    # strip the fenced/naked dump around the document from the visible reply
+    cleaned = _HTML_DOC.sub("", text)
+    cleaned = re.sub(r"```(?:html)?\s*```", "", cleaned).strip()
+    if not cleaned:
+        cleaned = f"Built **{title.group(1).strip() if title else 'your page'}** — preview or download it below."
+    return cleaned, [{"kind": "file", **stored}]
+
+
+async def _persist_assistant(
+    cid: uuid.UUID,
+    text: str,
+    model: str,
+    artifacts: list[dict] | None = None,
+) -> str:
+    if not artifacts:
+        converted = _html_artifact_from_reply(text)
+        if converted:
+            text, artifacts = converted
+    async with get_sessionmaker()() as s:
+        message = Message(
+            conversation_id=cid,
+            role="assistant",
+            content=text,
+            model=model,
+            artifacts=json.dumps(artifacts) if artifacts else None,
+        )
+        s.add(message)
+        conv = await s.get(Conversation, cid)
+        if conv is not None:
+            conv.updated_at = datetime.datetime.now(datetime.timezone.utc)
+        await s.commit()
+        await s.refresh(message)
+        return str(message.id)

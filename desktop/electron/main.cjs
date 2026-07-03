@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, ipcMain, shell } = require("electron");
+const { app, BrowserWindow, clipboard, dialog, ipcMain, shell } = require("electron");
 const { autoUpdater } = require("electron-updater");
 const { spawn } = require("child_process");
 const crypto = require("crypto");
@@ -142,6 +142,11 @@ ipcMain.handle("orrery:save-file", async (_event, payload = {}) => {
   if (result.canceled || !result.filePath) return { ok: false, cancelled: true };
   await fs.promises.writeFile(result.filePath, Buffer.from(b64, "base64"));
   return { ok: true, path: result.filePath };
+});
+
+ipcMain.handle("orrery:copy-text", async (_event, text = "") => {
+  clipboard.writeText(String(text ?? ""));
+  return { ok: true };
 });
 
 ipcMain.handle("orrery:desktop-info", () => ({

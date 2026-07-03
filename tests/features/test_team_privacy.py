@@ -60,7 +60,7 @@ async def test_conversation_access_rejects_another_owner(monkeypatch):
         return "owner-a"
 
     monkeypatch.setattr(chat.team, "current_owner_id", owner_a)
-    monkeypatch.setattr(chat, "get_sessionmaker", lambda: _sessionmaker(fake))
+    monkeypatch.setattr(chat.conversations, "get_sessionmaker", lambda: _sessionmaker(fake))
 
     assert await chat.can_access_conversation(str(cid)) is False
 
@@ -75,7 +75,7 @@ async def test_create_conversation_rejects_foreign_project(monkeypatch):
         return "owner-a"
 
     monkeypatch.setattr(chat.team, "current_owner_id", owner_a)
-    monkeypatch.setattr(chat, "get_sessionmaker", lambda: _sessionmaker(fake))
+    monkeypatch.setattr(chat.conversations, "get_sessionmaker", lambda: _sessionmaker(fake))
 
     with pytest.raises(ValueError, match="Project not found"):
         await chat.create_conversation("openai/test", None, project_id=str(pid))
