@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import * as echarts from "echarts";
-import { Code2, Database, LayoutDashboard, Layers, Plus, RefreshCw, Trash2, Undo2, WandSparkles } from "lucide-react";
+import { Code2, Database, LayoutDashboard, Layers, Plus, RefreshCw, Search, Trash2, Undo2, WandSparkles } from "lucide-react";
 import {
   addDataConnection, createDashboard, createDataModel, createDatasetFromApi, createDatasetFromFile,
   createWorkspace, deleteDashboard, deleteDataModel, getModels, getSchemaMap, listDashboards,
@@ -144,7 +144,8 @@ export default function Dashboards() {
   const [modelConn, setModelConn] = useState(""); // connection the join editor works on
   const [schemaMap, setSchemaMap] = useState({}); // {table: [columns]}
   const [dataModels, setDataModelsList] = useState([]);
-  const [modelDraft, setModelDraft] = useState({ name: "", base: "", joins: [] });
+  const [modelDraft, setModelDraft] = useState({ name: "", tables: [], links: [] });
+  const [tableFilter, setTableFilter] = useState("");
   const [editTransforms, setEditTransforms] = useState(null); // working copy while editing
   const dragIndex = useRef(null);
 
@@ -166,6 +167,7 @@ export default function Dashboards() {
   async function openModelEditor(cid) {
     setModelConn(cid); setModelsOpen(true); setErr("");
     setModelDraft({ name: "", tables: [], links: [] });
+    setTableFilter("");
     try {
       const [sm, dm] = await Promise.all([getSchemaMap(cid), listDataModels(cid)]);
       setSchemaMap(sm.tables || {});
@@ -181,14 +183,14 @@ export default function Dashboards() {
     for (const prev of existingTables) {
       const prevCols = schemaMap[prev] || [];
       const fkToPrev = cols.find((c) => c === `${stem(prev)}_id`);
-      if (fkToPrev && prevCols.includes("id")) return { left: `${prev}.id`, right: `${newTable}.${fkToPrev}` };
+      if (fkToPrev && prevCols.includes("id")) return { left: `${prev}.id`, right: `${newTable}.${fkToPrev}`, type: "left" };
       const fkToNew = prevCols.find((c) => c === `${stem(newTable)}_id`);
-      if (fkToNew && cols.includes("id")) return { left: `${prev}.${fkToNew}`, right: `${newTable}.id` };
+      if (fkToNew && cols.includes("id")) return { left: `${prev}.${fkToNew}`, right: `${newTable}.id`, type: "left" };
       const shared = cols.find((c) => c !== "id" && prevCols.includes(c));
-      if (shared) return { left: `${prev}.${shared}`, right: `${newTable}.${shared}` };
+      if (shared) return { left: `${prev}.${shared}`, right: `${newTable}.${shared}`, type: "left" };
     }
     const first = existingTables[0];
-    return { left: first ? `${first}.${(schemaMap[first] || [])[0] || "id"}` : "", right: `${newTable}.${cols[0] || "id"}` };
+    return { left: first ? `${first}.${(schemaMap[first] || [])[0] || "id"}` : "", right: `${newTable}.${cols[0] || "id"}`, type: "left" };
   }
 
   function toggleModelTable(t) {
@@ -204,12 +206,25 @@ export default function Dashboards() {
     });
   }
 
+  function updateModelLink(index, patch) {
+    setModelDraft((d) => {
+      const links = [...(d.links || [])];
+      links[index] = { ...(links[index] || {}), ...patch };
+      return { ...d, links };
+    });
+  }
+
   async function saveModel() {
     const { name, tables, links } = modelDraft;
     if (!name.trim() || tables.length < 2) return;
     setBusy(true); setErr("");
     try {
-      const joins = tables.slice(1).map((t, i) => ({ table: t, left: links[i]?.left || "", right: links[i]?.right || "", type: "left" }));
+      const joins = tables.slice(1).map((t, i) => ({
+        table: t,
+        left: links[i]?.left || "",
+        right: links[i]?.right || "",
+        type: links[i]?.type || "left",
+      }));
       await createDataModel(modelConn, name.trim(), { base: tables[0], joins });
       setDataModelsList((await listDataModels(modelConn)).models || []);
       setModelDraft({ name: "", tables: [], links: [] });
@@ -347,6 +362,15 @@ export default function Dashboards() {
 
   const active = items.find((d) => d.id === activeId);
   const showCreate = creating || (!items.length && !activeId);
+  const schemaTables = Object.keys(schemaMap || {});
+  const selectedTables = modelDraft.tables || [];
+  const selectedColumns = selectedTables.reduce((sum, table) => sum + ((schemaMap[table] || []).length), 0);
+  const visibleSchemaTables = schemaTables.filter((table) => {
+    const q = tableFilter.trim().toLowerCase();
+    if (!q) return true;
+    return table.toLowerCase().includes(q) || (schemaMap[table] || []).some((col) => col.toLowerCase().includes(q));
+  });
+  const currentModelConnection = connections.find((c) => c.id === modelConn);
 
   return (
     <section className="view projects-view">
@@ -456,11 +480,114 @@ export default function Dashboards() {
             </div>
             {modelsOpen && (
               <div className="dash-model-editor">
-                <div className="dash-connect-row">
-                  <small>Connection:</small>
+                <div className="dash-model-head">
+                  <div>
+                    <b>Data model builder</b>
+                    <small>Build one reusable dataset from related tables on this connection.</small>
+                  </div>
                   <select value={modelConn} onChange={(e) => openModelEditor(e.target.value)}>
                     {connections.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                   </select>
+                </div>
+                <div className="dm-summary">
+                  <span><b>{schemaTables.length}</b><small>tables in {currentModelConnection?.name || "connection"}</small></span>
+                  <span><b>{selectedTables.length}</b><small>selected tables</small></span>
+                  <span><b>{selectedColumns}</b><small>available columns</small></span>
+                </div>
+                <div className="dm-workbench">
+                  <aside className="dm-picker">
+                    <label className="dm-search">
+                      <Search />
+                      <input value={tableFilter} onChange={(e) => setTableFilter(e.target.value)} placeholder="Search tables or columns" />
+                    </label>
+                    <div className="dm-table-list">
+                      {visibleSchemaTables.length === 0 && <div className="dm-empty small">No matching tables.</div>}
+                      {visibleSchemaTables.map((t) => {
+                        const selected = selectedTables.includes(t);
+                        return (
+                          <button key={t} className={`dm-table-option${selected ? " on" : ""}`} onClick={() => toggleModelTable(t)}>
+                            <span>
+                              <b>{t.replace(/^ds_/, "")}</b>
+                              <small>{(schemaMap[t] || []).length} columns</small>
+                            </span>
+                            <em>{selected ? "Selected" : "Add"}</em>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </aside>
+                  <div className="dm-builder">
+                    <div className="dm-builder-head">
+                      <span>
+                        <b>{selectedTables.length ? "Selected model tables" : "No tables selected"}</b>
+                        <small>{selectedTables.length > 1 ? "Adjust each join row below before saving." : "Pick at least two related tables."}</small>
+                      </span>
+                    </div>
+                    {selectedTables.length === 0 ? (
+                      <div className="dm-empty">Choose tables from the left. Orrery will suggest joins, and you can edit every key before saving.</div>
+                    ) : (
+                      <>
+                        <div className="dm-selected-grid">
+                          {selectedTables.map((t, i) => {
+                            const link = i > 0 ? modelDraft.links[i - 1] : null;
+                            const next = modelDraft.links[i];
+                            const keyCols = new Set(
+                              [link?.left, link?.right, next?.left, next?.right]
+                                .filter(Boolean).filter((r) => r.startsWith(`${t}.`)).map((r) => r.slice(t.length + 1)),
+                            );
+                            return (
+                              <div key={t} className="dm-card">
+                                <div className="dm-card-head">
+                                  <span>
+                                    {t.replace(/^ds_/, "")}
+                                    {i === 0 && <em>base</em>}
+                                  </span>
+                                  <button title="Remove table" onClick={() => toggleModelTable(t)}>x</button>
+                                </div>
+                                <div className="dm-cols">
+                                  {(schemaMap[t] || []).slice(0, 12).map((c) => (
+                                    <span key={c} className={`dm-col${keyCols.has(c) ? " key" : ""}`}>{c}</span>
+                                  ))}
+                                  {(schemaMap[t] || []).length > 12 && <span className="dm-col more">+{(schemaMap[t] || []).length - 12} more</span>}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                        {selectedTables.length > 1 && (
+                          <div className="dm-link-editor">
+                            {selectedTables.slice(1).map((t, offset) => {
+                              const link = modelDraft.links[offset] || {};
+                              const leftOptions = selectedTables.slice(0, offset + 1).flatMap((pt) => (schemaMap[pt] || []).map((c) => `${pt}.${c}`));
+                              const rightOptions = (schemaMap[t] || []).map((c) => `${t}.${c}`);
+                              return (
+                                <div key={`${t}-${offset}`} className="dm-link-row">
+                                  <div className="dm-link-label">
+                                    <Layers />
+                                    <span>
+                                      <b>Join {t.replace(/^ds_/, "")}</b>
+                                      <small>to any table already selected</small>
+                                    </span>
+                                  </div>
+                                  <select value={link.type || "left"} onChange={(e) => updateModelLink(offset, { type: e.target.value })}>
+                                    <option value="left">Left join</option>
+                                    <option value="inner">Inner join</option>
+                                  </select>
+                                  <select value={link.left || ""} onChange={(e) => updateModelLink(offset, { left: e.target.value })}>
+                                    {leftOptions.map((ref) => <option key={ref} value={ref}>{ref.replace(/^ds_/, "")}</option>)}
+                                  </select>
+                                  <span className="dm-eq">=</span>
+                                  <select value={link.right || ""} onChange={(e) => updateModelLink(offset, { right: e.target.value })}>
+                                    {rightOptions.map((ref) => <option key={ref} value={ref}>{ref.replace(/^ds_/, "")}</option>)}
+                                  </select>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
                 </div>
                 {dataModels.length > 0 && (
                   <div className="dash-model-list">

@@ -1380,3 +1380,22 @@ Next: user to clarify the 'API limit' symptom; then the router split -> Automati
   for the first installable release.
 - Ops note: the app failing to boot during this session traced to Docker Desktop being off (Postgres
   runs in Docker) - not an app bug; the DB error message says exactly that.
+
+
+## Step 102 - HTML answers become previewable files; files stop tagging along (July 3, 2026)
+
+- **Ask for a page, get a page.** When a reply contains a complete HTML document, Orrery now saves
+  it as a real file and shows the same Preview/Download card documents get - no more walls of code
+  with "save this yourself" (unless you actually ask for the code). Works on every model route,
+  including plan CLIs that can't run the sandbox.
+- **Vague follow-ups keep their intent.** "Do it" after "build me a finance dashboard web app" now
+  plans with the previous ask's intent instead of losing it.
+- **Relevance before retrieval.** When a message carries its own attachments (it's about THOSE) or
+  is too short to judge ("Do it"), stored files must clearly match before they're allowed into
+  context - and the reasoning panel now says either "N stored file(s) match this question" or
+  "Files not needed - answering on its own". Default retrieval gate tightened as well.
+- **Dropdowns de-highlighted.** The forced blue option background made every row in a select popup
+  look selected; the engine's own dark rendering handles it now.
+
+Next: refactor chat.py into a modular package (user ask; also api.py routers), Data tab dataset
+management, app-like density for Settings/Admin.

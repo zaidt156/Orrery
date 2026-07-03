@@ -243,7 +243,7 @@ async def delete_source(cid: str, source: str) -> int:
 # Above this cosine distance a chunk is judged unrelated to the question and dropped. Without this
 # gate the vector arm ALWAYS returns k chunks, so files from earlier turns kept leaking into every
 # answer ("why is it reading my Q2 report when I asked about pasta?").
-MAX_COSINE_DISTANCE = 0.62
+MAX_COSINE_DISTANCE = 0.58
 
 
 async def search(cid: str, query: str, k: int = 5) -> list[dict]:

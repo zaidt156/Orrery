@@ -234,12 +234,40 @@ async def delete_conversation(conv_id: str) -> bool:
         return True
 
 
+_HTML_DOC = re.compile(r"(<!doctype html.*?</html\s*>|<html[\s>].*?</html\s*>)", re.IGNORECASE | re.DOTALL)
+
+
+def _html_artifact_from_reply(text: str) -> tuple[str, list[dict]] | None:
+    """A complete HTML document inside a reply becomes a real previewable file (like documents),
+    and the raw dump is replaced by a short line — users never asked to read source code."""
+    match = _HTML_DOC.search(text or "")
+    if not match or len(match.group(1)) < 700:
+        return None
+    html_doc = match.group(1)
+    title = re.search(r"<title>(.*?)</title>", html_doc, re.IGNORECASE | re.DOTALL)
+    slug = re.sub(r"[^a-z0-9]+", "-", (title.group(1).strip() if title else "page").lower()).strip("-")[:60] or "page"
+    try:
+        stored = file_library.store(f"{slug}.html", "text/html", html_doc.encode("utf-8"))
+    except ValueError:
+        return None
+    # strip the fenced/naked dump around the document from the visible reply
+    cleaned = _HTML_DOC.sub("", text)
+    cleaned = re.sub(r"```(?:html)?\s*```", "", cleaned).strip()
+    if not cleaned:
+        cleaned = f"Built **{title.group(1).strip() if title else 'your page'}** — preview or download it below."
+    return cleaned, [{"kind": "file", **stored}]
+
+
 async def _persist_assistant(
     cid: uuid.UUID,
     text: str,
     model: str,
     artifacts: list[dict] | None = None,
 ) -> str:
+    if not artifacts:
+        converted = _html_artifact_from_reply(text)
+        if converted:
+            text, artifacts = converted
     async with get_sessionmaker()() as s:
         message = Message(
             conversation_id=cid,
@@ -340,7 +368,13 @@ async def _rag_context(model: str, collection_id: str, query: str) -> tuple[str 
     return await _gather_rag(model, [collection_id], query)
 
 
-async def _gather_rag(model: str, collection_ids: list[str], query: str) -> tuple[str | None, list[str]]:
+# Strict mode: the turn has its own attachments (the user is clearly talking about THOSE), or the
+# text is too short/vague to judge similarity reliably ("Do it") — old files must clear a much
+# higher bar to be pulled in, instead of tagging along on every message.
+_STRICT_MAX_DIST = 0.45
+
+
+async def _gather_rag(model: str, collection_ids: list[str], query: str, *, strict: bool = False) -> tuple[str | None, list[str]]:
     """Retrieve and merge top chunks across every relevant collection (selected data + project files).
 
     Searching all of them means project files are never dropped when "use my data" is also on, and a
@@ -356,6 +390,8 @@ async def _gather_rag(model: str, collection_ids: list[str], query: str) -> tupl
         except Exception:  # noqa: BLE001 — a retrieval failure on one collection shouldn't break the chat
             continue
         for r in results:
+            if strict and not r.get("kw") and r.get("dist", 1.0) > _STRICT_MAX_DIST:
+                continue  # not clearly about this message — leave the old file out
             key = (r["source"], r["content"][:120])
             if key in seen:
                 continue
@@ -364,6 +400,12 @@ async def _gather_rag(model: str, collection_ids: list[str], query: str) -> tupl
             if r["source"] not in sources:
                 sources.append(r["source"])
     return ("\n\n".join(blocks) if blocks else None), sources
+
+
+def _vague_query(text: str) -> bool:
+    """Too little signal to judge file relevance (e.g. 'Do it', 'contineou', 'yes please')."""
+    meaningful = [w for w in re.findall(r"[A-Za-z0-9]+", text or "") if len(w) > 2]
+    return len(meaningful) < 4
 
 
 _FILE_FORMAT_PATTERNS = [
@@ -1011,7 +1053,18 @@ async def stream_reply(
     # Plan first so the UI can show the collapsed outer reasoning card immediately. Every visible
     # line below is backend-authored: route chosen → context loaded → tool run → validated → done.
     # Raw/condensed model chain-of-thought is never surfaced here (see reasoning_trace safety rule).
-    plan = taskrouter.plan(user_content, has_attachments=bool(attachments))
+    # Vague follow-ups ("Do it", "yes go ahead") inherit the previous ask's intent, so a request for
+    # an HTML dashboard doesn't lose its file route just because the confirmation was three words.
+    plan_text = user_content
+    if _vague_query(user_content):
+        prev = next(
+            (m["content"] for m in reversed(messages[:-1])
+             if m.get("role") == "user" and isinstance(m.get("content"), str) and m["content"].strip()),
+            "",
+        )
+        if prev:
+            plan_text = f"{prev}\n{user_content}"
+    plan = taskrouter.plan(plan_text, has_attachments=bool(attachments))
     plan_meta = _plan_metadata(plan)
     plan_meta["reasoning_mode"] = reasoning.label(effort)  # Quick / Standard / Deep / Max
     trace = ReasoningTrace()
@@ -1048,14 +1101,23 @@ async def stream_reply(
             pass
     rag_context = None                 # retrieved docs — passed separately as UNTRUSTED context
     if rag_collections and user_content.strip():
-        block, sources = await _gather_rag(model, rag_collections, user_content)
+        # Relevance first: with fresh attachments (the message is about THOSE) or a vague message,
+        # stored files must clearly match before they're allowed into context at all.
+        strict = bool(attachments) or _vague_query(user_content)
+        block, sources = await _gather_rag(model, rag_collections, user_content, strict=strict)
         if block:
             rag_context = block
             yield stream_events.sources(sources)
             yield trace.step(
                 "Searching your files",
-                f"Loaded {len(sources)} passage(s) from your files, project, and connected knowledge.",
+                f"{len(sources)} stored file(s) match this question — using the relevant passages.",
                 kind="context", status="done", phase="context", metadata={"source_count": len(sources)},
+            )
+        else:
+            yield trace.step(
+                "Files not needed",
+                "Your stored files don't relate to this message — answering it on its own.",
+                kind="context", status="done", phase="context",
             )
 
     if plan.route == "image" and not attachments:
