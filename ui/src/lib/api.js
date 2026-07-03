@@ -55,12 +55,28 @@ export async function apiDownload(path, fallbackName) {
   // Desktop: browser blob downloads are unreliable inside the webview — use pywebview's
   // native Save dialog (Python writes the bytes to the path the user picks).
   if (window.pywebview?.api?.save_file) {
-    const b64 = await blobToBase64(blob);
-    const result = await window.pywebview.api.save_file(filename, b64);
-    if (result && result.ok === false && !result.cancelled) {
-      throw new Error(result.error || "Could not save the file.");
+    try {
+      const b64 = await blobToBase64(blob);
+      const result = await window.pywebview.api.save_file(filename, b64);
+      if (result?.ok) return result.path || filename;
+      if (result?.cancelled) return null;
+      if (result?.error) console.warn("Native file save failed:", result.error);
+    } catch (error) {
+      console.warn("Native file save failed:", error);
     }
-    return filename;
+  }
+
+  if (window.showSaveFilePicker) {
+    try {
+      const handle = await window.showSaveFilePicker({ suggestedName: filename });
+      const writable = await handle.createWritable();
+      await writable.write(blob);
+      await writable.close();
+      return filename;
+    } catch (error) {
+      if (error?.name === "AbortError") return null;
+      console.warn("File picker save failed:", error);
+    }
   }
 
   // Browser / dev fallback: anchor download
@@ -340,23 +356,38 @@ async function streamSSE(path, { body, signal, method = "POST" } = {}, onEvent) 
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
+  let sawDone = false;
+  const consume = (chunk) => {
+    const data = chunk
+      .split(/\r?\n/)
+      .filter((line) => line.startsWith("data:"))
+      .map((line) => line.slice(5).trim())
+      .join("\n");
+    if (!data) return;
+    try {
+      const event = JSON.parse(data);
+      if (event.done) sawDone = true;
+      onEvent(event);
+    } catch {
+      /* ignore malformed frame */
+    }
+  };
   while (true) {
     const { value, done } = await reader.read();
-    if (done) break;
+    if (done) {
+      buffer += decoder.decode();
+      break;
+    }
     buffer += decoder.decode(value, { stream: true });
     let idx;
     while ((idx = buffer.indexOf("\n\n")) >= 0) {
       const chunk = buffer.slice(0, idx).trim();
       buffer = buffer.slice(idx + 2);
-      if (chunk.startsWith("data:")) {
-        try {
-          onEvent(JSON.parse(chunk.slice(5).trim()));
-        } catch {
-          /* ignore malformed frame */
-        }
-      }
+      consume(chunk);
     }
   }
+  if (buffer.trim()) consume(buffer.trim());
+  return { done: sawDone };
 }
 
 export const streamMessage = (cid, content, attachments, collectionId, onEvent, signal) =>

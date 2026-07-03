@@ -234,8 +234,15 @@ def _flatten_json(payload) -> tuple[list, list[list]]:
 
 async def _fetch_api(url: str, headers: dict[str, str] | None) -> tuple[list, list[list]]:
     import httpx
-    if not re.match(r"^https?://", url or "", re.IGNORECASE):
-        raise ValueError("The API URL must start with http:// or https://.")
+
+    from backend.features import team
+    from backend.security import netguard
+    # SSRF guard: metadata/link-local always blocked; in team mode members can't probe the host's
+    # LAN or loopback through imports (solo users may legitimately import from their own local APIs).
+    try:
+        url = netguard.validate_fetch_url(url, allow_private=not await team.team_mode())
+    except netguard.UnsafeUrlError as exc:
+        raise ValueError(str(exc))
     async with httpx.AsyncClient(timeout=25, follow_redirects=True) as client:
         resp = await client.get(url, headers=headers or {})
         resp.raise_for_status()

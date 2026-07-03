@@ -4,7 +4,7 @@ import {
   createTeamUser, deleteTeamUser, getAdmin, getTeam, listTeamUsers, setAdminFeatures, setAdminToken,
   setupTeam, signOutTeam, updateTeamUser,
 } from "../lib/api.js";
-import { copyText } from "../lib/clipboard.js";
+import { copyTextResult } from "../lib/clipboard.js";
 
 // Admin: feature flags + team access (identity, keys, roles). In team mode the controls are admin-only
 // and authorized by role; in single-user (solo) mode an optional token locks the feature toggles.
@@ -86,7 +86,12 @@ export default function Admin() {
     try { await signOutTeam(); } finally { window.dispatchEvent(new CustomEvent("orrery-team-changed")); window.location.reload(); }
   }
   async function copyKey() {
-    if (!await copyText(issued.key)) return;
+    const result = await copyTextResult(issued.key);
+    if (!result.ok) {
+      setErr(`Copy failed: ${result.error || "clipboard is unavailable."}`);
+      return;
+    }
+    setErr("");
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   }

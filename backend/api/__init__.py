@@ -3,25 +3,17 @@ from __future__ import annotations
 
 from backend.api.schemas import *  # noqa: F401,F403 — re-export request models (tests/api compat)
 
-import json
-import asyncio
 import hmac
-from typing import Literal
 
-from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field, field_validator
 
-from backend.core import appconfig, database
 from backend.core.config import settings
 from backend.core.observability import new_request_id
 from backend.core.paths import resource_path
-from backend.features import admin, app_updates, artifacts, chat, dashboards, data, datamodels, datasets, evaluate, exports, feedback, filepreview, local_models, mcp, projects, rag, route_telemetry, skills, team, usage
-from backend.features import files as file_library
-from backend.providers import accounts, ai, catalog
-from backend.security import secrets
+from backend.features import artifacts
 
 _UI_DIST = resource_path("ui", "dist")
 

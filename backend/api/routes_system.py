@@ -2,24 +2,35 @@
 import asyncio
 
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
+from pydantic import BaseModel
 
-from backend.api.deps import _require_conversation_access, _sse, _sse_run
-from backend.api.schemas import *  # noqa: F401,F403 — request models
-from backend.core import appconfig, database
+from backend.core import database
+from backend.core.clipboard import set_clipboard_text
 from backend.core.config import settings
-from backend.features import admin, app_updates, artifacts, chat, dashboards, data, datamodels, datasets, evaluate, exports, feedback, filepreview, local_models, mcp, projects, rag, route_telemetry, skills, team, usage
-from backend.features import files as file_library
-from backend.providers import accounts, ai, catalog
-from backend.security import secrets
+from backend.features import app_updates
 
 router = APIRouter()
+
+
+class ClipboardCopyIn(BaseModel):
+    text: str = ""
+
 
 @router.get("/health")
 async def health() -> dict:
     db_ok = await database.check_connection()
     return {"status": "ok", "database": "ok" if db_ok else "error", "dev": settings.orrery_dev}
 
+
 @router.get("/app/update")
 async def app_update() -> dict:
     return await asyncio.to_thread(app_updates.check_for_updates)
+
+
+@router.post("/clipboard/copy")
+async def clipboard_copy(payload: ClipboardCopyIn) -> dict:
+    try:
+        await asyncio.to_thread(set_clipboard_text, payload.text)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"Clipboard copy failed: {exc}") from exc
+    return {"ok": True}
