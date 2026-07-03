@@ -472,7 +472,15 @@ body{
 .attach-chip button{background:none; border:none; color:var(--faint); cursor:pointer; font-size:13px; line-height:1; padding:0 2px}
 .attach-chip button:hover{color:var(--red)}
 .msg-attach{display:flex; flex-wrap:wrap; gap:8px; margin:8px 0 2px}
-.msg-thumb{max-width:150px; max-height:150px; border-radius:8px; border:1px solid var(--line); object-fit:cover; display:block; cursor:zoom-in}
+.msg-thumb{max-width:130px; max-height:110px; border-radius:8px 8px 0 0; border:1px solid var(--line); border-bottom:none; object-fit:cover; display:block; cursor:zoom-in}
+.msg-thumb-fig{margin:0; cursor:zoom-in; max-width:130px}
+.msg-thumb-fig figcaption{font-family:var(--font-mono); font-size:9.5px; color:var(--muted); background:var(--bg2); border:1px solid var(--line); border-radius:0 0 8px 8px; padding:3px 7px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+/* composer image chips: see WHICH image is attached before sending */
+.attach-chip-img{padding:3px 6px 3px 3px}
+.attach-chip-img img{width:30px; height:30px; border-radius:6px; object-fit:cover; border:1px solid var(--line)}
+.attach-imgname{max-width:140px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+/* generated image files: real thumbnail in the card */
+.file-thumb-img{width:44px; height:44px; object-fit:cover; border-radius:8px; border:1px solid var(--line); cursor:zoom-in; padding:0}
 /* attachment chips on sent messages are buttons: click to open the file's extracted content */
 button.attach-chip{cursor:pointer}
 button.attach-chip:hover{border-color:var(--amber); color:var(--text)}

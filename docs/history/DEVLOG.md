@@ -1423,3 +1423,19 @@ management, app-like density for Settings/Admin.
 - Zero behavior change: all 205 tests pass (only their patch targets moved to the owning modules),
   and the app boots and serves normally. This is the modular-monolith shape the rest of the backend
   (api.py routers next) will follow.
+
+
+## Step 105 - api.py split into routers; image attachments get real thumbnails (July 3, 2026)
+
+- **The 1,400-line api.py is now a package.** create_app keeps the middleware, auth token check,
+  static serving, and the sandboxed artifact endpoint; the 135 API endpoints moved into fourteen
+  per-feature router modules (system, models, settings, providers, local models, data, dashboards,
+  collections, skills, MCP, admin/team, projects, conversations, files) with shared request models
+  in schemas.py and shared helpers in deps.py. Same URLs, same auth, zero behavior change - all
+  205 tests pass and the app serves normally. Together with the chat package split, the backend now
+  matches the modular-monolith conventions end to end.
+- **You can see which image is which.** Composer chips show a small thumbnail + filename before
+  sending; sent messages show captioned thumbnails (click to view full size); and generated image
+  files display a real preview thumbnail in their file card instead of a generic icon.
+
+Next: full security review pass (user ask), Data tab dataset management, Settings/Admin density.

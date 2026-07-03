@@ -177,15 +177,32 @@ function fileTypeLabel(name = "") {
 }
 
 // A produced file shown as a rich card: thumbnail + name + "Type · EXT · size" + Preview/Download.
+const IMAGE_FILE = /\.(png|jpe?g|gif|webp|svg)$/i;
+
 export function GeneratedFileCard({ file, onPreview, onDownload }) {
   const [busy, setBusy] = useState(null);
+  const [thumb, setThumb] = useState("");
   const canPreview = PREVIEWABLE_FILE.test(file.name || "");
   const ext = (file.name?.split(".").pop() || "file").toUpperCase();
   const meta = [fileTypeLabel(file.name), ext, file.size ? formatBytes(file.size) : ""].filter(Boolean).join(" · ");
   async function run(kind, fn) { setBusy(kind); try { await fn(); } finally { setBusy(null); } }
+
+  // real thumbnails for generated images, so "which image is which" is visible at a glance
+  useEffect(() => {
+    let alive = true;
+    if (file.id && IMAGE_FILE.test(file.name || "")) {
+      import("../lib/api.js").then(({ previewGeneratedFile }) =>
+        previewGeneratedFile(file.id).then(({ url }) => { if (alive) setThumb(url); }).catch(() => {})
+      );
+    }
+    return () => { alive = false; };
+  }, [file.id, file.name]);
+
   return (
     <div className="file-card2">
-      <span className="file-thumb" aria-hidden="true">{fileExtIcon(file.name)}</span>
+      {thumb
+        ? <img className="file-thumb file-thumb-img" src={thumb} alt={file.name} onClick={() => run("preview", onPreview)} title="Preview" />
+        : <span className="file-thumb" aria-hidden="true">{fileExtIcon(file.name)}</span>}
       <span className="file-card2-meta">
         <span className="file-card2-name" title={file.name}>{file.name}</span>
         <span className="file-card2-sub">{meta}</span>

@@ -734,7 +734,12 @@ export default function Chat() {
                   <div className="msg-attach">
                     {atts.map((a, k) =>
                       a.kind === "image" && a.content
-                        ? <img key={k} src={a.content} alt={a.name} className="msg-thumb" onClick={() => openAttachment(a)} title="Click to view" />
+                        ? (
+                          <figure key={k} className="msg-thumb-fig" onClick={() => openAttachment(a)} title="Click to view full size">
+                            <img src={a.content} alt={a.name} className="msg-thumb" />
+                            <figcaption>{a.name}</figcaption>
+                          </figure>
+                        )
                         : (
                           <button key={k} className="attach-chip" onClick={() => openAttachment(a)} title="Click to see what's inside">
                             {fileIcon(a.kind)} {a.name}
@@ -895,10 +900,18 @@ export default function Chat() {
           {attachments.length > 0 && (
             <div className="attach-row">
               {attachments.map((a, i) => (
-                <span className="attach-chip" key={i}>
-                  {fileIcon(a.kind)} {a.name}
-                  <button onClick={() => setAttachments((p) => p.filter((_, j) => j !== i))}>×</button>
-                </span>
+                a.kind === "image" ? (
+                  <span className="attach-chip attach-chip-img" key={i} title={a.name}>
+                    <img src={a.content} alt={a.name} />
+                    <span className="attach-imgname">{a.name}</span>
+                    <button onClick={() => setAttachments((p) => p.filter((_, j) => j !== i))}>×</button>
+                  </span>
+                ) : (
+                  <span className="attach-chip" key={i}>
+                    {fileIcon(a.kind)} {a.name}
+                    <button onClick={() => setAttachments((p) => p.filter((_, j) => j !== i))}>×</button>
+                  </span>
+                )
               ))}
             </div>
           )}

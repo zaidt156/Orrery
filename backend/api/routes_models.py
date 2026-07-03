@@ -1,0 +1,50 @@
+"""/models API routes (split from the api.py monolith; same behavior)."""
+import asyncio
+
+from fastapi import APIRouter, HTTPException
+from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
+
+from backend.api.deps import _require_conversation_access, _sse, _sse_run
+from backend.api.schemas import *  # noqa: F401,F403 — request models
+from backend.core import appconfig, database
+from backend.core.config import settings
+from backend.features import admin, app_updates, artifacts, chat, dashboards, data, datamodels, datasets, evaluate, exports, feedback, filepreview, local_models, mcp, projects, rag, route_telemetry, skills, team, usage
+from backend.features import files as file_library
+from backend.providers import accounts, ai, catalog
+from backend.security import secrets
+
+router = APIRouter()
+
+@router.get("/models")
+async def models() -> dict:
+    items = await ai.list_available_models()
+    for m in items:  # so the context selector only offers sizes the model actually has
+        m["context_window"] = ai.model_context_window(m["id"])
+    return {"models": items}
+
+@router.get("/models/catalog")
+async def models_catalog() -> dict:
+    return {"models": await ai.list_catalog()}
+
+@router.post("/models/active")
+async def models_active(body: SetActive) -> dict:
+    await catalog.set_active(body.id, body.label, body.provider, body.active)
+    return {"id": body.id, "active": body.active}
+
+@router.post("/custom-models")
+async def custom_add(body: NewCustomModel) -> dict:
+    if not body.base_url.strip() or not body.model.strip():
+        raise HTTPException(status_code=400, detail="Base URL and model id are required")
+    try:  # validation + SSRF guard raise ValueError/UnsafeUrlError → surface as a clean 400
+        return await catalog.add_custom_model(
+            body.label.strip() or body.model.strip(), body.base_url.strip(), body.model.strip(), body.key
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+
+@router.delete("/custom-models/{cid}")
+async def custom_delete(cid: str) -> dict:
+    if not await catalog.delete_custom_model(cid):
+        raise HTTPException(status_code=404, detail="Custom model not found")
+    return {"deleted": True}
+
