@@ -20,10 +20,23 @@ _UI_DIST = resource_path("ui", "dist")
 
 class _FreshHtmlStatic(StaticFiles):
     """Serve the SPA but never let the webview cache index.html — content-hashed assets
-    can cache forever, but a stale index.html would point at old JS and silently run an old build."""
+    can cache forever, but a stale index.html would point at old JS and silently run an old build.
+
+    SPA fallback: an unknown path with no file extension serves index.html instead of a raw JSON
+    404 — a strayed window (stale navigation after a restart) boots back into the app instead of
+    stranding the user on {"detail":"Not Found"}. Real asset misses (paths with extensions) still 404."""
 
     async def get_response(self, path, scope):
-        response = await super().get_response(path, scope)
+        from starlette.exceptions import HTTPException as StarletteHTTPException
+        try:
+            response = await super().get_response(path, scope)
+        except StarletteHTTPException as exc:
+            if exc.status_code == 404 and "." not in path.rsplit("/", 1)[-1]:
+                response = await super().get_response("index.html", scope)
+            else:
+                raise
+        if response.status_code == 404 and "." not in path.rsplit("/", 1)[-1]:
+            response = await super().get_response("index.html", scope)
         if response.headers.get("content-type", "").startswith("text/html"):
             response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
         return response
