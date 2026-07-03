@@ -1439,3 +1439,20 @@ management, app-like density for Settings/Admin.
   files display a real preview thumbnail in their file card instead of a generic icon.
 
 Next: full security review pass (user ask), Data tab dataset management, Settings/Admin density.
+
+
+## Step 106 - Data tab manages datasets; SSRF guard; denser Settings/Admin (July 3, 2026)
+
+- **Data tab caught up with the BI layer.** A new "Imported datasets - workspaces" section lists
+  every workspace with its datasets (kind, row counts, source), lets you refresh API/Sheet imports,
+  delete datasets, and create workspaces - with a pointer to the Dashboards import flow. Workspace
+  sources no longer clutter the database-connections cards, and the connection form now mentions
+  MySQL/SQLite alongside Postgres.
+- **Import hardening.** User-entered import URLs pass an SSRF guard: cloud-metadata/link-local
+  ranges are always blocked, and in team mode members can't point imports at the host machine's
+  LAN or loopback (solo users keep their local APIs). Verified against metadata IP, credentialed
+  URLs, and team-mode loopback.
+- **Less vertical slop.** Admin lays out team + features side by side on wide screens; Settings
+  General puts Privacy and Defaults in two columns and uses wider content - closer to an app panel
+  than a scrolling website. Copy/download got a resilient fallback chain ending at a token-guarded
+  local endpoint, so they work in every shell.

@@ -1049,8 +1049,10 @@ export default function Settings() {
       <>
         <SettingsPanelHeader title="General" description="Company identity and workspace defaults." />
         <BrandingSection />
-        <PrivacySection />
-        <DefaultsSection />
+        <div className="panel-grid">
+          <div><PrivacySection /></div>
+          <div><DefaultsSection /></div>
+        </div>
       </>
     ),
     accounts: (

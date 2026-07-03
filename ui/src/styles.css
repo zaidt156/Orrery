@@ -828,8 +828,13 @@ button.attach-chip:hover{border-color:var(--amber); color:var(--text)}
   color:var(--text);padding:11px 13px;font-family:var(--font-mono);font-size:12.5px;line-height:1.55;outline:none;resize:vertical}
 .skill-body:focus{border-color:var(--amber)}
 /* Admin & feature flags */
-.admin-wrap{flex:1;overflow-y:auto;padding:24px clamp(18px,3vw,38px) 40px}
-.admin-inner{max-width:720px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
+.admin-wrap{flex:1;overflow-y:auto;padding:20px clamp(18px,3vw,38px) 36px}
+.admin-inner{max-width:1120px;margin:0 auto;display:grid;grid-template-columns:1fr;gap:14px}
+/* app-like on wide screens: team + features sit side by side instead of one long scroll */
+@media (min-width:1200px){
+  .admin-inner{grid-template-columns:1fr 1fr;align-items:start}
+  .admin-inner>.admin-head,.admin-inner>.chat-banner,.admin-inner>.admin-ok,.admin-inner>.key-reveal{grid-column:1/-1}
+}
 .admin-head{display:flex;align-items:flex-start;gap:12px;padding-bottom:14px;border-bottom:1px solid var(--line-soft)}
 .admin-head svg{width:24px;height:24px;color:var(--amber);flex:none;margin-top:3px}
 .admin-head h2{font-family:var(--font-display);font-size:22px;font-weight:600;margin:0 0 3px}
@@ -1252,7 +1257,10 @@ button.attach-chip:hover{border-color:var(--amber); color:var(--text)}
 .settings-nav-button:hover{background:var(--bg1);color:var(--text)}
 .settings-nav-button.active{background:var(--bg2);border-color:var(--line);color:var(--amber)}
 .settings-nav-button svg{width:17px;height:17px;flex:none}
-.settings-content{min-width:0;max-width:880px}
+.settings-content{min-width:0;max-width:1060px}
+/* side-by-side setting sections on wide screens (app density, not one long page) */
+.panel-grid{display:grid;grid-template-columns:1fr;gap:0 22px}
+@media (min-width:1150px){.panel-grid{grid-template-columns:1fr 1fr;align-items:start}}
 .settings-panel-header{padding:0 0 16px;border-bottom:1px solid var(--line-soft);margin-bottom:6px}
 .settings-panel-header h2{font-family:var(--font-display);font-size:22px;font-weight:600}
 .settings-panel-header p{font-size:12px;color:var(--muted);margin-top:4px;line-height:1.5}

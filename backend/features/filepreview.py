@@ -10,6 +10,10 @@ from __future__ import annotations
 
 import html
 import io
+import shutil
+import subprocess
+import tempfile
+from pathlib import Path
 
 _PAGE_CSS = """
 *{box-sizing:border-box} body{background:#1b2030;margin:0;padding:24px 20px 56px;
@@ -28,6 +32,53 @@ th{background:#26314f;color:#fff}
 .doc h1{font-size:26px;color:#0b1020;margin:0 0 14px} .doc h2{font-size:20px;color:#0b1020;margin:18px 0 8px}
 .doc p{font-size:15px;line-height:1.6;margin:0 0 12px} .doc li{font-size:15px;line-height:1.6;margin:4px 0}
 """
+
+
+def _find_soffice() -> str | None:
+    found = shutil.which("soffice") or shutil.which("libreoffice")
+    if found:
+        return found
+    candidates = [
+        r"C:\Program Files\LibreOffice\program\soffice.exe",
+        r"C:\Program Files (x86)\LibreOffice\program\soffice.exe",
+    ]
+    for candidate in candidates:
+        if Path(candidate).is_file():
+            return candidate
+    return None
+
+
+def _office_pdf(name: str, data: bytes) -> bytes | None:
+    soffice = _find_soffice()
+    if not soffice:
+        return None
+    suffix = Path(name).suffix or ".bin"
+    with tempfile.TemporaryDirectory(prefix="orrery-preview-") as tmp:
+        tmp_path = Path(tmp)
+        source = tmp_path / f"input{suffix}"
+        source.write_bytes(data)
+        try:
+            subprocess.run(
+                [
+                    soffice,
+                    "--headless",
+                    "--nologo",
+                    "--nofirststartwizard",
+                    "--convert-to",
+                    "pdf",
+                    "--outdir",
+                    str(tmp_path),
+                    str(source),
+                ],
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=45,
+            )
+        except Exception:  # noqa: BLE001
+            return None
+        pdf = source.with_suffix(".pdf")
+        return pdf.read_bytes() if pdf.is_file() else None
 
 
 def _page(title: str, body: str) -> bytes:
@@ -133,6 +184,10 @@ def _docx_html(data: bytes) -> bytes:
 def to_preview(name: str, mime: str, data: bytes) -> tuple[bytes, str]:
     """(content, media_type) for inline preview. Office → HTML; everything else served as-is."""
     ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
+    if ext in ("pptx", "docx", "xlsx", "xlsm"):
+        pdf = _office_pdf(name, data)
+        if pdf:
+            return pdf, "application/pdf"
     try:
         if ext == "pptx":
             return _pptx_html(data), "text/html; charset=utf-8"

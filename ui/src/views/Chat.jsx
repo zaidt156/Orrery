@@ -327,6 +327,7 @@ export default function Chat() {
       projectId || null
     );
     setConvos((p) => [{ id: conv.id, title: conv.title, model: conv.model, project_id: conv.project_id || null }, ...p]);
+    activeIdRef.current = conv.id;
     setActiveId(conv.id);
     setMessages([]);
   }
@@ -370,17 +371,23 @@ export default function Chat() {
     setSending(true);
     const ctrl = new AbortController();
     abortRef.current = ctrl;
-    setMessages((p) => [...p, { role: "assistant", content: "", streaming: true }]);
-    const setLast = (patch) =>
+    const isActive = () => activeIdRef.current === cid;
+    if (isActive()) setMessages((p) => [...p, { role: "assistant", content: "", streaming: true }]);
+    const setLast = (patch) => {
+      if (!isActive()) return;
       setMessages((p) => {
         const a = [...p];
+        if (!a.length || a[a.length - 1].role !== "assistant" || !a[a.length - 1].streaming) {
+          a.push({ role: "assistant", content: "", streaming: true });
+        }
         a[a.length - 1] = { ...a[a.length - 1], ...patch };
         return a;
       });
+    };
     let savedMsgId = null;
     const reasoningAcc = { thinking: "", trace: [], outer: null, summary: null, sources: null };
     try {
-      await start((ev) => {
+      const streamResult = await start((ev) => {
         // capture the reasoning so it can be persisted after the turn (non-exclusive with UI updates)
         if (ev.reasoning_delta) reasoningAcc.thinking += ev.reasoning_delta;
         if (ev.reasoning_step) reasoningAcc.trace.push(ev.reasoning_step);
@@ -389,6 +396,19 @@ export default function Chat() {
         if (ev.reasoning_summary) reasoningAcc.summary = ev.reasoning_summary;
         if (ev.sources) reasoningAcc.sources = ev.sources;
         if (ev.message_id) savedMsgId = ev.message_id;
+
+        if (ev.project) {
+          setProjects((p) => [ev.project, ...p.filter((item) => item.id !== ev.project.id)]);
+          if (isActive()) setProjectId(ev.project.id);
+          setConvos((p) => p.map((c) => (c.id === cid ? { ...c, project_id: ev.project.id } : c)));
+          window.dispatchEvent(new CustomEvent("orrery-projects-changed"));
+          return;
+        }
+        if (ev.title) {
+          setConvos((p) => p.map((c) => (c.id === cid ? { ...c, title: ev.title } : c)));
+          return;
+        }
+        if (!isActive()) return;
 
         if (ev.delta) appendDelta(setMessages, ev.delta);
         else if (ev.reasoning_delta) appendThinking(setMessages, ev.reasoning_delta);
@@ -413,6 +433,15 @@ export default function Chat() {
         else if (ev.error) setLast({ content: ev.error, error: true, streaming: false });
         else if (ev.done) setLast({ streaming: false });
       }, ctrl.signal);
+      if (streamResult?.done === false && isActive()) {
+        try {
+          const full = await getConversation(cid);
+          if (full.running) appendStep(setMessages, "Connection ended before completion; reopen this chat to reattach if it is still running.");
+          else setMessages(full.messages.map(hydrateReasoning));
+        } catch {
+          setLast({ streaming: false });
+        }
+      }
     } catch (e) {
       if (e.name === "AbortError") setLast({ streaming: false }); // keep the partial reply
       else setLast({ content: String(e.message || e), error: true, streaming: false });
@@ -450,6 +479,7 @@ export default function Chat() {
         projectId || null
       );
       cid = conv.id;
+      activeIdRef.current = cid;
       setActiveId(cid);
       setConvos((p) => [{ id: conv.id, title: conv.title, model: conv.model, project_id: conv.project_id || null }, ...p]);
     }
@@ -1016,12 +1046,20 @@ function tokenLabel(m) {
   return `≈${Math.max(1, Math.round(chars / 4))} tokens`;
 }
 
-// Append a streamed delta to the last (assistant) message.
+function ensureStreamingAssistant(messages) {
+  const a = [...messages];
+  if (!a.length || a[a.length - 1].role !== "assistant" || !a[a.length - 1].streaming) {
+    a.push({ role: "assistant", content: "", streaming: true });
+  }
+  return a;
+}
+
+// Append a streamed delta to the active assistant message.
 function appendDelta(setMessages, delta) {
   setMessages((p) => {
-    const a = [...p];
+    const a = ensureStreamingAssistant(p);
     const last = a[a.length - 1];
-    a[a.length - 1] = { ...last, content: last.content + delta };
+    a[a.length - 1] = { ...last, content: (last.content || "") + delta };
     return a;
   });
 }
@@ -1029,7 +1067,7 @@ function appendDelta(setMessages, delta) {
 // Accumulate a progress step into the last assistant message's activity timeline.
 function appendStep(setMessages, step) {
   setMessages((p) => {
-    const a = [...p];
+    const a = ensureStreamingAssistant(p);
     const last = a[a.length - 1];
     const steps = last.steps ? [...last.steps] : [];
     if (step && steps[steps.length - 1] !== step) steps.push(step);
@@ -1055,7 +1093,7 @@ function hydrateReasoning(m) {
 // Append streamed raw model reasoning to the last assistant message (shown in the reasoning panel).
 function appendThinking(setMessages, text) {
   setMessages((p) => {
-    const a = [...p];
+    const a = ensureStreamingAssistant(p);
     const last = a[a.length - 1];
     a[a.length - 1] = { ...last, thinking: (last.thinking || "") + text };
     return a;
@@ -1065,7 +1103,7 @@ function appendThinking(setMessages, text) {
 // Append a safe work-trace step (reasoning_event) to the last assistant message.
 function appendTrace(setMessages, event) {
   setMessages((p) => {
-    const a = [...p];
+    const a = ensureStreamingAssistant(p);
     const last = a[a.length - 1];
     const trace = last.trace ? [...last.trace] : [];
     trace.push(event);

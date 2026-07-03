@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   listDataConnections, addDataConnection, deleteDataConnection, listTables, browseTable,
   listCollections, createCollection, deleteCollection, uploadDocuments,
+  listWorkspaces, createWorkspace, listDatasets, refreshDataset, deleteDataset,
 } from "../lib/api.js";
 
 const dot = (ok) => ({
@@ -43,11 +44,41 @@ export default function Data() {
   const uploadTarget = useRef(null);
   const fileRef = useRef(null);
 
+  const [workspaces, setWorkspaces] = useState([]);
+  const [dsets, setDsets] = useState([]);
+  const [wsAdding, setWsAdding] = useState(false);
+  const [wsName, setWsName] = useState("");
+  const [dsBusy, setDsBusy] = useState("");
+
   const loadConns = () =>
     listDataConnections().then((d) => setConns(d.connections)).catch((e) => setErr(String(e.message || e)));
   const loadCols = () =>
     listCollections().then((d) => setCols(d.collections)).catch((e) => setErr(String(e.message || e)));
-  useEffect(() => { loadConns(); loadCols(); }, []);
+  const loadDatasets = () => {
+    listWorkspaces().then((w) => setWorkspaces(w.workspaces || [])).catch(() => {});
+    listDatasets().then((d) => setDsets(d.datasets || [])).catch(() => {});
+  };
+  useEffect(() => { loadConns(); loadCols(); loadDatasets(); }, []);
+
+  async function addWs() {
+    if (!wsName.trim()) return;
+    setErr(null);
+    try { await createWorkspace(wsName.trim()); setWsName(""); setWsAdding(false); loadDatasets(); loadConns(); }
+    catch (e) { setErr(String(e.message || e)); }
+  }
+
+  async function refreshDs(d) {
+    setDsBusy(d.id); setErr(null);
+    try { await refreshDataset(d.id); loadDatasets(); }
+    catch (e) { setErr(String(e.message || e)); } finally { setDsBusy(""); }
+  }
+
+  async function removeDs(d) {
+    if (!window.confirm(`Delete dataset "${d.name}"? Dashboards using its table will stop working.`)) return;
+    setDsBusy(d.id); setErr(null);
+    try { await deleteDataset(d.id); loadDatasets(); }
+    catch (e) { setErr(String(e.message || e)); } finally { setDsBusy(""); }
+  }
 
   async function add() {
     if (!url.trim()) return;
@@ -135,7 +166,7 @@ export default function Data() {
         <div className="section-label">Database connections · read-only</div>
         {err && <div className="chat-banner">{err}</div>}
         <div className="card-row">
-          {conns.map((c) => (
+          {conns.filter((c) => c.kind !== "datasets").map((c) => (
             <div
               key={c.id}
               className="card"
@@ -155,13 +186,62 @@ export default function Data() {
             <div className="card">
               <h4>New connection</h4>
               <input className="search" style={{ width: "100%", marginTop: "8px" }} placeholder="Name (e.g. analytics)" value={name} onChange={(e) => setName(e.target.value)} />
-              <input className="search" style={{ width: "100%", marginTop: "6px" }} placeholder="postgresql://user:password@host:5432/db" value={url} onChange={(e) => setUrl(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") add(); }} />
+              <input className="search" style={{ width: "100%", marginTop: "6px" }} placeholder="postgres://…  ·  mysql://…  ·  sqlite:///C:/path.db" value={url} onChange={(e) => setUrl(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") add(); }} />
               <div className="foot">
                 <button className="btn primary" disabled={busy} onClick={add}>{busy ? "Testing…" : "Add"}</button>
                 <button className="btn ghost" onClick={() => { setAdding(false); setErr(null); }}>Cancel</button>
               </div>
             </div>
           )}
+        </div>
+
+        <div className="section-label">Imported datasets · workspaces (CSV / Excel / JSON / APIs / Google Sheets)</div>
+        <div className="card-row">
+          {workspaces.map((w) => {
+            const inWs = dsets.filter((d) => d.schema === w.schema);
+            return (
+              <div key={w.id} className="card" style={{ minWidth: "260px" }}>
+                <h4>{w.name}</h4>
+                <div className="meta">{inWs.length} dataset(s) · queryable in Dashboards</div>
+                {inWs.length > 0 && (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "5px", marginTop: "8px" }}>
+                    {inWs.map((d) => (
+                      <div key={d.id} style={{ display: "flex", alignItems: "center", gap: "7px", fontSize: "11.5px" }}>
+                        <span className="tag">{d.kind}</span>
+                        <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={d.source || d.name}>
+                          {d.name} · {d.rows.toLocaleString()} rows
+                        </span>
+                        {d.kind === "api" && (
+                          <button className="btn ghost" style={{ padding: "2px 8px", fontSize: "10.5px" }}
+                            disabled={dsBusy === d.id} onClick={() => refreshDs(d)}>
+                            {dsBusy === d.id ? "…" : "Refresh"}
+                          </button>
+                        )}
+                        <button className="btn ghost" style={{ padding: "2px 8px", fontSize: "10.5px" }}
+                          disabled={dsBusy === d.id} onClick={() => removeDs(d)}>×</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="foot"><span className="tag">workspace</span></div>
+              </div>
+            );
+          })}
+          {!wsAdding && <div className="card add" onClick={() => setWsAdding(true)}>+ New workspace</div>}
+          {wsAdding && (
+            <div className="card">
+              <h4>New workspace</h4>
+              <input className="search" style={{ width: "100%", marginTop: "8px" }} placeholder="Name (e.g. Sales demo)"
+                value={wsName} onChange={(e) => setWsName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") addWs(); }} />
+              <div className="foot">
+                <button className="btn primary" onClick={addWs}>Create</button>
+                <button className="btn ghost" onClick={() => setWsAdding(false)}>Cancel</button>
+              </div>
+            </div>
+          )}
+        </div>
+        <div className="meta" style={{ fontFamily: "var(--font-mono)", color: "var(--faint)", marginTop: "6px" }}>
+          Import files, APIs, or Google Sheets from the Dashboards tab (“Connect new data source”) — they land in the workspace you pick here.
         </div>
 
         <div className="section-label">Document collections · RAG (local embeddings)</div>
