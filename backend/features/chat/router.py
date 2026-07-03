@@ -170,9 +170,21 @@ async def _prepare_turn(cid: uuid.UUID, user_content: str, attachments: list[dic
         messages.append({"role": "user", "content": _build_user_content(user_content, attachments)})
 
         # Attachment metadata rides in artifacts so reloads render real chips (name+kind), not a
-        # text blob baked into the message. Content stays out of it (text lives in context/RAG).
-        att_meta = [{"kind": "attachment", "name": a.get("name", "file"), "mime": a.get("mime", ""),
-                     "att": a.get("kind", "file")} for a in attachments] or None
+        # text blob baked into the message. Text content stays out of it (it lives in context/RAG);
+        # image BYTES are kept in the file library so view/thumbnail works after reloads too.
+        att_meta = []
+        for a in attachments:
+            meta = {"kind": "attachment", "name": a.get("name", "file"), "mime": a.get("mime", ""),
+                    "att": a.get("kind", "file")}
+            if a.get("kind") == "image" and str(a.get("content", "")).startswith("data:"):
+                try:
+                    b64 = str(a["content"]).split(",", 1)[1]
+                    stored = file_library.store(meta["name"], a.get("mime") or "image/png", base64.b64decode(b64))
+                    meta["file_id"] = stored["id"]
+                except Exception:  # noqa: BLE001 — preview persistence is best-effort
+                    pass
+            att_meta.append(meta)
+        att_meta = att_meta or None
         s.add(Message(
             conversation_id=cid, role="user",
             content=user_content or "",
@@ -650,24 +662,33 @@ async def stream_reply(
             pass
     rag_context = None                 # retrieved docs — passed separately as UNTRUSTED context
     if rag_collections and user_content.strip():
-        # Relevance first: with fresh attachments (the message is about THOSE) or a vague message,
-        # stored files must clearly match before they're allowed into context at all.
-        strict = bool(attachments) or retrieval._vague_query(user_content)
-        block, sources = await retrieval._gather_rag(model, rag_collections, user_content, strict=strict)
-        if block:
-            rag_context = block
-            yield stream_events.sources(sources)
+        # Relevance first. A turn that brings its OWN attachments with little/no text is about those
+        # attachments, period — stored files are skipped entirely, no lookup at all. Otherwise strict
+        # mode applies when the message is vague or carries fresh attachments alongside real text.
+        if attachments and retrieval._vague_query(user_content):
             yield trace.step(
-                "Searching your files",
-                f"{len(sources)} stored file(s) match this question — using the relevant passages.",
-                kind="context", status="done", phase="context", metadata={"source_count": len(sources)},
-            )
-        else:
-            yield trace.step(
-                "Files not needed",
-                "Your stored files don't relate to this message — answering it on its own.",
+                "Context: this message's attachment(s) only",
+                "You attached new content with a short prompt — answering from it alone; stored files are not searched.",
                 kind="context", status="done", phase="context",
             )
+        else:
+            strict = bool(attachments) or retrieval._vague_query(user_content)
+            block, sources = await retrieval._gather_rag(model, rag_collections, user_content, strict=strict)
+            if block:
+                rag_context = block
+                yield stream_events.sources(sources)
+                yield trace.step(
+                    "Context: matched stored files",
+                    "Included because they match this question: " + ", ".join(sources[:6])
+                    + (" …" if len(sources) > 6 else ""),
+                    kind="context", status="done", phase="context", metadata={"source_count": len(sources)},
+                )
+            else:
+                yield trace.step(
+                    "Context: none of your stored files apply",
+                    "Nothing in your files relates to this message — answering it on its own.",
+                    kind="context", status="done", phase="context",
+                )
 
     if plan.route == "image" and not attachments:
         async for event in _route_image(cid, model, user_content, gen_system, effort, trace, route_event_id):

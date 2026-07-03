@@ -38,7 +38,7 @@ async def _schema_map(cid: str) -> dict[str, dict[str, str]]:
     """{table: {column: type}} for the connection, using each dialect's real metadata."""
     rows = await data._columns_rows(cid, 40 * 24 * 2)  # noqa: SLF001 — sibling feature module
     engine = data._engine(cid)  # noqa: SLF001
-    default_schema = (await data.dataset_schema(cid)) or {"sqlite": "main", "mysql": None, "mariadb": None}.get(engine.dialect.name, "public")
+    default_schema = (await data.dataset_schema(cid)) or {"sqlite": "main", "mysql": None, "mariadb": None, "mssql": "dbo"}.get(engine.dialect.name, "public")
     out: dict[str, dict[str, str]] = {}
     for schema, table, col, dtype in rows:
         key = table if (default_schema is None or schema == default_schema) else f"{schema}.{table}"

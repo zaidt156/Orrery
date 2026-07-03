@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import * as echarts from "echarts";
 import { Code2, Database, LayoutDashboard, Layers, Plus, RefreshCw, Search, Trash2, Undo2, WandSparkles } from "lucide-react";
 import {
-  addDataConnection, createDashboard, createDataModel, createDatasetFromApi, createDatasetFromFile,
+  addDataConnection, createDashboard, createDataModel, createDatasetFromApi, createDatasetFromFile, createDatasetFromMongo,
   createWorkspace, deleteDashboard, deleteDataModel, getModels, getSchemaMap, listDashboards,
   listDataConnections, listDataModels, listWorkspaces, reviseDashboard, rollbackDashboard,
   runDashboard, setDashboardLayout, setDashboardTransforms,
@@ -326,6 +326,15 @@ export default function Dashboards() {
     } catch (e) { setErr(String(e.message || e)); } finally { setBusy(false); }
   }
 
+  async function connectMongo() {
+    if (!connUrl.trim() || !connHeaders.trim()) return;  // headers field doubles as the collection name in mongo mode
+    setBusy(true); setErr("");
+    try {
+      await createDatasetFromMongo(connName.trim(), connUrl.trim(), connHeaders.trim(), wsId);
+      await refreshConnectionsAndSelect(wsId);
+    } catch (e) { setErr(String(e.message || e)); } finally { setBusy(false); }
+  }
+
   async function connectApi() {
     if (!connUrl.trim()) return;
     setBusy(true); setErr("");
@@ -428,7 +437,7 @@ export default function Dashboards() {
                 {connectOpen ? (
                   <div className="dash-connect-form">
                     <div className="dash-connect-modes">
-                      {[["postgres", "Database"], ["file", "CSV / Excel / JSON file"], ["api", "REST API / Google Sheet"]].map(([id, label]) => (
+                      {[["postgres", "Database"], ["file", "CSV / Excel / JSON / JSONL / XML"], ["api", "REST API / Google Sheet"], ["mongo", "MongoDB"]].map(([id, label]) => (
                         <button key={id} className={`dash-mode${connMode === id ? " on" : ""}`} onClick={() => setConnMode(id)}>{label}</button>
                       ))}
                     </div>
@@ -455,7 +464,7 @@ export default function Dashboards() {
                     )}
                     {connMode === "file" && (
                       <>
-                        <input ref={fileRef} type="file" accept=".csv,.tsv,.json,.xlsx,.xls,.xlsm,text/csv,application/json" hidden onChange={connectFile} />
+                        <input ref={fileRef} type="file" accept=".csv,.tsv,.json,.jsonl,.ndjson,.xml,.xlsx,.xls,.xlsm,text/csv,application/json,text/xml" hidden onChange={connectFile} />
                         <div className="dash-connect-row">
                           <button className="btn primary sm" onClick={() => fileRef.current?.click()} disabled={busy}>{busy ? "Importing..." : "Choose file & import"}</button>
                           <button className="btn ghost sm" onClick={() => setConnectOpen(false)}>Cancel</button>
@@ -463,7 +472,18 @@ export default function Dashboards() {
                         </div>
                       </>
                     )}
-                    {connMode === "api" && (
+                    {connMode === "mongo" && (
+                      <>
+                        <input placeholder="mongodb://user:password@host:27017/mydb  (or mongodb+srv://...)" value={connUrl} onChange={(e) => setConnUrl(e.target.value)} spellCheck={false} />
+                        <input placeholder="Collection to import (e.g. orders)" value={connHeaders} onChange={(e) => setConnHeaders(e.target.value)} spellCheck={false} />
+                        <div className="dash-connect-row">
+                          <button className="btn primary sm" onClick={connectMongo} disabled={busy || !connUrl.trim() || !connHeaders.trim()}>{busy ? "Importing..." : "Import collection"}</button>
+                          <button className="btn ghost sm" onClick={() => setConnectOpen(false)}>Cancel</button>
+                          <small>Documents become a refreshable table; the URI stays in your OS keychain.</small>
+                        </div>
+                      </>
+                    )}
+                {connMode === "api" && (
                       <>
                         <input placeholder="https://api.example.com/v1/orders  or a shared Google Sheets link" value={connUrl} onChange={(e) => setConnUrl(e.target.value)} spellCheck={false} />
                         <textarea

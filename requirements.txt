@@ -62,3 +62,8 @@ sqlglot>=30.0
 # Read-only enforced at connection level (init_command / PRAGMA query_only).
 aiomysql>=0.2
 aiosqlite>=0.20
+
+# BI connectors tier 2: SQL Server (ODBC) + MongoDB imports.
+aioodbc>=0.5
+pymongo>=4.6
+defusedxml>=0.7

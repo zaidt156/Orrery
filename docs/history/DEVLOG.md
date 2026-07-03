@@ -1456,3 +1456,24 @@ Next: full security review pass (user ask), Data tab dataset management, Setting
   General puts Privacy and Defaults in two columns and uses wider content - closer to an app panel
   than a scrolling website. Copy/download got a resilient fallback chain ending at a token-guarded
   local endpoint, so they work in every shell.
+
+
+## Step 107 - Context discipline, viewable image attachments, nested raw thinking, more connectors (July 3, 2026)
+
+- **Attachments are used only when needed - and you can verify it.** A turn that brings its own
+  attachment with a short prompt now answers from that attachment ALONE (stored files aren't even
+  searched), and the reasoning panel states the context decision explicitly every turn: "this
+  message's attachment(s) only", "matched stored files: <names>", or "none of your stored files
+  apply". Treating cross-topic file bleed as the safety issue it is.
+- **Attached images stay viewable.** Image bytes are kept in the file library at send time, so the
+  thumbnail and click-to-view work after reloads too - click any attachment chip/thumbnail to
+  confirm exactly what was sent (images open in the panel; documents show their extracted text).
+- **Raw thinking inside the hierarchy.** The model's live reasoning now streams NESTED under the
+  step it belongs to, so each level of the trace shows what the model was actually thinking there;
+  it persists with the message like the rest of the panel.
+- **Connector set grown (research-grounded).** New: SQL Server (mssql:// via ODBC; use a read-only
+  login - every dashboard query is also parse-gated to a single SELECT), MongoDB collection imports
+  (URI in the keychain, refreshable), and JSONL/NDJSON + XML uploads. Joins Postgres, MySQL,
+  SQLite, CSV/Excel/JSON, REST APIs, and Google Sheets - twelve connector types.
+
+Deps: aioodbc/pyodbc, pymongo, defusedxml (pinned).

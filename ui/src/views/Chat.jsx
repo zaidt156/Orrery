@@ -32,7 +32,7 @@ import {
 } from "./chatHelpers.jsx";
 import {
   ReplyFiles, InlineSvg, CodeImageArtifact, GeneratedFileCard, ThinkingPulse, ReasoningPanel, TaskBrainPanel,
-  EvaluatePanel,
+  EvaluatePanel, LazyAttachmentImg,
 } from "./chatWidgets.jsx";
 
 // Reasoning depth modes shown to the user; the stored value is the underlying effort (see backend
@@ -560,11 +560,17 @@ export default function Chat() {
     }
   }
 
-  // Open an attachment: fresh ones carry their content; reloaded ones fetch their indexed text.
+  // Open an attachment so the user can confirm exactly what was sent: fresh ones carry their
+  // content; reloaded images load their stored bytes (file_id); other files fetch indexed text.
   async function openAttachment(a) {
     try {
       if (a.kind === "image" && a.content) {
         setArtifact({ image: a.content, title: a.name });
+        return;
+      }
+      if (a.kind === "image" && a.file_id) {
+        const { url } = await previewGeneratedFile(a.file_id);
+        setArtifact({ image: url, title: a.name });
         return;
       }
       let text = a.kind === "text" && a.content ? a.content : null;
@@ -762,7 +768,7 @@ export default function Chat() {
             const atts = m.role === "user"
               ? (m.attachments?.length
                 ? m.attachments
-                : (m.artifacts || []).filter((a) => a.kind === "attachment").map((a) => ({ name: a.name, kind: a.att || "file", mime: a.mime })))
+                : (m.artifacts || []).filter((a) => a.kind === "attachment").map((a) => ({ name: a.name, kind: a.att || "file", mime: a.mime, file_id: a.file_id })))
               : [];
             const promptText = (m.content || "").replace(/\n*📎 .*$/s, "");  // strip legacy baked-in note
             return m.role === "user" ? (
@@ -778,6 +784,8 @@ export default function Chat() {
                             <figcaption>{a.name}</figcaption>
                           </figure>
                         )
+                        : a.kind === "image" && a.file_id
+                        ? <LazyAttachmentImg key={k} fileId={a.file_id} name={a.name} onClick={() => openAttachment(a)} />
                         : (
                           <button key={k} className="attach-chip" onClick={() => openAttachment(a)} title="Click to see what's inside">
                             {fileIcon(a.kind)} {a.name}
@@ -1102,7 +1110,16 @@ function appendThinking(setMessages, text) {
   setMessages((p) => {
     const a = ensureStreamingAssistant(p);
     const last = a[a.length - 1];
-    a[a.length - 1] = { ...last, thinking: (last.thinking || "") + text };
+    // Nest raw thinking under the step that's active RIGHT NOW, so the hierarchy shows what the
+    // model was actually reasoning at each level; before any step exists it goes to the top block.
+    if (last.trace?.length) {
+      const trace = [...last.trace];
+      const idx = trace.length - 1;
+      trace[idx] = { ...trace[idx], think: (trace[idx].think || "") + text };
+      a[a.length - 1] = { ...last, trace };
+    } else {
+      a[a.length - 1] = { ...last, thinking: (last.thinking || "") + text };
+    }
     return a;
   });
 }

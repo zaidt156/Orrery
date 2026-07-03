@@ -898,6 +898,8 @@ button.attach-chip:hover{border-color:var(--amber); color:var(--text)}
 .dash-revise input:focus{border-color:var(--amber)}
 .dash-revise select{max-width:220px;background:var(--bg2);border:1px solid var(--line);border-radius:8px;color:var(--muted);padding:8px 9px;font-size:11.5px;outline:none}
 .dash-connect-btn{align-self:flex-start}
+/* raw model thinking nested under the reasoning step it happened in */
+.trace-rawthink{display:block;font-family:var(--font-mono);font-size:10.5px;color:var(--faint);line-height:1.55;white-space:pre-wrap;border-left:2px solid var(--line);padding:4px 0 4px 10px;margin-top:5px;max-height:220px;overflow-y:auto}
 /* new-dashboard wizard: data sets → requirements → model → build */
 .wiz-steps{display:flex;gap:8px;flex-wrap:wrap;margin:2px 0 6px}
 .wiz-step{display:inline-flex;align-items:center;gap:8px;background:var(--bg1);border:1px solid var(--line);border-radius:99px;color:var(--faint);padding:7px 15px 7px 8px;font-size:12px;font-weight:600;cursor:default}

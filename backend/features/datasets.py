@@ -8,6 +8,7 @@ values are inserted with bound parameters; API auth headers live in the OS keych
 API fetches are user-initiated (a person typed the URL), size-capped, and parsed defensively."""
 from __future__ import annotations
 
+import asyncio
 import base64
 import io
 import json
@@ -301,16 +302,105 @@ async def _register(name: str, kind: str, source: str, header: list, rows: list[
 _GSHEET = re.compile(r"docs\.google\.com/spreadsheets/d/([A-Za-z0-9_-]+)")
 
 
+def _parse_jsonl(text_content: str) -> tuple[list, list[list]]:
+    records = []
+    for line in text_content.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            records.append(json.loads(line))
+        except ValueError:
+            continue
+        if len(records) >= MAX_ROWS:
+            break
+    return _flatten_json(records)
+
+
+def _parse_xml(text_content: str) -> tuple[list, list[list]]:
+    """Repeated child elements of the root become rows; sub-elements/attributes become columns."""
+    import defusedxml.ElementTree as SafeET  # type: ignore[import-not-found]
+    root = SafeET.fromstring(text_content)
+    records = []
+    for child in list(root)[:MAX_ROWS]:
+        rec: dict = dict(child.attrib)
+        for sub in child:
+            rec[sub.tag] = (sub.text or "").strip() if len(sub) == 0 else json.dumps(
+                {s.tag: (s.text or "").strip() for s in sub}
+            )
+        if child.text and child.text.strip() and not rec:
+            rec["value"] = child.text.strip()
+        if rec:
+            records.append(rec)
+    if not records:
+        raise ValueError("No repeated records found in the XML.")
+    return _flatten_json(records)
+
+
 async def create_from_file(name: str, filename: str, content: str, workspace_id: str | None = None) -> dict:
-    """content: raw text for CSV/JSON, base64 for Excel (the UI sends the right one by extension)."""
+    """content: raw text for CSV/JSON/JSONL/XML, base64 for Excel (the UI picks by extension)."""
     fname = (filename or "").lower()
     if fname.endswith((".xlsx", ".xls", ".xlsm")):
         header, rows = _parse_xlsx(base64.b64decode(content))
+    elif fname.endswith((".jsonl", ".ndjson")):
+        header, rows = _parse_jsonl(content)
     elif fname.endswith(".json"):
         header, rows = _flatten_json(json.loads(content))
+    elif fname.endswith(".xml"):
+        header, rows = _parse_xml(content)
     else:
         header, rows = _parse_csv(content)
     return await _register(name or filename, "file", filename, header, rows, workspace_id)
+
+
+def _mongo_secret(did: str) -> str:
+    return f"dataset_mongo:{did}"
+
+
+def _fetch_mongo(uri: str, collection: str) -> tuple[list, list[list]]:
+    """Sample a MongoDB collection into records (sync; called via to_thread)."""
+    from pymongo import MongoClient
+    from pymongo.uri_parser import parse_uri
+    parsed = parse_uri(uri)
+    dbname = parsed.get("database")
+    if not dbname:
+        raise ValueError("The MongoDB URI must include a database, e.g. mongodb://host:27017/mydb")
+    client = MongoClient(uri, serverSelectionTimeoutMS=6000, connectTimeoutMS=6000)
+    try:
+        docs = list(client[dbname][collection].find().limit(MAX_ROWS))
+    finally:
+        client.close()
+    # bson types (ObjectId, dates, Decimal128) → strings via a JSON round-trip
+    records = json.loads(json.dumps(docs, default=str))
+    for r in records:
+        if not isinstance(r.get("_id"), (str, int, float)):
+            r.pop("_id", None)
+    return _flatten_json(records)
+
+
+async def create_from_mongo(name: str, uri: str, collection: str, workspace_id: str | None = None) -> dict:
+    if not (uri or "").startswith(("mongodb://", "mongodb+srv://")):
+        raise ValueError("Use a mongodb:// or mongodb+srv:// connection string.")
+    if not (collection or "").strip():
+        raise ValueError("Name the collection to import.")
+    from backend.features import team
+    if await team.team_mode():
+        import ipaddress
+        import socket
+        from pymongo.uri_parser import parse_uri
+        for host, port in parse_uri(uri).get("nodelist", []):
+            try:
+                infos = socket.getaddrinfo(host, port or 27017, proto=socket.IPPROTO_TCP)
+            except socket.gaierror:
+                raise ValueError("The MongoDB host could not be resolved.")
+            for info in infos:
+                ip = ipaddress.ip_address(info[4][0])
+                if ip.is_loopback or ip.is_private or ip.is_link_local:
+                    raise ValueError("In team mode, imports can't target local/private network addresses.")
+    header, rows = await asyncio.to_thread(_fetch_mongo, uri, collection.strip())
+    out = await _register(name or collection, "mongo", f"mongodb://…/{collection.strip()}", header, rows, workspace_id)
+    secrets.set_secret(_mongo_secret(out["id"]), json.dumps({"uri": uri, "collection": collection.strip()}))
+    return out
 
 
 async def create_from_api(name: str, url: str, headers: dict[str, str] | None = None,
@@ -339,9 +429,24 @@ async def refresh_dataset(did: str) -> dict:
         row = await s.get(Dataset, uuid.UUID(did))
         if row is None:
             raise ValueError("Dataset not found.")
-        if row.kind != "api" or not row.source:
-            raise ValueError("Only API datasets can be refreshed — re-upload the file instead.")
-        table, url, schema = row.table_name, row.source, (row.db_schema or SCHEMA)
+        if row.kind not in ("api", "mongo") or not row.source:
+            raise ValueError("Only API/MongoDB datasets can be refreshed — re-upload the file instead.")
+        table, url, schema, row_kind = row.table_name, row.source, (row.db_schema or SCHEMA), row.kind
+    if row_kind == "mongo":
+        raw = secrets.get_secret(_mongo_secret(did))
+        if not raw:
+            raise ValueError("The MongoDB connection details for this dataset are gone from the keychain.")
+        cfg = json.loads(raw)
+        header, rows = await asyncio.to_thread(_fetch_mongo, cfg["uri"], cfg["collection"])
+        count = await _materialize(table, header, rows, schema=schema)
+        async with get_sessionmaker()() as s2:
+            row2 = await s2.get(Dataset, uuid.UUID(did))
+            if row2 is not None:
+                row2.row_count = count
+                await s2.commit()
+                await s2.refresh(row2)
+                return _dict(row2)
+        raise ValueError("Dataset not found.")
     raw = secrets.get_secret(_headers_secret(did))
     headers = json.loads(raw) if raw else None
     if "docs.google.com/spreadsheets" in url:
@@ -375,4 +480,5 @@ async def delete_dataset(did: str) -> bool:
     async with engine.begin() as conn:
         await conn.execute(text(f"DROP TABLE IF EXISTS {_quote(schema)}.{_quote(table)}"))
     secrets.delete_secret(_headers_secret(did))
+    secrets.delete_secret(_mongo_secret(did))
     return True

@@ -179,6 +179,26 @@ function fileTypeLabel(name = "") {
 // A produced file shown as a rich card: thumbnail + name + "Type · EXT · size" + Preview/Download.
 const IMAGE_FILE = /\.(png|jpe?g|gif|webp|svg)$/i;
 
+// Thumbnail for an uploaded image attachment after a reload: bytes live in the file library
+// (file_id), fetched lazily so old chats render fast.
+export function LazyAttachmentImg({ fileId, name, onClick }) {
+  const [url, setUrl] = useState("");
+  useEffect(() => {
+    let alive = true;
+    import("../lib/api.js").then(({ previewGeneratedFile }) =>
+      previewGeneratedFile(fileId).then(({ url: u }) => { if (alive) setUrl(u); }).catch(() => {})
+    );
+    return () => { alive = false; };
+  }, [fileId]);
+  if (!url) return <span className="attach-chip">🖼 {name}</span>;
+  return (
+    <figure className="msg-thumb-fig" onClick={onClick} title="Click to view full size">
+      <img src={url} alt={name} className="msg-thumb" />
+      <figcaption>{name}</figcaption>
+    </figure>
+  );
+}
+
 export function GeneratedFileCard({ file, onPreview, onDownload }) {
   const [busy, setBusy] = useState(null);
   const [thumb, setThumb] = useState("");
@@ -381,6 +401,9 @@ export function ReasoningPanel({ outer, trace, thinking, summary, sources, strea
                 <span className="trace-text">
                   <span className="trace-stage">{s.stage}</span>
                   {s.detail ? <span className="trace-detail">{s.detail}</span> : null}
+                  {s.think ? (
+                    <span className="trace-rawthink">{s.think}{streaming && i === steps.length - 1 ? <span className="caret" /> : null}</span>
+                  ) : null}
                   {s.metadata?.sources?.length ? <SourceLinks urls={s.metadata.sources} /> : null}
                 </span>
               </div>

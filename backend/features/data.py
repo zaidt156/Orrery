@@ -29,8 +29,14 @@ def _coerce_async(url: str):
         u = u.set(drivername="mysql+aiomysql")
     elif backend == "sqlite":
         u = u.set(drivername="sqlite+aiosqlite")
+    elif backend == "mssql":
+        u = u.set(drivername="mssql+aioodbc")
+        if "driver" not in {k.lower() for k in u.query}:
+            u = u.update_query_dict({"driver": "ODBC Driver 17 for SQL Server"})
     else:
-        raise ValueError(f"Unsupported database type: {backend}. Use postgres://, mysql://, or sqlite:///path.")
+        raise ValueError(
+            f"Unsupported database type: {backend}. Use postgres://, mysql://, mssql://, or sqlite:///path."
+        )
     return u
 
 
@@ -70,6 +76,11 @@ def _new_engine(url: str) -> AsyncEngine:
             url, pool_pre_ping=True, pool_size=2, max_overflow=2,
             connect_args={"connect_timeout": 5, "init_command": "SET SESSION TRANSACTION READ ONLY"},
         )
+    if backend == "mssql":
+        # SQL Server has no session read-only mode: connect with a read-only login (recommended in
+        # the UI); every dashboard query is additionally parse-gated to a single SELECT.
+        return create_async_engine(url, pool_pre_ping=True, pool_size=2, max_overflow=2,
+                                   connect_args={"timeout": 5})
     return create_async_engine(
         url, pool_pre_ping=True, pool_size=2, max_overflow=2,
         connect_args={"connect_timeout": 5},
@@ -239,7 +250,7 @@ async def schema_overview(cid: str, max_tables: int = 40, max_columns: int = 24)
     """Compact 'table(col type, …)' listing a model can design queries against."""
     rows = await _columns_rows(cid, max_tables * max_columns * 2)
     engine = _engine(cid)
-    default_schema = (await dataset_schema(cid)) or {"sqlite": "main", "mysql": None, "mariadb": None}.get(engine.dialect.name, "public")
+    default_schema = (await dataset_schema(cid)) or {"sqlite": "main", "mysql": None, "mariadb": None, "mssql": "dbo"}.get(engine.dialect.name, "public")
     tables: dict[str, list[str]] = {}
     for schema, table, col, dtype in rows:
         key = table if (default_schema is None or schema == default_schema) else f"{schema}.{table}"

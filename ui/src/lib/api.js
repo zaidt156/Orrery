@@ -181,6 +181,8 @@ export const createDatasetFromFile = (name, filename, content, workspace_id = ""
   apiSend("/api/datasets/file", "POST", { name, filename, content, workspace_id });
 export const createDatasetFromApi = (name, url, headers, workspace_id = "") =>
   apiSend("/api/datasets/api", "POST", { name, url, headers, workspace_id });
+export const createDatasetFromMongo = (name, uri, collection, workspace_id = "") =>
+  apiSend("/api/datasets/mongo", "POST", { name, uri, collection, workspace_id });
 export const refreshDataset = (id) => apiSend(`/api/datasets/${id}/refresh`, "POST");
 export const deleteDataset = (id) => apiSend(`/api/datasets/${id}`, "DELETE");
 export const listWorkspaces = () => apiGet("/api/workspaces");

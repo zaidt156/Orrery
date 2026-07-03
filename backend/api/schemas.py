@@ -274,3 +274,10 @@ class PrivacyMode(BaseModel):
     mode: Literal["off", "basic", "strict"]
 
 
+
+
+class DatasetMongoBody(BaseModel):
+    name: str = ""
+    uri: str = ""          # mongodb:// URI -> keychain, never stored in the DB
+    collection: str = ""
+    workspace_id: str = ""

@@ -73,6 +73,16 @@ async def dataset_from_api(body: DatasetApiBody) -> dict:
     except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=400, detail=f"API import failed: {str(e)[:200]}")
 
+@router.post("/datasets/mongo")
+async def dataset_from_mongo(body: DatasetMongoBody) -> dict:
+    try:
+        return await datasets.create_from_mongo(body.name, body.uri, body.collection, body.workspace_id or None)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail=f"MongoDB import failed: {secrets.redact_url(str(e))[:200]}")
+
+
 @router.get("/workspaces")
 async def workspaces_list() -> dict:
     return {"workspaces": await datasets.list_workspaces()}
