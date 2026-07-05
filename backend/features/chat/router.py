@@ -900,7 +900,13 @@ async def stream_reply(
             )
         else:
             strict = bool(attachments) or retrieval._vague_query(user_content)
-            block, sources = await retrieval._gather_rag(model, rag_collections, user_content, strict=strict)
+            # This chat's own uploaded files ride along automatically, so hold them to the strict
+            # relevance bar on every turn — an earlier upload shouldn't leak into a later, unrelated
+            # question. Explicitly chosen collections ("use my data", the project) keep the normal bar.
+            auto_cids = {turn.collection_id} if turn.collection_id else set()
+            block, sources = await retrieval._gather_rag(
+                model, rag_collections, user_content, strict=strict, auto_collection_ids=auto_cids
+            )
             if block:
                 rag_context = block
                 yield stream_events.sources(sources)

@@ -21,13 +21,26 @@ async def _rag_context(model: str, collection_id: str, query: str) -> tuple[str 
 _STRICT_MAX_DIST = 0.45
 
 
-async def _gather_rag(model: str, collection_ids: list[str], query: str, *, strict: bool = False) -> tuple[str | None, list[str]]:
+async def _gather_rag(
+    model: str,
+    collection_ids: list[str],
+    query: str,
+    *,
+    strict: bool = False,
+    auto_collection_ids: set[str] | None = None,
+) -> tuple[str | None, list[str]]:
     """Retrieve and merge top chunks across every relevant collection (selected data + project files).
 
     Searching all of them means project files are never dropped when "use my data" is also on, and a
     project chat always sees its own files. Results are de-duplicated and redacted for cloud models.
+
+    `auto_collection_ids` are collections that ride along automatically (a chat's own uploaded files),
+    as opposed to ones the user explicitly chose ("use my data", a project). Auto collections are held
+    to the strict relevance bar on EVERY turn, so a file uploaded earlier doesn't leak into a later,
+    unrelated question — the user didn't ask for it this time.
     """
     is_local = ai.model_provider(model) == "ollama"
+    auto = auto_collection_ids or set()
     seen: set[tuple[str, str]] = set()
     blocks: list[str] = []
     sources: list[str] = []
@@ -36,8 +49,9 @@ async def _gather_rag(model: str, collection_ids: list[str], query: str, *, stri
             results = await rag.search(collection_id, query, k=settings.rag_top_k)
         except Exception:  # noqa: BLE001 — a retrieval failure on one collection shouldn't break the chat
             continue
+        gate_strict = strict or collection_id in auto
         for r in results:
-            if strict and not r.get("kw") and r.get("dist", 1.0) > _STRICT_MAX_DIST:
+            if gate_strict and not r.get("kw") and r.get("dist", 1.0) > _STRICT_MAX_DIST:
                 continue  # not clearly about this message — leave the old file out
             key = (r["source"], r["content"][:120])
             if key in seen:
