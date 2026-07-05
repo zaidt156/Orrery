@@ -45,6 +45,7 @@ Current coverage:
 - code-rendered images
 - audio and voice artifacts
 - sandboxed artifact creation
+- LaTeX / TeX source documents
 - project workspaces
 
 This lets Orrery improve task behavior without adding a one-off command for every phrasing.
@@ -125,6 +126,10 @@ Mirrors Hermes' execution flow and OpenClaw's observe→think→act, adapted to 
    succeeded into project context (skill memory, Hermes-style self-improvement).
 
 ## Tools (capabilities, not raw permissions)
+
+Current registry keys: `run_python`, `run_shell`, `file_generate`, and optional `crabbox_run`.
+These execute through `backend.tools.run_tool(...)`, so allow-lists, argument validation,
+sanitized errors, feature gates, and artifact handling stay centralized.
 
 - **`run_code(python)`** — the universal artifact maker. Runs in the locked-down Docker sandbox
   (no network, read-only root, non-root, CPU/mem/PID/time/output caps), returns files written to

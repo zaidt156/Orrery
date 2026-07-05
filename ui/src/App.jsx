@@ -94,7 +94,7 @@ export default function App() {
     const id = setInterval(check, 15000);
     const loadFeatures = () =>
       getAdmin()
-        .then((s) => alive && setFeatures(Object.fromEntries((s.features || []).map((f) => [f.name, f.enabled]))))
+        .then((s) => alive && setFeatures(Object.fromEntries((s.features || []).map((f) => [f.name, f.effective ?? f.enabled]))))
         .catch(() => {});
     const loadTeam = () => getTeam().then((s) => alive && setTeamState(s)).catch(() => alive && setTeamState({ team_mode: false, locked: false }));
     loadFeatures();

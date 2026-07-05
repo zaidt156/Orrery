@@ -31,6 +31,18 @@ async function backendCopy(value) {
   return { ok: false, error: detail };
 }
 
+function withTimeout(promise, ms, label) {
+  let timer = null;
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      timer = window.setTimeout(() => reject(new Error(`${label} timed out.`)), ms);
+    }),
+  ]).finally(() => {
+    if (timer) window.clearTimeout(timer);
+  });
+}
+
 function domCopy(value) {
   const selection = document.getSelection();
   const previousRange = selection && selection.rangeCount ? selection.getRangeAt(0) : null;
@@ -63,7 +75,7 @@ export async function copyTextResult(text) {
   try {
     const bridge = window.pywebview?.api?.copy_text;
     if (bridge) {
-      const result = await bridge(value);
+      const result = await withTimeout(Promise.resolve(bridge(value)), 1500, "Desktop clipboard bridge");
       if (result === true || result?.ok === true || result === undefined) {
         return { ok: true, method: "desktop" };
       }
@@ -74,8 +86,16 @@ export async function copyTextResult(text) {
   }
 
   try {
+    const result = await withTimeout(backendCopy(value), 2000, "Backend clipboard fallback");
+    if (result.ok) return result;
+    errors.push(result.error || "Backend clipboard fallback failed.");
+  } catch (error) {
+    errors.push(error?.message || String(error));
+  }
+
+  try {
     if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(value);
+      await withTimeout(navigator.clipboard.writeText(value), 1500, "Browser clipboard API");
       return { ok: true, method: "browser" };
     }
     errors.push("Browser clipboard API is unavailable.");
@@ -86,14 +106,6 @@ export async function copyTextResult(text) {
   try {
     if (domCopy(value)) return { ok: true, method: "dom" };
     errors.push("DOM copy fallback was rejected.");
-  } catch (error) {
-    errors.push(error?.message || String(error));
-  }
-
-  try {
-    const result = await backendCopy(value);
-    if (result.ok) return result;
-    errors.push(result.error || "Backend clipboard fallback failed.");
   } catch (error) {
     errors.push(error?.message || String(error));
   }

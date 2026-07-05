@@ -27,6 +27,7 @@ import {
   getPrivacy,
   setPrivacy,
   getDatabase,
+  getTeam,
   testDatabase,
   saveDatabase,
   clearDatabase,
@@ -88,16 +89,23 @@ const CUSTOM_PRESETS = [
   { name: "Groq", base_url: "https://api.groq.com/openai/v1", model: "" },
 ];
 
-function CtrlToggle({ on, busy, onClick }) {
+function CtrlToggle({ on, busy, disabled, onClick }) {
+  const blocked = !!disabled;
   return (
     <span
-      className={`toggle${on ? " on" : ""}`}
+      className={`toggle${on ? " on" : ""}${blocked ? " disabled" : ""}`}
       role="switch"
       aria-checked={on}
       aria-busy={busy || undefined}
-      tabIndex={0}
-      onClick={onClick}
-      onKeyDown={(e) => { if (e.key === " " || e.key === "Enter") { e.preventDefault(); onClick(); } }}
+      aria-disabled={blocked || undefined}
+      tabIndex={blocked ? -1 : 0}
+      onClick={blocked ? undefined : onClick}
+      onKeyDown={(e) => {
+        if (!blocked && (e.key === " " || e.key === "Enter")) {
+          e.preventDefault();
+          onClick();
+        }
+      }}
     />
   );
 }
@@ -109,7 +117,7 @@ function StatusText({ mode }) {
   return <span className="mode-off">not connected</span>;
 }
 
-function ApiKeyMode({ provider, info, mode, onSaved }) {
+function ApiKeyMode({ provider, info, mode, onSaved, canManage }) {
   const [editing, setEditing] = useState(false);
   const [val, setVal] = useState("");
   const [busy, setBusy] = useState(false);
@@ -170,17 +178,23 @@ function ApiKeyMode({ provider, info, mode, onSaved }) {
       </div>
       {!editing && (
         <div className="mode-actions">
-          <button className="btn ghost" disabled={busy} onClick={() => setEditing(true)}>
-            {mode.configured ? "Edit key" : "Add key"}
-          </button>
-          {mode.configured && <button className="btn ghost" disabled={busy} onClick={remove}>Remove</button>}
+          {canManage ? (
+            <>
+              <button className="btn ghost" disabled={busy} onClick={() => setEditing(true)}>
+                {mode.configured ? "Edit key" : "Add key"}
+              </button>
+              {mode.configured && <button className="btn ghost" disabled={busy} onClick={remove}>Remove</button>}
+            </>
+          ) : (
+            <button className="btn ghost" disabled>Managed by admin</button>
+          )}
         </div>
       )}
     </div>
   );
 }
 
-function PlanMode({ mode, onSaved }) {
+function PlanMode({ mode, onSaved, canManage }) {
   const [busy, setBusy] = useState(null);
   const [err, setErr] = useState(null);
   const [notice, setNotice] = useState(null);
@@ -271,6 +285,9 @@ function PlanMode({ mode, onSaved }) {
         {err && <span className="key-err">{err}</span>}
       </div>
       <div className="mode-actions">
+        {!canManage && <button className="btn ghost" disabled>Managed by admin</button>}
+        {canManage && (
+          <>
         {showInstaller && (
           <button
             className="btn ghost icon-text-btn"
@@ -313,6 +330,8 @@ function PlanMode({ mode, onSaved }) {
         >
           <RefreshCw className={busy === "refresh" ? "spin" : ""} />
         </button>
+          </>
+        )}
       </div>
     </div>
   );
@@ -332,7 +351,7 @@ function PassiveMode({ mode }) {
   );
 }
 
-function ProviderBlock({ name, info, onSaved }) {
+function ProviderBlock({ name, info, onSaved, canManage }) {
   const modes = info.modes || [];
   const apiMode = modes.find((m) => m.id === "api_key");
   const rest = modes.filter((m) => m.id !== "api_key");
@@ -346,10 +365,10 @@ function ProviderBlock({ name, info, onSaved }) {
           <div className="s-sub">accounts and keys stay local to this machine</div>
         </div>
       </div>
-      {apiMode && <ApiKeyMode provider={name} info={info} mode={apiMode} onSaved={onSaved} />}
+      {apiMode && <ApiKeyMode provider={name} info={info} mode={apiMode} onSaved={onSaved} canManage={canManage} />}
       {rest.map((mode) =>
         PLAN_MODE_IDS.includes(mode.id) ? (
-          <PlanMode key={mode.id} mode={mode} onSaved={onSaved} />
+          <PlanMode key={mode.id} mode={mode} onSaved={onSaved} canManage={canManage} />
         ) : (
           <PassiveMode key={mode.id} mode={mode} />
         )
@@ -358,7 +377,7 @@ function ProviderBlock({ name, info, onSaved }) {
   );
 }
 
-function AddCustomModel({ onAdded }) {
+function AddCustomModel({ onAdded, canManage }) {
   const [open, setOpen] = useState(false);
   const [label, setLabel] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
@@ -395,7 +414,11 @@ function AddCustomModel({ onAdded }) {
           <div className="mode-name">+ Add a custom model</div>
           <div className="mode-sub">Any OpenAI-compatible endpoint — Qwen, Kimi, GLM, OpenRouter, Together, local…</div>
         </div>
-        <div className="mode-actions"><button className="btn primary" onClick={() => setOpen(true)}>Add model</button></div>
+        <div className="mode-actions">
+          <button className="btn primary" disabled={!canManage} onClick={() => setOpen(true)}>
+            {canManage ? "Add model" : "Managed by admin"}
+          </button>
+        </div>
       </div>
     );
   }
@@ -427,19 +450,21 @@ function AddCustomModel({ onAdded }) {
   );
 }
 
-function ModelsSection() {
+function ModelsSection({ canManage }) {
   const [catalog, setCatalog] = useState(null);
   const [busy, setBusy] = useState(null);
   const load = () => getModelCatalog().then((d) => setCatalog(d.models)).catch(() => setCatalog([])).finally(notifyModelsChanged);
   useEffect(() => { load(); }, []);
 
   async function toggle(m) {
+    if (!canManage) return;
     setBusy(m.id);
     try { await setModelActive(m.id, m.label, m.provider, !m.active); await load(); }
     catch { /* leave as-is on failure */ } finally { setBusy(null); }
   }
 
   async function removeCustom(m) {
+    if (!canManage) return;
     if (!window.confirm(`Remove ${m.label}? This can't be undone.`)) return;
     try { await deleteCustomModel(m.custom_id); await load(); } catch { /* already gone */ }
   }
@@ -474,14 +499,14 @@ function ModelsSection() {
                 <div className="mode-sub">{m.id}</div>
               </div>
               <div className="mode-actions">
-                {m.provider === "custom" && <button className="btn ghost" onClick={() => removeCustom(m)}>Remove</button>}
-                <CtrlToggle on={m.active} busy={busy === m.id} onClick={() => toggle(m)} />
+                {m.provider === "custom" && <button className="btn ghost" disabled={!canManage} onClick={() => removeCustom(m)}>Remove</button>}
+                <CtrlToggle on={m.active} busy={busy === m.id} disabled={!canManage} onClick={() => toggle(m)} />
               </div>
             </div>
           ))}
         </div>
       ))}
-      <AddCustomModel onAdded={load} />
+      <AddCustomModel onAdded={load} canManage={canManage} />
     </>
   );
 }
@@ -490,7 +515,7 @@ function ModelsSection() {
 // unmounts when you leave General), so the form no longer "resets to zero".
 let _brandingDraft = null;
 
-function BrandingSection() {
+function BrandingSection({ canManage }) {
   const [b, setB] = useState(_brandingDraft);
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -542,6 +567,10 @@ function BrandingSection() {
   }
 
   async function save() {
+    if (!canManage) {
+      setErr("Branding is managed by the workspace admin.");
+      return;
+    }
     setBusy(true);
     setSaved(false);
     setErr(null);
@@ -568,7 +597,7 @@ function BrandingSection() {
             <div className="mode-name">Show branding header</div>
             <div className="mode-sub">When on, a header bar with your logo and name appears at the top of every tab.</div>
           </div>
-          <div className="mode-actions"><CtrlToggle on={!!b.enabled} onClick={() => update({ enabled: !b.enabled })} /></div>
+          <div className="mode-actions"><CtrlToggle on={!!b.enabled} disabled={!canManage} onClick={() => update({ enabled: !b.enabled })} /></div>
         </div>
         <div className="branding-preview" aria-label="Branding preview">
           <div className="branding-preview-logo">
@@ -581,24 +610,24 @@ function BrandingSection() {
           </div>
         </div>
         <div className="custom-form branding-form">
-          <input className="key-input" maxLength={80} placeholder="Company name" value={b.name || ""} onChange={(e) => update({ name: e.target.value })} />
-          <input className="key-input" maxLength={160} placeholder="Tagline (optional)" value={b.tagline || ""} onChange={(e) => update({ tagline: e.target.value })} />
-          <textarea className="key-input" maxLength={280} rows={3} placeholder="Company details (optional)" value={b.details || ""} onChange={(e) => update({ details: e.target.value })} />
+          <input className="key-input" maxLength={80} placeholder="Company name" value={b.name || ""} disabled={!canManage} onChange={(e) => update({ name: e.target.value })} />
+          <input className="key-input" maxLength={160} placeholder="Tagline (optional)" value={b.tagline || ""} disabled={!canManage} onChange={(e) => update({ tagline: e.target.value })} />
+          <textarea className="key-input" maxLength={280} rows={3} placeholder="Company details (optional)" value={b.details || ""} disabled={!canManage} onChange={(e) => update({ details: e.target.value })} />
           <div className="branding-actions">
-            <label className="btn ghost icon-text-btn">
+            <label className={`btn ghost icon-text-btn${!canManage ? " disabled" : ""}`}>
               <ImagePlus />
               Upload logo
-              <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden onChange={pickLogo} />
+              <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden disabled={!canManage} onChange={pickLogo} />
             </label>
             {b.logo && (
-              <button className="btn ghost icon-text-btn" onClick={() => update({ logo: "" })}>
+              <button className="btn ghost icon-text-btn" disabled={!canManage} onClick={() => update({ logo: "" })}>
                 <Trash2 />
                 Remove
               </button>
             )}
           </div>
           <div className="sys-actions">
-            <button className="btn primary icon-text-btn" disabled={busy} onClick={save}>
+            <button className="btn primary icon-text-btn" disabled={busy || !canManage} onClick={save}>
               <Save />
               {busy ? "Saving…" : saved ? "Saved" : "Save branding"}
             </button>
@@ -616,7 +645,7 @@ const PRIVACY_OPTIONS = [
   { id: "strict", name: "Strict", sub: "Basic redaction plus a stronger boundary; broader detection coming. Best when sharing sensitive documents." },
 ];
 
-function PrivacySection() {
+function PrivacySection({ canManage }) {
   const [mode, setMode] = useState(null);
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -628,6 +657,7 @@ function PrivacySection() {
   }
 
   async function choose(id) {
+    if (!canManage) return;
     const prev = mode;
     setMode(id);
     setBusy(true);
@@ -654,7 +684,7 @@ function PrivacySection() {
               <div className="mode-name">{o.name}</div>
               <div className="mode-sub">{o.sub}</div>
             </div>
-            <div className="mode-actions"><CtrlToggle on={mode === o.id} onClick={() => choose(o.id)} /></div>
+            <div className="mode-actions"><CtrlToggle on={mode === o.id} disabled={!canManage} onClick={() => choose(o.id)} /></div>
           </div>
         ))}
         <div className="mode-sub" style={{ marginTop: 8 }}>
@@ -667,13 +697,24 @@ function PrivacySection() {
 
 const CAP_PERIODS = ["hour", "day", "month", "all"];
 
-function DatabaseSection() {
+function DatabaseSection({ canManage }) {
   const [info, setInfo] = useState(null);
   const [url, setUrl] = useState("");
   const [busy, setBusy] = useState("");
   const [result, setResult] = useState(null);
   const reload = () => getDatabase().then(setInfo).catch(() => setInfo({ configured: false }));
-  useEffect(() => { reload(); }, []);
+  useEffect(() => { if (canManage) reload(); }, [canManage]);
+
+  if (!canManage) {
+    return (
+      <div className="s-card">
+        <div className="section-label">Database management is controlled by the workspace admin.</div>
+        <div className="mode-sub">
+          You can use Orrery with the configured server, but connection strings stay hidden from member accounts.
+        </div>
+      </div>
+    );
+  }
 
   async function run(kind) {
     setBusy(kind); setResult(null);
@@ -763,7 +804,7 @@ function DatabaseSection() {
   );
 }
 
-function SpendingSection() {
+function SpendingSection({ canManage }) {
   const [u, setU] = useState(null);
   const [busy, setBusy] = useState(false);
   const load = () => getUsage().then(setU).catch(() => {});
@@ -772,8 +813,12 @@ function SpendingSection() {
   if (!u) return (<><div className="section-label">Spending (API keys only)</div><div className="s-sub" style={{ padding: "4px 2px" }}>Loading…</div></>);
 
   const cap = u.cap || { enabled: false, limit_usd: 10, period: "month" };
-  const updateCap = (patch) => setU((p) => ({ ...p, cap: { ...p.cap, ...patch } }));
+  const updateCap = (patch) => {
+    if (!canManage) return;
+    setU((p) => ({ ...p, cap: { ...p.cap, ...patch } }));
+  };
   async function save() {
+    if (!canManage) return;
     setBusy(true);
     try { setU(await setSpendCap({ enabled: !!cap.enabled, limit_usd: Number(cap.limit_usd) || 0, period: cap.period })); }
     finally { setBusy(false); }
@@ -790,18 +835,18 @@ function SpendingSection() {
             <div className="mode-sub">{u.over ? "Over cap — API-key models are blocked until the window resets or you raise the cap." : "Counts only API-key models (per-token billing); subscription/local are free of this."}</div>
             {cap.enabled && <div className="slider" style={{ marginTop: "8px" }}><div className="fill" style={{ width: `${pct}%`, background: u.over ? "var(--red)" : "var(--amber)" }} /></div>}
           </div>
-          <div className="mode-actions"><CtrlToggle on={!!cap.enabled} onClick={() => updateCap({ enabled: !cap.enabled })} /></div>
+          <div className="mode-actions"><CtrlToggle on={!!cap.enabled} disabled={!canManage} onClick={() => updateCap({ enabled: !cap.enabled })} /></div>
         </div>
         <div className="custom-form">
           <div className="preset-row" style={{ alignItems: "center" }}>
             <span className="s-sub">Cap&nbsp;$</span>
-            <input className="key-input" style={{ maxWidth: "120px" }} type="number" min="0" step="0.5" value={cap.limit_usd} onChange={(e) => updateCap({ limit_usd: e.target.value })} />
+            <input className="key-input" style={{ maxWidth: "120px" }} type="number" min="0" step="0.5" value={cap.limit_usd} disabled={!canManage} onChange={(e) => updateCap({ limit_usd: e.target.value })} />
             <span className="s-sub">per</span>
-            <select className="effort-pick" value={cap.period} onChange={(e) => updateCap({ period: e.target.value })}>
+            <select className="effort-pick" value={cap.period} disabled={!canManage} onChange={(e) => updateCap({ period: e.target.value })}>
               {CAP_PERIODS.map((p) => <option key={p} value={p}>{p === "all" ? "all time" : p}</option>)}
             </select>
           </div>
-          <div className="sys-actions"><button className="btn primary" disabled={busy} onClick={save}>{busy ? "Saving…" : "Save cap"}</button></div>
+          <div className="sys-actions"><button className="btn primary" disabled={busy || !canManage} onClick={save}>{busy ? "Saving…" : "Save cap"}</button></div>
         </div>
       </div>
     </>
@@ -941,7 +986,7 @@ function SettingsPanelHeader({ title, description }) {
 
 const EFFORT_DEFAULTS = [["", "Standard"], ["low", "Quick"], ["high", "Deep"], ["xhigh", "Max"]];
 
-function DefaultsSection() {
+function DefaultsSection({ canManage }) {
   const [models, setModels] = useState([]);
   const [model, setModel] = useState("");
   const [effort, setEffort] = useState("");
@@ -954,6 +999,7 @@ function DefaultsSection() {
   }, []);
 
   async function save(nextModel, nextEffort) {
+    if (!canManage) return;
     setBusy(true); setSaved(false);
     try {
       await setDefaults(nextModel, nextEffort);
@@ -973,6 +1019,7 @@ function DefaultsSection() {
           </div>
           <div className="mode-actions">
             <select className="defaults-select" value={model}
+              disabled={!canManage}
               onChange={(e) => { setModel(e.target.value); save(e.target.value, effort); }}>
               <option value="">Last used / first available</option>
               {models.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
@@ -986,6 +1033,7 @@ function DefaultsSection() {
           </div>
           <div className="mode-actions">
             <select className="defaults-select" value={effort}
+              disabled={!canManage}
               onChange={(e) => { setEffort(e.target.value); save(model, e.target.value); }}>
               {EFFORT_DEFAULTS.map(([v, label]) => <option key={v || "std"} value={v}>{label}</option>)}
             </select>
@@ -1040,47 +1088,56 @@ function IntegrationsSection() {
 export default function Settings() {
   const [activeSection, setActiveSection] = useState("accounts");
   const [providers, setProviders] = useState(null);
+  const [team, setTeam] = useState(null);
   const load = () => getProviders().then(setProviders).catch(() => setProviders({})).finally(notifyModelsChanged);
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+    getTeam().then(setTeam).catch(() => setTeam({ team_mode: false, locked: false }));
+  }, []);
 
   const entries = providers ? Object.entries(providers) : [];
+  const canManage = !team?.team_mode || team?.user?.role === "admin";
   const panels = {
     general: (
       <>
         <SettingsPanelHeader title="General" description="Company identity and workspace defaults." />
-        <BrandingSection />
+        <BrandingSection canManage={canManage} />
         <div className="panel-grid">
-          <div><PrivacySection /></div>
-          <div><DefaultsSection /></div>
+          <div><PrivacySection canManage={canManage} /></div>
+          <div><DefaultsSection canManage={canManage} /></div>
         </div>
       </>
     ),
     accounts: (
       <>
         <SettingsPanelHeader title="Accounts & Keys" description="Connect provider accounts, API keys, and local model access." />
-        <div className="section-label">Credentials stay in your system keychain, never in project files</div>
+        <div className="section-label">
+          {canManage
+            ? "Credentials stay in your system keychain, never in project files"
+            : "Accounts and keys are managed by your workspace admin"}
+        </div>
         {providers === null && <div className="s-sub settings-loading">Loading…</div>}
         {entries.map(([name, info]) => (
-          <ProviderBlock key={name} name={name} info={info} onSaved={load} />
+          <ProviderBlock key={name} name={name} info={info} onSaved={load} canManage={canManage} />
         ))}
       </>
     ),
     database: (
       <>
         <SettingsPanelHeader title="Database" description="Connect Orrery to your own PostgreSQL server." />
-        <DatabaseSection />
+        <DatabaseSection canManage={canManage} />
       </>
     ),
     models: (
       <>
         <SettingsPanelHeader title="Models" description="Choose which connected models appear in Chat." />
-        <ModelsSection />
+        <ModelsSection canManage={canManage} />
       </>
     ),
     usage: (
       <>
         <SettingsPanelHeader title="Usage" description="Monitor API-key costs and set a local spending cap." />
-        <SpendingSection />
+        <SpendingSection canManage={canManage} />
       </>
     ),
     updates: (

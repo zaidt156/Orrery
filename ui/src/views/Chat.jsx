@@ -547,7 +547,9 @@ export default function Chat() {
     abortRef.current?.abort();
   }
 
-  async function copy(text, key) {
+  async function copy(text, key, event) {
+    event?.preventDefault();
+    event?.stopPropagation();
     const result = await copyTextResult(String(text ?? ""));
     if (!result.ok) {
       setBanner(`Copy failed: ${result.error || "clipboard is unavailable."}`);
@@ -795,7 +797,7 @@ export default function Chat() {
                   </div>
                 )}
                 <div className="prompt-actions">
-                  <button title="Copy prompt" aria-label="Copy prompt" className={copiedKey === `p${i}` ? "copied-pop" : ""} onClick={() => copy(promptText || "", `p${i}`)}>
+                  <button type="button" title="Copy prompt" aria-label="Copy prompt" className={copiedKey === `p${i}` ? "copied-pop" : ""} onClick={(e) => copy(promptText || "", `p${i}`, e)}>
                     {copiedKey === `p${i}` ? <Check /> : <Copy />}
                   </button>
                   <button title="Edit prompt" aria-label="Edit prompt" onClick={() => editPrompt(promptText)}>
@@ -878,7 +880,7 @@ export default function Chat() {
                 )}
                 {!m.streaming && !m.error && (
                   <div className="msg-actions">
-                    <button title="Copy reply" aria-label="Copy reply" className={copiedKey === `r${i}` ? "copied-pop" : ""} onClick={() => copy(m.content, `r${i}`)}>
+                    <button type="button" title="Copy reply" aria-label="Copy reply" className={copiedKey === `r${i}` ? "copied-pop" : ""} onClick={(e) => copy(m.content, `r${i}`, e)}>
                       {copiedKey === `r${i}` ? <Check /> : <Copy />}
                     </button>
                     {extractHtml(m.content) && (
@@ -919,6 +921,7 @@ export default function Chat() {
                   </div>
                 )}
                 {m.id && !m.streaming && !m.error && (() => {
+                  if (m.artifacts?.some((artifact) => artifact.kind === "file")) return null;
                   const formats = requestedFileFormats(precedingUserText(messages, i));
                   const shown = formats.length ? formats : specFormats(m.content);
                   if (!shown.length) return null;

@@ -8,6 +8,7 @@ export const EXPORT_FORMATS = [
   { id: "pptx", label: "PowerPoint", Icon: FileDown, patterns: [/\b(powerpoint|pptx?|presentation|slide\s*deck|slides?)\b|\.pptx?\b/i] },
   { id: "csv", label: "CSV", Icon: FileSpreadsheet, patterns: [/\bcsv\b|\.csv\b/i] },
   { id: "md", label: "Markdown", Icon: FileText, patterns: [/\bmarkdown\b|\.md\b/i] },
+  { id: "tex", label: "TeX", Icon: FileText, patterns: [/\b(?:tex|latex|latex source|latex document|latex template)\b|\.tex\b/i] },
   { id: "txt", label: "Text", Icon: FileText, patterns: [/\b(?:plain\s+text|text file|txt)\b|\.txt\b/i] },
   { id: "html", label: "HTML", Icon: FileText, patterns: [/\bhtml\b|web\s?page|\.html?\b/i] },
   { id: "json", label: "JSON", Icon: FileText, patterns: [/\bjson\b|\.json\b/i] },

@@ -47,6 +47,14 @@ def test_routes_video_to_sandbox_file_generation():
     assert plan.uses_sandbox
 
 
+def test_routes_latex_to_sandbox_file_generation():
+    plan = taskrouter.plan("Create a LaTeX resume template")
+
+    assert plan.route == "file"
+    assert plan.output_mode == "file"
+    assert plan.uses_sandbox
+
+
 def test_routes_project_workspace_requests():
     plan = taskrouter.plan("Create a new project workspace for the Acme rollout")
 

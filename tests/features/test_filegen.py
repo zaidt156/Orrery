@@ -59,6 +59,10 @@ def test_needs_code_and_requested_formats():
     assert filegen.wants_file("Create an HTML webpage for a product demo")
     assert filegen.needs_code("Create an HTML webpage for a product demo")
     assert filegen.requested_formats("Create an HTML webpage") == ["html"]
+    assert filegen.wants_file("Create a LaTeX resume")
+    assert filegen.needs_code("Create a LaTeX resume")
+    assert filegen.requested_formats("Create a LaTeX resume") == ["tex"]
+    assert filegen.requested_formats("Create resume.tex") == ["tex"]
     assert filegen.wants_file("Make a short MP4 video animation")
     assert filegen.needs_code("Make a short MP4 video animation")
     assert filegen.requested_formats("Make a short video") == ["mp4"]
@@ -122,6 +126,32 @@ def test_approve_rejects_html_with_external_references():
     approval = filegen._approve_files([sandbox.SandboxFile("demo.html", html)], "Create an HTML webpage")
     assert not approval.ok
     assert "external" in approval.reason.lower() or "unsafe" in approval.reason.lower()
+
+
+def test_approve_accepts_valid_tex_source():
+    tex = br"""\documentclass{article}
+\usepackage{amsmath}
+\title{Practical Data Notes}
+\author{Orrery}
+\begin{document}
+\maketitle
+\section{Overview}
+This document contains enough real LaTeX source text to pass the source validation path.
+\begin{equation}
+E = mc^2
+\end{equation}
+\end{document}
+"""
+    approval = filegen._approve_files([sandbox.SandboxFile("notes.tex", tex)], "Create a LaTeX document")
+    assert approval.ok
+    assert "has_latex_structure" in approval.manifest[0]["checks"]
+
+
+def test_approve_rejects_bad_tex_source():
+    bad = b"\xff\x00not latex"
+    approval = filegen._approve_files([sandbox.SandboxFile("bad.tex", bad)], "Create a LaTeX document")
+    assert not approval.ok
+    assert "utf-8" in approval.reason.lower() or "binary" in approval.reason.lower()
 
 
 def test_approve_accepts_mp4_header_video():

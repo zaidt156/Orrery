@@ -264,6 +264,7 @@ class TeamUserBody(BaseModel):
 class TeamUserUpdate(BaseModel):
     role: str | None = None
     disabled: bool | None = None
+    feature_flags: dict[str, bool] | None = None
 
 
 class DbConnection(BaseModel):

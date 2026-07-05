@@ -95,6 +95,7 @@ body{
 .btn.primary{background:var(--amber); border-color:var(--amber); color:#221805}
 .btn.primary:hover{filter:brightness(1.07)}
 .btn.ghost{background:transparent}
+.btn.disabled{opacity:.55;cursor:not-allowed;pointer-events:none}
 .toggle{
   width:34px;height:19px;border-radius:99px;background:var(--bg3);border:1px solid var(--line);
   position:relative; cursor:pointer; flex:none;
@@ -105,6 +106,7 @@ body{
 }
 .toggle.on{background:var(--amber-dim); border-color:var(--amber)}
 .toggle.on::after{left:17px;background:var(--amber)}
+.toggle.disabled{opacity:.5;cursor:not-allowed}
 .mono{font-family:var(--font-mono)}
 ::-webkit-scrollbar{width:8px;height:8px}
 ::-webkit-scrollbar-thumb{background:var(--line);border-radius:99px}
@@ -1079,12 +1081,25 @@ button.attach-chip:hover{border-color:var(--amber); color:var(--text)}
 .role-chip.admin{color:var(--amber);border-color:var(--amber)}
 .role-chip.member{color:var(--faint)}
 .team-me .btn{margin-left:auto}
-.team-users{display:flex;flex-direction:column;gap:7px}
-.team-user{display:flex;align-items:center;gap:10px;border:1px solid var(--line);border-radius:9px;background:var(--bg2);padding:8px 11px}
+.team-users{display:flex;flex-direction:column;gap:9px}
+.team-user{display:flex;flex-direction:column;gap:10px;border:1px solid var(--line);border-radius:9px;background:var(--bg2);padding:10px 11px}
 .team-user.off{opacity:.55}
+.team-user-main{display:flex;align-items:center;gap:10px}
 .tu-name{flex:1;min-width:0;display:flex;flex-direction:column}
 .tu-name b{font-size:13px}
 .tu-name small{font-size:10px;color:#e06666}
+.team-user-features{border-top:1px solid var(--line-soft);padding-top:9px;display:flex;flex-direction:column;gap:8px}
+.tu-feature-head{display:flex;align-items:center;justify-content:space-between;gap:8px;color:var(--faint);font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em}
+.tu-feature-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:6px}
+.tu-feature{min-width:0;display:flex;align-items:flex-start;gap:7px;border:1px solid var(--line-soft);border-radius:7px;background:var(--bg1);padding:7px 8px;font-size:11.5px;color:var(--muted);line-height:1.35}
+.tu-feature input{margin-top:1px;accent-color:var(--amber);flex:none}
+.tu-feature span{min-width:0}
+.tu-admin-note{border-top:1px solid var(--line-soft);padding-top:8px;color:var(--faint);font-size:11px;line-height:1.45}
+@media (max-width:720px){
+  .team-user-main{align-items:stretch;flex-wrap:wrap}
+  .team-user-main .tu-name{flex-basis:100%}
+  .team-user-main select{flex:1;min-width:140px}
+}
 /* one-time key reveal */
 .key-reveal{border:1px solid var(--amber);border-radius:12px;background:rgba(225,170,80,.07);padding:14px 16px;display:flex;flex-direction:column;gap:9px}
 .key-reveal-head{display:flex;align-items:center;gap:7px;font-size:13px;font-weight:600}

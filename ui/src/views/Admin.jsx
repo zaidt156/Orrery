@@ -78,6 +78,18 @@ export default function Admin() {
     try { await updateTeamUser(u.id, patch); await load(); }
     catch (e) { setErr(String(e.message || e)); }
   }
+  function userFeatureValue(u, feature) {
+    if (u.feature_flags && Object.prototype.hasOwnProperty.call(u.feature_flags, feature.name)) {
+      return !!u.feature_flags[feature.name];
+    }
+    return feature.enabled !== false;
+  }
+  async function patchUserFeature(u, feature, enabled) {
+    await patchUser(u, { feature_flags: { ...(u.feature_flags || {}), [feature.name]: enabled } });
+  }
+  async function resetUserFeatures(u) {
+    await patchUser(u, { feature_flags: {} });
+  }
   async function removeUser(u) {
     if (!window.confirm(`Remove ${u.name}? Their key stops working immediately.`)) return;
     try { await deleteTeamUser(u.id); await load(); } catch (e) { setErr(String(e.message || e)); }
@@ -85,7 +97,9 @@ export default function Admin() {
   async function doSignOut() {
     try { await signOutTeam(); } finally { window.dispatchEvent(new CustomEvent("orrery-team-changed")); window.location.reload(); }
   }
-  async function copyKey() {
+  async function copyKey(event) {
+    event?.preventDefault();
+    event?.stopPropagation();
     const result = await copyTextResult(issued.key);
     if (!result.ok) {
       setErr(`Copy failed: ${result.error || "clipboard is unavailable."}`);
@@ -120,7 +134,7 @@ export default function Admin() {
             <p>Copy it now — it's shown once and can't be retrieved later. Share it with that person privately.</p>
             <div className="key-reveal-row">
               <code>{issued.key}</code>
-              <button className={`btn${copied ? " copied-pop" : ""}`} onClick={copyKey}>{copied ? <><Check /> Copied</> : <><Copy /> Copy</>}</button>
+              <button type="button" className={`btn${copied ? " copied-pop" : ""}`} onClick={copyKey}>{copied ? <><Check /> Copied</> : <><Copy /> Copy</>}</button>
             </div>
             <button className="btn ghost sm" onClick={() => setIssued(null)}>I've saved it</button>
           </div>
@@ -162,13 +176,37 @@ export default function Admin() {
               <div className="team-users">
                 {users.map((u) => (
                   <div key={u.id} className={`team-user${u.disabled ? " off" : ""}`}>
-                    <span className="tu-name"><b>{u.name}</b>{u.disabled && <small>revoked</small>}</span>
-                    <select value={u.role} onChange={(e) => patchUser(u, { role: e.target.value })}>
-                      <option value="member">Member</option>
-                      <option value="admin">Admin</option>
-                    </select>
-                    <button className="btn ghost sm" onClick={() => patchUser(u, { disabled: !u.disabled })}>{u.disabled ? "Restore" : "Revoke"}</button>
-                    <button className="icon-btn" title="Delete" onClick={() => removeUser(u)}><Trash2 /></button>
+                    <div className="team-user-main">
+                      <span className="tu-name"><b>{u.name}</b>{u.disabled && <small>revoked</small>}</span>
+                      <select value={u.role} onChange={(e) => patchUser(u, { role: e.target.value })}>
+                        <option value="member">Member</option>
+                        <option value="admin">Admin</option>
+                      </select>
+                      <button className="btn ghost sm" onClick={() => patchUser(u, { disabled: !u.disabled })}>{u.disabled ? "Restore" : "Revoke"}</button>
+                      <button className="icon-btn" title="Delete" onClick={() => removeUser(u)}><Trash2 /></button>
+                    </div>
+                    {u.role === "member" ? (
+                      <div className="team-user-features">
+                        <div className="tu-feature-head">
+                          <span>Feature access</span>
+                          <button className="btn ghost sm" onClick={() => resetUserFeatures(u)}>Use defaults</button>
+                        </div>
+                        <div className="tu-feature-grid">
+                          {status.features.map((f) => (
+                            <label key={f.name} className="tu-feature">
+                              <input
+                                type="checkbox"
+                                checked={userFeatureValue(u, f)}
+                                onChange={(e) => patchUserFeature(u, f, e.target.checked)}
+                              />
+                              <span>{f.label}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="tu-admin-note">Admins use workspace feature defaults and keep access to administration.</div>
+                    )}
                   </div>
                 ))}
               </div>

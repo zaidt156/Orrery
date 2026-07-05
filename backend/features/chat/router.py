@@ -18,7 +18,7 @@ from backend.core.config import settings
 from backend.core.database import get_sessionmaker
 from backend.core.observability import log_event
 from backend.core.models import Conversation, Message, Project
-from backend.features import admin, code_images, code_interpreter, docgen, events as stream_events, filegen, mcp, rag, reasoning, research, route_telemetry, sandbox, skills, taskbrain, taskrouter, team
+from backend.features import admin, capabilities, code_images, code_interpreter, docgen, events as stream_events, filegen, mcp, rag, reasoning, research, route_telemetry, sandbox, skills, taskbrain, taskrouter, team
 from backend.features import projects as project_store
 from backend.features import files as file_library
 from backend.features.prompting import CODE_INTERPRETER_PROMPT, FORMAT_INSTRUCTIONS, build_system_prompt, strip_think as _strip_think
@@ -43,13 +43,101 @@ _FILE_FORMAT_PATTERNS = [
     ("xlsx", re.compile(r"\b(excel|xlsx?|spreadsheet|workbook|sheet)\b", re.IGNORECASE)),
     ("docx", re.compile(r"\b(word|docx?|document)\b", re.IGNORECASE)),
     ("csv", re.compile(r"\bcsv\b", re.IGNORECASE)),
+    ("tex", re.compile(r"\b(tex|latex|latex\s+source|latex\s+document|latex\s+template)\b|\.tex\b", re.IGNORECASE)),
     ("pdf", re.compile(r"\b(pdf|report)\b", re.IGNORECASE)),
 ]
+
+_CV_REQUEST = re.compile(r"\b(cv|resume|curriculum\s+vitae)\b", re.IGNORECASE)
+
+_DOCSPEC_FEATURE_RULES = (
+    "Current mode: deterministic file design. Orrery will render your structured design into the "
+    "requested downloadable file(s). Return exactly one short summary sentence followed by exactly "
+    "one fenced ```orrery-doc JSON block. Do not answer as normal chat. Do not say a file is made "
+    "unless the JSON block contains the complete real content to render. For CV/resume requests, "
+    "create a polished, ATS-friendly structure with profile, skills, experience/projects, education, "
+    "and tools only when the user supplied or context implies those details; omit unknown facts rather "
+    "than using placeholders."
+)
 
 
 def _detect_formats(text: str) -> list[str]:
     found = [fmt for fmt, pattern in _FILE_FORMAT_PATTERNS if pattern.search(text or "")]
-    return found or ["pdf"]
+    if found:
+        return found
+    if _CV_REQUEST.search(text or ""):
+        return ["pdf", "docx"]
+    return ["pdf"]
+
+
+def _docspec_request(request: str, formats: list[str]) -> str:
+    wanted = ", ".join(fmt.upper() for fmt in formats)
+    return (
+        f"User requested downloadable format(s): {wanted}.\n\n"
+        "Design the requested file content for Orrery's renderer. Return one short summary sentence "
+        "and then one valid ```orrery-doc fenced JSON object. The JSON must contain the complete "
+        "document/deck/sheet structure; do not return prose-only content.\n\n"
+        f"Original user request:\n{request}"
+    )
+
+
+async def _collect_docspec_reply(
+    model: str,
+    messages: list[dict],
+    instructions: str,
+    effort: str | None,
+) -> AsyncIterator[dict]:
+    parts: list[str] = []
+    think = ThinkStream()
+    async for delta in ai.stream_chat(model, messages, instructions, effort):
+        if isinstance(delta, ai.ReasoningDelta):
+            for ev in think.feed_reasoning(str(delta)):
+                yield ev
+            continue
+        answer, events = think.feed(str(delta))
+        for ev in events:
+            yield ev
+        if answer:
+            parts.append(answer)
+    tail, events = think.finish()
+    for ev in events:
+        yield ev
+    if tail:
+        parts.append(tail)
+    yield {"_content": "".join(parts)}
+
+
+async def _render_docspec_artifacts(
+    cid: uuid.UUID,
+    model: str,
+    request: str,
+    content: str,
+) -> tuple[str | None, list[dict], str | None]:
+    spec = docgen.parse_doc_spec(content)
+    if spec is None:
+        return None, [], "The model did not return a valid orrery-doc JSON block."
+
+    title = await _conv_title(cid)
+    produced: list[dict] = []
+    errors: list[str] = []
+    formats = _detect_formats(request)
+    for fmt in formats:
+        try:
+            result = await asyncio.to_thread(docgen.render_spec, title, model, spec, fmt)
+            produced.append({"kind": "file", **file_library.store(result.filename, result.media_type, result.content)})
+        except Exception as exc:  # noqa: BLE001 - keep a short renderer reason for repair/failure
+            errors.append(f"{fmt}: {str(exc)[:220]}")
+
+    if errors:
+        return None, [], "Some requested formats failed to render: " + "; ".join(errors)
+    if not produced:
+        return None, [], "; ".join(errors) or "The renderer did not produce any approved file."
+
+    idx = content.lower().find("```orrery-doc")
+    summary = (content[:idx] if idx >= 0 else content).strip()
+    if not summary:
+        names = ", ".join(str(item.get("name") or "file") for item in produced)
+        summary = f"Created the requested file{'s' if len(produced) > 1 else ''}: {names}."
+    return summary[:500], produced, None
 
 
 async def _conv_title(cid: uuid.UUID) -> str:
@@ -61,7 +149,7 @@ async def _conv_title(cid: uuid.UUID) -> str:
         return (conv.title if conv and conv.title else None) or "Orrery file"
 
 
-async def _deliver_docspec(
+async def _deliver_docspec_legacy_unused(
     cid: uuid.UUID,
     model: str,
     request: str,
@@ -119,6 +207,89 @@ async def _deliver_docspec(
     yield stream_events.delta(summary)
     yield stream_events.files(produced)
     yield stream_events.message_id(message_id)
+    yield stream_events.done()
+
+
+async def _deliver_docspec(
+    cid: uuid.UUID,
+    model: str,
+    request: str,
+    system_prompt: str | None,
+    effort: str | None,
+    untrusted_context: str | None = None,
+    trusted_context: str | None = None,
+) -> AsyncIterator[dict]:
+    """Ask for a structured spec, repair once if needed, then render real file artifacts."""
+    yield stream_events.status("Creating the file structure...")
+    formats = _detect_formats(request)
+    instructions = build_system_prompt(
+        app_rules=FORMAT_INSTRUCTIONS,
+        feature_rules=_DOCSPEC_FEATURE_RULES,
+        user_preferences=system_prompt,
+        trusted_context=trusted_context,
+        untrusted_context=untrusted_context,
+    )
+    messages: list[dict] = [{"role": "user", "content": _docspec_request(request, formats)}]
+    last_error = ""
+
+    for attempt in range(2):
+        if attempt:
+            yield stream_events.status("Repairing the file structure...")
+        content = ""
+        try:
+            async for event in _collect_docspec_reply(model, messages, instructions, filegen.quality_effort(model, effort)):
+                if "_content" in event:
+                    content = event["_content"]
+                else:
+                    yield event
+        except Exception as exc:  # noqa: BLE001 - provider errors are sanitized upstream
+            last_error = str(exc)
+            break
+
+        summary, produced, error = await _render_docspec_artifacts(cid, model, request, content)
+        if produced and summary:
+            message_id = await persistence._persist_assistant(cid, summary, model, produced)
+            yield stream_events.delta(summary)
+            yield stream_events.files(produced)
+            yield stream_events.message_id(message_id)
+            yield stream_events.done()
+            return
+
+        last_error = error or "The renderer could not build the requested file."
+        messages.extend(
+            [
+                {"role": "assistant", "content": content[:12000]},
+                {
+                    "role": "user",
+                    "content": (
+                        "That response did not render into the requested file(s): "
+                        f"{last_error}\n\nReturn a corrected, complete ```orrery-doc JSON block only, "
+                        "with no placeholders and enough real content to render."
+                    ),
+                },
+            ]
+        )
+
+    yield {"_docspec_error": last_error or "The file builder did not return a renderable document spec."}
+
+
+async def _deliver_file_failure(
+    cid: uuid.UUID,
+    model: str,
+    trace: ReasoningTrace,
+    detail: str | None,
+) -> AsyncIterator[dict]:
+    message = (
+        "I could not create a real downloadable file for this request. "
+        "No approved artifact was saved, so I am not showing a fake export as if it were generated."
+    )
+    if detail:
+        message += f" Builder detail: {detail}"
+    message_id = await persistence._persist_assistant(cid, message, model)
+    yield trace.error("File generation failed", detail or "No approved artifact was produced.")
+    yield stream_events.delta(message)
+    yield stream_events.message_id(message_id)
+    yield trace.summary()
     yield stream_events.done()
 
 
@@ -300,6 +471,34 @@ def _mcp_catalog(servers: list[dict]) -> str:
     )
 
 
+def _allowed_registry_tools(
+    flags: dict,
+    *,
+    sandbox_ok: bool,
+    allow_code: bool,
+    allow_web: bool,
+    allow_mcp: bool,
+) -> set[str]:
+    allowed: set[str] = set()
+    if allow_web:
+        allowed.add("web_search")
+    if allow_mcp:
+        allowed.add("mcp_call")
+    if sandbox_ok and allow_code:
+        allowed.update({"run_python", "run_shell"})
+    if not flags.get("capability_agent", False):
+        return allowed
+    if flags.get("file_gen", True):
+        allowed.add("file_generate")
+    if flags.get("dashboards", True):
+        allowed.update({"db_query", "dashboard_refresh"})
+    if flags.get("ontology", True):
+        allowed.add("doc_search")
+    if flags.get("crabbox", False):
+        allowed.add("crabbox_run")
+    return allowed
+
+
 @dataclass(slots=True)
 class _RouteResult:
     """Mutable outcome for route handlers that may fall back to normal chat."""
@@ -422,7 +621,7 @@ async def _route_file(
     route_event_id: str | None,
     state: _RouteResult,
 ) -> AsyncIterator[dict]:
-    """Generate requested files, falling back from sandbox to docgen to normal chat."""
+    """Generate requested files, falling back from sandbox to docgen, then an honest saved failure."""
     # Prefer the sandbox whenever it's available: model-written Python (python-docx/openpyxl/pptx/
     # reportlab/Pillow…) reliably produces a real, downloadable file of any type — which is what the
     # user sees as an actual file card. The deterministic docgen builder remains the fallback.
@@ -475,7 +674,11 @@ async def _route_file(
         )
 
     delivered = False
+    docspec_error: str | None = None
     async for ev in _deliver_docspec(cid, model, user_content, gen_system, effort, rag_context, trusted_context):
+        if "_docspec_error" in ev:
+            docspec_error = str(ev.get("_docspec_error") or "")
+            continue
         if "files" in ev:
             delivered = True
         if ev.get("done"):
@@ -491,11 +694,9 @@ async def _route_file(
 
     await route_telemetry.record_outcome(route_event_id, "deterministic_failed")
     state.outcome = "deterministic_failed"
-    yield trace.warning(
-        "File route fallback",
-        "The file builder could not produce an approved artifact, so Orrery will answer in normal chat instead.",
-    )
-    yield stream_events.status("")
+    async for ev in _deliver_file_failure(cid, model, trace, docspec_error):
+        yield ev
+    state.handled = True
 
 
 async def _route_model_reply(
@@ -513,6 +714,7 @@ async def _route_model_reply(
     allow_code: bool = True,
     allow_web: bool = True,
     allow_mcp: bool = True,
+    flags: dict | None = None,
 ) -> AsyncIterator[dict]:
     """Stream the normal model reply, optionally using the universal sandbox tool loop."""
     budget_system = "\n\n".join(part for part in (gen_system, trusted_context, rag_context) if part)
@@ -520,6 +722,14 @@ async def _route_model_reply(
     outcome = "completed"
 
     sandbox_ok = sandbox.image_ready()
+    effective_flags = flags or {}
+    allowed_tools = _allowed_registry_tools(
+        effective_flags,
+        sandbox_ok=sandbox_ok,
+        allow_code=allow_code,
+        allow_web=allow_web,
+        allow_mcp=allow_mcp,
+    )
     if sandbox_ok and allow_code:
         user_text = _latest_user_text(limited_messages)
         gen_effort = filegen.quality_effort(model, effort) if _wants_high_effort(user_text) else effort
@@ -528,6 +738,7 @@ async def _route_model_reply(
         feature_rules = CODE_INTERPRETER_PROMPT
         if not allow_web:
             feature_rules += "\n\nWeb search is currently disabled — do not use an orrery-search block."
+        feature_rules += await capabilities.tool_catalog(allowed_tools)
         feature_rules += _mcp_catalog(mcp_servers)
         formatted_prompt = build_system_prompt(
             app_rules=FORMAT_INSTRUCTIONS,
@@ -543,7 +754,8 @@ async def _route_model_reply(
 
         async for event in code_interpreter.run(
             model, formatted_prompt, limited_messages, gen_effort, trace=trace, persist=_persist,
-            allow_web=allow_web, mcp_servers=mcp_servers,
+            allow_web=allow_web, mcp_servers=mcp_servers, allowed_tools=allowed_tools,
+            system_prompt=gen_system, trusted_context=trusted_context, untrusted_context=rag_context,
         ):
             if "error" in event:
                 outcome = "failed"
@@ -595,7 +807,7 @@ async def stream_reply(
 
     yield stream_events.title(turn.title)
 
-    flags = await admin.get_flags()  # admin feature toggles (gate capabilities globally)
+    flags = await admin.effective_flags()  # workspace defaults plus per-user team overrides
 
     # Deep Research: an explicit /research command runs the decompose -> gather -> cited-report
     # workflow instead of a normal chat turn.
@@ -690,7 +902,14 @@ async def stream_reply(
                     kind="context", status="done", phase="context",
                 )
 
-    if plan.route == "image" and not attachments:
+    # Capability planner: when the model-guided tool planner is enabled, file/image requests are NOT
+    # pre-routed by regex — they flow to the model, which self-selects file_generate (which produces
+    # HTML, LaTeX/.tex, images, audio, docx, xlsx, …) or another tool. When it's off (default), the
+    # deterministic route-specific handlers below run as before. Project creation stays a dedicated
+    # side-effecting route regardless.
+    planner_on = bool(flags.get("capability_agent", False))
+
+    if plan.route == "image" and not attachments and not planner_on:
         async for event in _route_image(cid, model, user_content, gen_system, effort, trace, route_event_id):
             yield event
         return
@@ -707,7 +926,7 @@ async def stream_reply(
             yield event
         return
 
-    if plan.route == "file" and flags.get("file_gen", True):
+    if plan.route == "file" and flags.get("file_gen", True) and not planner_on:
         route_state = _RouteResult()
         async for event in _route_file(
             cid, model, user_content, gen_system, effort, rag_context, trusted_context,
@@ -721,7 +940,7 @@ async def stream_reply(
         cid, model, gen_system, messages, effort, context_window, trusted_context, rag_context,
         plan, trace, route_event_id,
         allow_code=flags.get("chat_code", True), allow_web=flags.get("web_search", True),
-        allow_mcp=flags.get("mcp", True),
+        allow_mcp=flags.get("mcp", True), flags=flags,
     ):
         yield event
     return

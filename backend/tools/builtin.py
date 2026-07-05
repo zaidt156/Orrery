@@ -9,10 +9,24 @@ in untrusted context.
 from __future__ import annotations
 
 import asyncio
+import mimetypes
 
 from pydantic import BaseModel, Field
 
 from backend.tools.registry import Tool, register_tool
+
+
+def _store_sandbox_files(files) -> list[dict]:
+    from backend.features import files as file_library
+
+    produced: list[dict] = []
+    for item in files:
+        mime = mimetypes.guess_type(item.name)[0] or "application/octet-stream"
+        try:
+            produced.append({"kind": "file", **file_library.store(item.name, mime, item.data)})
+        except ValueError:
+            continue
+    return produced
 
 
 class WebSearchConfig(BaseModel):
@@ -87,10 +101,12 @@ class RunPythonTool(Tool):
         if not sandbox.image_ready():
             raise RuntimeError("The code sandbox is offline (Docker isn't running or the image isn't built).")
         result = await asyncio.to_thread(sandbox.run_code, config.code)
+        artifacts = _store_sandbox_files(result.files)
         return {
             "exit_code": result.exit_code, "timed_out": result.timed_out,
             "stdout": result.stdout[:8000], "stderr": result.stderr[:4000],
-            "files": [f.name for f in result.files],
+            "files": [f.name for f in result.files], "artifacts": artifacts,
+            "sandbox": result.manifest,
         }
 
 
@@ -109,11 +125,86 @@ class RunShellTool(Tool):
         if not sandbox.image_ready():
             raise RuntimeError("The code sandbox is offline (Docker isn't running or the image isn't built).")
         result = await asyncio.to_thread(sandbox.run_shell, config.script)
+        artifacts = _store_sandbox_files(result.files)
         return {
             "exit_code": result.exit_code, "timed_out": result.timed_out,
             "stdout": result.stdout[:8000], "stderr": result.stderr[:4000],
-            "files": [f.name for f in result.files],
+            "files": [f.name for f in result.files], "artifacts": artifacts,
+            "sandbox": result.manifest,
         }
+
+
+class FileGenerateConfig(BaseModel):
+    request: str = Field(min_length=1, max_length=20_000)
+    model: str = Field(default="", max_length=200)
+    system_prompt: str = Field(default="", max_length=20_000)
+    effort: str = Field(default="", max_length=20)
+    trusted_context: str = Field(default="", max_length=40_000)
+    untrusted_context: str = Field(default="", max_length=40_000)
+
+
+@register_tool("file_generate")
+class FileGenerateTool(Tool):
+    label = "Generate file"
+    category = "code"
+    writes = True
+    config_model = FileGenerateConfig
+
+    async def execute(self, config: FileGenerateConfig) -> dict:
+        from backend.features import filegen
+
+        if not config.model:
+            raise ValueError("file_generate requires the caller's current model.")
+        result = None
+        async for event in filegen.run(
+            config.model,
+            config.request,
+            config.system_prompt or None,
+            config.effort or None,
+            config.untrusted_context or None,
+            config.trusted_context or None,
+        ):
+            if "result" in event:
+                result = event["result"]
+        if not result or not result.get("ok"):
+            raise RuntimeError((result or {}).get("error") or "File generation did not produce an approved file.")
+        artifacts = _store_sandbox_files(result.get("files") or [])
+        if not artifacts:
+            raise RuntimeError("Generated files could not be stored.")
+        return {
+            "summary": result.get("summary") or "Created the requested file.",
+            "files": [item.get("name") for item in artifacts],
+            "artifacts": artifacts,
+            "manifest": result.get("manifest") or [],
+            "sandbox_runs": result.get("sandbox_runs") or [],
+        }
+
+
+class CrabboxRunConfig(BaseModel):
+    command: list[str] = Field(default_factory=list, max_length=48)
+    shell: str = Field(default="", max_length=8_000)
+    label: str = Field(default="", max_length=120)
+    timeout_seconds: int | None = Field(default=None, ge=10, le=7200)
+
+
+@register_tool("crabbox_run")
+class CrabboxRunTool(Tool):
+    label = "Run command with Crabbox"
+    category = "code"
+    writes = True
+    config_model = CrabboxRunConfig
+
+    async def execute(self, config: CrabboxRunConfig) -> dict:
+        from backend.features import admin, crabbox
+
+        if not await admin.feature_enabled("crabbox"):
+            raise PermissionError("Crabbox is disabled by the current feature gates.")
+        return await crabbox.run_command(
+            command=config.command,
+            shell=config.shell,
+            label=config.label,
+            timeout_seconds=config.timeout_seconds,
+        )
 
 
 class DashboardRefreshConfig(BaseModel):

@@ -270,7 +270,7 @@ export const deleteProjectFile = (id, source) =>
 
 // Read a browser File into the {name, mime, kind, content} shape the backend expects.
 // Text-like files are sent as raw text; everything else (pdf/office/…) as a base64 data URL.
-const TEXT_EXT = /\.(txt|md|markdown|csv|tsv|json|ya?ml|xml|html?|css|js|jsx|ts|tsx|py|java|c|cpp|cs|go|rs|rb|php|sh|sql|ini|toml|log)$/i;
+const TEXT_EXT = /\.(txt|md|markdown|csv|tsv|json|ya?ml|xml|html?|css|js|jsx|ts|tsx|py|java|c|cpp|cs|go|rs|rb|php|sh|sql|ini|toml|log|tex|bib|sty|cls)$/i;
 export function readFileAsAttachment(file) {
   const name = file.name || "file";
   const isText = TEXT_EXT.test(name) || (file.type || "").startsWith("text/");

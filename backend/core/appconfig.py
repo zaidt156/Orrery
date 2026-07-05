@@ -17,7 +17,9 @@ _ALLOWED_SETTINGS: dict[str, type] = {
     "spend_cap": dict,
     "privacy_mode": str,
     "feature_flags": dict,  # admin on/off toggles per capability
+    "team_user_feature_flags": dict,  # per-team-user capability overrides; never contains secrets
     "defaults": dict,       # workspace defaults: {"model": "<id>", "effort": ""|low|high|xhigh}
+    "crabbox": dict,        # optional remote executor settings; never contains broker/provider secrets
 }
 
 

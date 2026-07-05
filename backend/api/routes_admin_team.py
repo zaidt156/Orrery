@@ -4,7 +4,7 @@ import asyncio
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 
-from backend.api.deps import _require_conversation_access, _sse, _sse_run
+from backend.api.deps import _require_admin_access, _require_conversation_access, _sse, _sse_run
 from backend.api.schemas import *  # noqa: F401,F403 — request models
 from backend.core import appconfig, database
 from backend.core.config import settings
@@ -60,32 +60,31 @@ async def team_signout() -> dict:
 
 @router.get("/team/users")
 async def team_users() -> dict:
-    if not await team.is_admin():
-        raise HTTPException(status_code=403, detail="Admin access required.")
-    return {"users": await team.list_users()}
+    await _require_admin_access()
+    return {"users": await admin.apply_user_feature_flags(await team.list_users())}
 
 @router.post("/team/users")
 async def team_create_user(body: TeamUserBody) -> dict:
-    if not await team.is_admin():
-        raise HTTPException(status_code=403, detail="Admin access required.")
+    await _require_admin_access()
     return await team.create_user(body.name, body.role)
 
 @router.patch("/team/users/{uid}")
 async def team_update_user(uid: str, body: TeamUserUpdate) -> dict:
-    if not await team.is_admin():
-        raise HTTPException(status_code=403, detail="Admin access required.")
+    await _require_admin_access()
     res = await team.set_user(uid, role=body.role, disabled=body.disabled)
     if not res["ok"]:
         raise HTTPException(status_code=409, detail=res["error"])
+    if "feature_flags" in body.model_fields_set:
+        await admin.set_user_feature_flags(uid, body.feature_flags)
     return res
 
 @router.delete("/team/users/{uid}")
 async def team_delete_user(uid: str) -> dict:
-    if not await team.is_admin():
-        raise HTTPException(status_code=403, detail="Admin access required.")
+    await _require_admin_access()
     res = await team.delete_user(uid)
     if not res["ok"]:
         raise HTTPException(status_code=409, detail=res["error"])
+    await admin.clear_user_feature_flags(uid)
     return res
 
 # --- projects ---

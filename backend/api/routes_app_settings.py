@@ -4,7 +4,7 @@ import asyncio
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 
-from backend.api.deps import _require_conversation_access, _sse, _sse_run
+from backend.api.deps import _require_admin_access, _require_conversation_access, _sse, _sse_run
 from backend.api.schemas import *  # noqa: F401,F403 — request models
 from backend.core import appconfig, database
 from backend.core.config import settings
@@ -25,6 +25,7 @@ async def get_branding() -> dict:
 
 @router.put("/branding")
 async def put_branding(body: Branding) -> dict:
+    await _require_admin_access()
     return await appconfig.set_setting("branding", body.model_dump())
 
 @router.get("/defaults")
@@ -34,6 +35,7 @@ async def get_defaults() -> dict:
 
 @router.put("/defaults")
 async def put_defaults(body: DefaultsBody) -> dict:
+    await _require_admin_access()
     effort = body.effort if body.effort in ("", "low", "high", "xhigh") else ""
     return await appconfig.set_setting("defaults", {"model": body.model.strip(), "effort": effort})
 
@@ -46,27 +48,32 @@ async def get_privacy() -> dict:
 
 @router.put("/privacy")
 async def put_privacy(body: PrivacyMode) -> dict:
+    await _require_admin_access()
     await appconfig.set_setting("privacy_mode", body.mode)
     return {"mode": body.mode}
 
 @router.get("/database")
 async def get_database() -> dict:
+    await _require_admin_access()
     info = database.connection_info()
     info["status"] = "ok" if info["configured"] and await database.check_connection(force=True) else "error"
     return info
 
 @router.delete("/database")
 async def clear_database() -> dict:
+    await _require_admin_access()
     await database.clear_database_url_and_reset()
     return {"ok": True, "restart_required": False}
 
 @router.post("/database/test")
 async def test_database(body: DbConnection) -> dict:
+    await _require_admin_access()
     ok, error = await database.test_url(body.url)
     return {"ok": ok, "error": error}
 
 @router.put("/database")
 async def set_database(body: DbConnection) -> dict:
+    await _require_admin_access()
     ok, error = await database.test_url(body.url)
     if not ok:
         return {"ok": False, "error": error}
@@ -79,6 +86,7 @@ async def get_usage() -> dict:
 
 @router.put("/usage/cap")
 async def put_usage_cap(body: SpendCap) -> dict:
+    await _require_admin_access()
     await usage.set_cap(body.enabled, body.limit_usd, body.period)
     return await usage.summary()
 
@@ -91,4 +99,3 @@ async def post_feedback(body: NewFeedback) -> dict:
 @router.get("/feedback")
 async def list_feedback() -> dict:
     return {"feedback": await feedback.recent()}
-

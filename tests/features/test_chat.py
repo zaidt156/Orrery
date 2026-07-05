@@ -111,6 +111,10 @@ def test_context_window_counts_images_without_counting_base64_bytes():
     assert chat._content_token_estimate(image["content"]) == 1024
 
 
+def test_cv_request_defaults_to_pdf_and_word():
+    assert chat._detect_formats("Create my CV") == ["pdf", "docx"]
+
+
 @pytest.mark.anyio
 async def test_generate_adds_markdown_format_instructions(monkeypatch):
     seen = {}
@@ -174,6 +178,47 @@ async def test_generate_returns_saved_message_id(monkeypatch):
     ]
 
     assert {"message_id": "00000000-0000-0000-0000-000000000099"} in events
+
+
+@pytest.mark.anyio
+async def test_docspec_delivery_repairs_missing_spec(monkeypatch):
+    prompts = []
+
+    async def fake_stream_chat(model, messages, system_prompt=None, effort=None):
+        prompts.append(messages[-1]["content"])
+        if len(prompts) == 1:
+            yield "I made the file."
+        else:
+            yield 'Created the file.\n```orrery-doc\n{"title":"CV","sections":[{"heading":"Profile","paragraphs":["Experienced engineer."]}]}\n```'
+
+    async def fake_render(cid, model, request, content):
+        if "orrery-doc" not in content:
+            return None, [], "missing spec"
+        return "Created the file.", [{"kind": "file", "name": "cv.pdf"}], None
+
+    async def fake_persist_assistant(*args, **kwargs):
+        return "00000000-0000-0000-0000-000000000099"
+
+    monkeypatch.setattr(chat.ai, "stream_chat", fake_stream_chat)
+    monkeypatch.setattr(chat.router, "_render_docspec_artifacts", fake_render)
+    monkeypatch.setattr(chat.persistence, "_persist_assistant", fake_persist_assistant)
+
+    events = [
+        event
+        async for event in chat._deliver_docspec(
+            uuid.UUID("00000000-0000-0000-0000-000000000001"),
+            "openai/test",
+            "Create my CV",
+            None,
+            None,
+        )
+    ]
+
+    assert len(prompts) == 2
+    assert "User requested downloadable format(s): PDF, DOCX" in prompts[0]
+    assert "did not render into the requested file" in prompts[1]
+    assert {"files": [{"kind": "file", "name": "cv.pdf"}]} in events
+    assert events[-1] == stream_events.done()
 
 
 def _fake_turn(*, model: str = "openai/test", effort: str | None = None) -> chat._TurnContext:
@@ -325,7 +370,7 @@ async def test_stream_reply_file_route_sandbox_miss_uses_docspec(monkeypatch):
 
 
 @pytest.mark.anyio
-async def test_stream_reply_file_route_full_fallback_to_model_reply(monkeypatch):
+async def test_stream_reply_file_route_failure_stays_on_file_route(monkeypatch):
     calls = []
     outcomes = []
 
@@ -355,6 +400,9 @@ async def test_stream_reply_file_route_full_fallback_to_model_reply(monkeypatch)
         yield stream_events.delta("fallback answer")
         yield stream_events.done()
 
+    async def fake_persist_assistant(*args, **kwargs):
+        return "00000000-0000-0000-0000-000000000099"
+
     monkeypatch.setattr(chat.router, "_prepare_turn", fake_prepare_turn)
     monkeypatch.setattr(chat.project_store, "trusted_context", fake_trusted_context)
     monkeypatch.setattr(chat.route_telemetry, "record_plan", fake_record_plan)
@@ -363,6 +411,7 @@ async def test_stream_reply_file_route_full_fallback_to_model_reply(monkeypatch)
     monkeypatch.setattr(chat.filegen, "run", fake_filegen_run)
     monkeypatch.setattr(chat.router, "_deliver_docspec", fake_deliver_docspec)
     monkeypatch.setattr(chat.router, "_route_model_reply", fake_route_model_reply)
+    monkeypatch.setattr(chat.persistence, "_persist_assistant", fake_persist_assistant)
 
     events = [
         event
@@ -372,9 +421,8 @@ async def test_stream_reply_file_route_full_fallback_to_model_reply(monkeypatch)
         )
     ]
 
-    assert calls == ["sandbox", "docspec", "model"]
-    assert {"status": ""} in events
-    assert {"delta": "fallback answer"} in events
+    assert calls == ["sandbox", "docspec"]
+    assert any("could not create a real downloadable file" in event.get("delta", "") for event in events)
     assert events[-1] == stream_events.done()
     assert ("route-1", "deterministic_failed", None) in outcomes
 

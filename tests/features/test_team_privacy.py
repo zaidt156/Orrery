@@ -3,7 +3,7 @@ import uuid
 import pytest
 
 from backend.core.models import Conversation, Project
-from backend.features import chat, projects, team
+from backend.features import admin, chat, projects, team
 
 
 class FakeSession:
@@ -101,3 +101,52 @@ async def test_set_conversation_project_rejects_foreign_project(monkeypatch):
     assert await projects.set_conversation_project(str(cid), str(pid)) is None
     assert conv.project_id is None
     assert fake.commits == 0
+
+
+@pytest.mark.anyio
+async def test_effective_flags_apply_member_override(monkeypatch):
+    async def workspace_flags():
+        return {name: True for name in admin.FEATURES}
+
+    async def team_mode_on():
+        return True
+
+    async def current_member():
+        return {"id": "member-1", "name": "Member", "role": "member", "team_mode": True}
+
+    async def member_overrides(_user_id):
+        return {"file_gen": False}
+
+    monkeypatch.setattr(admin, "get_flags", workspace_flags)
+    monkeypatch.setattr(admin, "get_user_feature_flags", member_overrides)
+    monkeypatch.setattr(team, "team_mode", team_mode_on)
+    monkeypatch.setattr(team, "current_user", current_member)
+
+    flags = await admin.effective_flags()
+
+    assert flags["file_gen"] is False
+    assert flags["web_search"] is True
+
+
+@pytest.mark.anyio
+async def test_effective_flags_keep_admin_on_workspace_defaults(monkeypatch):
+    async def workspace_flags():
+        return {name: True for name in admin.FEATURES}
+
+    async def team_mode_on():
+        return True
+
+    async def current_admin():
+        return {"id": "admin-1", "name": "Admin", "role": "admin", "team_mode": True}
+
+    async def admin_overrides(_user_id):
+        return {"file_gen": False}
+
+    monkeypatch.setattr(admin, "get_flags", workspace_flags)
+    monkeypatch.setattr(admin, "get_user_feature_flags", admin_overrides)
+    monkeypatch.setattr(team, "team_mode", team_mode_on)
+    monkeypatch.setattr(team, "current_user", current_admin)
+
+    flags = await admin.effective_flags()
+
+    assert flags["file_gen"] is True

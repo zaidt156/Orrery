@@ -57,6 +57,7 @@ skills/
 # Tracked project docs and runtime prompt skills
 !docs/
 docs/*
+!docs/README.md
 !docs/history/
 docs/history/*
 !docs/history/DEVLOG.md
@@ -64,6 +65,9 @@ docs/history/*
 docs/planning/*
 !docs/planning/TASK_ROUTING_ARCHITECTURE.md
 !docs/planning/ORRERY_PLAN.md
+!docs/security/
+docs/security/*
+!docs/security/USER_ADMIN_ACCESS.md
 !skills/
 skills/*
 !skills/*.md

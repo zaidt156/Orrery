@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from backend.api import Branding, NewConversation, create_app
+from backend.api import deps
 from backend.features import chat, exports, route_telemetry
 from backend.providers import accounts
 from backend.security import secrets
@@ -95,6 +96,22 @@ def test_set_key_returns_masked_status():
     assert r.status_code == 200
     assert "ANOTHERSECRET42" not in json.dumps(r.json())
     assert r.json()["configured"] is True
+
+
+def test_provider_key_write_requires_admin_access(monkeypatch):
+    async def not_admin():
+        return False
+
+    monkeypatch.setattr(deps.team, "is_admin", not_admin)
+
+    r = _client().put(
+        "/api/providers/openai/key",
+        headers={"X-Orrery-Token": TOKEN},
+        json={"key": "sk-proj-NOTALLOWED"},
+    )
+
+    assert r.status_code == 403
+    assert r.json()["detail"] == "Admin access required."
 
 
 def test_connect_claude_plan_endpoint(monkeypatch):
@@ -212,6 +229,29 @@ def test_task_route_summary_endpoint(monkeypatch):
     assert r.status_code == 200
     assert r.json()["routes"]["chat"] == 2
     assert "sandbox_fallback" in r.json()["outcomes"]
+
+
+def test_tools_catalog_endpoint():
+    r = _client().get("/api/tools", headers={"X-Orrery-Token": TOKEN})
+
+    assert r.status_code == 200
+    keys = {tool["key"] for tool in r.json()["tools"]}
+    assert "file_generate" in keys
+    assert "crabbox_run" in keys
+
+
+def test_crabbox_status_endpoint(monkeypatch):
+    from backend.features import crabbox
+
+    async def fake_status():
+        return {"enabled": False, "installed": False, "configured": False, "doctor": {"ok": False}}
+
+    monkeypatch.setattr(crabbox, "status", fake_status)
+
+    r = _client().get("/api/crabbox/status", headers={"X-Orrery-Token": TOKEN})
+
+    assert r.status_code == 200
+    assert r.json()["configured"] is False
 
 
 def test_app_update_endpoint(monkeypatch):

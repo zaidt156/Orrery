@@ -31,6 +31,8 @@ th{background:#26314f;color:#fff}
 .doc{max-width:820px;margin:0 auto;background:#fff;border-radius:10px;padding:40px 48px}
 .doc h1{font-size:26px;color:#0b1020;margin:0 0 14px} .doc h2{font-size:20px;color:#0b1020;margin:18px 0 8px}
 .doc p{font-size:15px;line-height:1.6;margin:0 0 12px} .doc li{font-size:15px;line-height:1.6;margin:4px 0}
+.source{max-width:1040px;margin:0 auto;background:#fff;border-radius:10px;padding:28px 32px}
+.source pre{white-space:pre-wrap;word-break:break-word;margin:0;font:13px/1.55 Consolas,Menlo,monospace;color:#172033}
 """
 
 
@@ -181,6 +183,15 @@ def _docx_html(data: bytes) -> bytes:
     return _page("Document", "".join(parts))
 
 
+def _source_html(name: str, data: bytes) -> bytes:
+    text = data.decode("utf-8", errors="replace")
+    body = (
+        f'<div class="meta">Source preview · {html.escape(name)}</div>'
+        f'<div class="source"><pre>{html.escape(text)}</pre></div>'
+    )
+    return _page(name, body)
+
+
 def to_preview(name: str, mime: str, data: bytes) -> tuple[bytes, str]:
     """(content, media_type) for inline preview. Office → HTML; everything else served as-is."""
     ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
@@ -195,6 +206,8 @@ def to_preview(name: str, mime: str, data: bytes) -> tuple[bytes, str]:
             return _xlsx_html(data), "text/html; charset=utf-8"
         if ext == "docx":
             return _docx_html(data), "text/html; charset=utf-8"
+        if ext in ("tex", "bib", "sty", "cls"):
+            return _source_html(name, data), "text/html; charset=utf-8"
     except Exception:  # noqa: BLE001 — on any parse failure, fall back to the raw bytes
         pass
     return data, mime

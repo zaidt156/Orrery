@@ -4,7 +4,7 @@ import asyncio
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 
-from backend.api.deps import _require_conversation_access, _sse, _sse_run
+from backend.api.deps import _require_admin_access, _require_conversation_access, _sse, _sse_run
 from backend.api.schemas import *  # noqa: F401,F403 — request models
 from backend.core import appconfig, database
 from backend.core.config import settings
@@ -28,11 +28,13 @@ async def models_catalog() -> dict:
 
 @router.post("/models/active")
 async def models_active(body: SetActive) -> dict:
+    await _require_admin_access()
     await catalog.set_active(body.id, body.label, body.provider, body.active)
     return {"id": body.id, "active": body.active}
 
 @router.post("/custom-models")
 async def custom_add(body: NewCustomModel) -> dict:
+    await _require_admin_access()
     if not body.base_url.strip() or not body.model.strip():
         raise HTTPException(status_code=400, detail="Base URL and model id are required")
     try:  # validation + SSRF guard raise ValueError/UnsafeUrlError → surface as a clean 400
@@ -44,7 +46,7 @@ async def custom_add(body: NewCustomModel) -> dict:
 
 @router.delete("/custom-models/{cid}")
 async def custom_delete(cid: str) -> dict:
+    await _require_admin_access()
     if not await catalog.delete_custom_model(cid):
         raise HTTPException(status_code=404, detail="Custom model not found")
     return {"deleted": True}
-

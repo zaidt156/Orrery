@@ -7,6 +7,7 @@ from fastapi import HTTPException
 from fastapi.responses import StreamingResponse
 
 from backend.features import chat
+from backend.features import team
 from backend.providers import ai, catalog
 
 
@@ -32,6 +33,12 @@ def _sse_run(conv_id: str, source) -> StreamingResponse:
 async def _require_conversation_access(conv_id: str) -> None:
     if not await chat.can_access_conversation(conv_id):
         raise HTTPException(status_code=404, detail="Conversation not found")
+
+
+async def _require_admin_access() -> None:
+    """Require admin privileges in team mode; solo mode is treated as the local admin."""
+    if not await team.is_admin():
+        raise HTTPException(status_code=403, detail="Admin access required.")
 
 
 async def _activate_provider(provider: str) -> None:

@@ -140,7 +140,7 @@ export function CodeImageArtifact({ artifact, onPreview, onError }) {
   );
 }
 
-const PREVIEWABLE_FILE = /\.(pdf|png|jpe?g|gif|webp|svg|pptx|xlsx|docx|csv|md|markdown|txt|html?|json|wav|mp3|mp4|webm)$/i;
+const PREVIEWABLE_FILE = /\.(pdf|png|jpe?g|gif|webp|svg|pptx|xlsx|docx|csv|md|markdown|txt|html?|json|tex|wav|mp3|mp4|webm)$/i;
 
 function formatBytes(n) {
   if (!n) return "";
@@ -151,6 +151,7 @@ function formatBytes(n) {
 
 function fileExtIcon(name = "") {
   const ext = (name.split(".").pop() || "").toLowerCase();
+  if (ext === "tex") return "TeX";
   if (ext === "pdf") return "📕";
   if (["xlsx", "xls", "csv"].includes(ext)) return "📊";
   if (["pptx", "ppt"].includes(ext)) return "📑";
@@ -170,7 +171,7 @@ function fileTypeLabel(name = "") {
   if (["mp4", "webm"].includes(ext)) return "Video";
   if (["zip", "tar", "gz"].includes(ext)) return "Archive";
   if (["json", "yaml", "yml", "xml"].includes(ext)) return "Data";
-  if (["html", "htm", "js", "jsx", "ts", "tsx", "py", "css", "md", "sql"].includes(ext)) return "Code";
+  if (["html", "htm", "js", "jsx", "ts", "tsx", "py", "css", "md", "sql", "tex"].includes(ext)) return "Code";
   if (["txt", "log"].includes(ext)) return "Text";
   if (["wav", "mp3"].includes(ext)) return "Audio";
   return "File";

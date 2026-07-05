@@ -4,7 +4,7 @@ import asyncio
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 
-from backend.api.deps import _activate_provider, _require_conversation_access, _sse, _sse_run
+from backend.api.deps import _activate_provider, _require_admin_access, _require_conversation_access, _sse, _sse_run
 from backend.api.schemas import *  # noqa: F401,F403 — request models
 from backend.core import appconfig, database
 from backend.core.config import settings
@@ -21,6 +21,7 @@ async def providers() -> dict:
 
 @router.put("/providers/{provider}/key")
 async def set_key(provider: str, body: ProviderKey) -> dict:
+    await _require_admin_access()
     if provider not in ai.PROVIDERS:
         raise HTTPException(status_code=404, detail="Unknown provider")
     if not body.key.strip():
@@ -31,6 +32,7 @@ async def set_key(provider: str, body: ProviderKey) -> dict:
 
 @router.delete("/providers/{provider}/key")
 async def clear_key(provider: str) -> dict:
+    await _require_admin_access()
     if provider not in ai.PROVIDERS:
         raise HTTPException(status_code=404, detail="Unknown provider")
     secrets.clear_provider_key(provider)
@@ -38,6 +40,7 @@ async def clear_key(provider: str) -> dict:
 
 @router.post("/providers/anthropic/claude-plan/connect")
 async def connect_claude_plan() -> dict:
+    await _require_admin_access()
     try:
         status = await asyncio.to_thread(accounts.connect_claude_plan)
     except ValueError as e:
@@ -53,10 +56,12 @@ async def connect_claude_plan() -> dict:
 
 @router.delete("/providers/anthropic/claude-plan")
 async def disconnect_claude_plan() -> dict:
+    await _require_admin_access()
     return await asyncio.to_thread(accounts.disconnect_claude_plan)
 
 @router.post("/providers/anthropic/claude-plan/install")
 async def install_claude_cli(body: PlanConnection) -> dict:
+    await _require_admin_access()
     try:
         return await asyncio.to_thread(accounts.install_plan_cli, "claude_plan", body.acknowledged)
     except ValueError as e:
@@ -64,6 +69,7 @@ async def install_claude_cli(body: PlanConnection) -> dict:
 
 @router.post("/providers/anthropic/claude-plan/login")
 async def login_claude_cli() -> dict:
+    await _require_admin_access()
     try:
         return await asyncio.to_thread(accounts.launch_plan_login, "claude_plan")
     except ValueError as e:
@@ -71,6 +77,7 @@ async def login_claude_cli() -> dict:
 
 @router.post("/providers/anthropic/claude-plan/refresh")
 async def refresh_claude_cli() -> dict:
+    await _require_admin_access()
     return await asyncio.to_thread(accounts.refresh_plan_mode, "claude_plan")
 
 async def _activate_cli_plan(models_fn) -> None:
@@ -84,6 +91,7 @@ async def _activate_cli_plan(models_fn) -> None:
 
 @router.post("/providers/openai/chatgpt-plan/connect")
 async def connect_chatgpt_plan(body: PlanConnection) -> dict:
+    await _require_admin_access()
     try:
         status = await asyncio.to_thread(accounts.connect_chatgpt_plan, body.acknowledged)
     except ValueError as e:
@@ -93,10 +101,12 @@ async def connect_chatgpt_plan(body: PlanConnection) -> dict:
 
 @router.delete("/providers/openai/chatgpt-plan")
 async def disconnect_chatgpt_plan() -> dict:
+    await _require_admin_access()
     return await asyncio.to_thread(accounts.disconnect_chatgpt_plan)
 
 @router.post("/providers/openai/chatgpt-plan/install")
 async def install_codex_cli(body: PlanConnection) -> dict:
+    await _require_admin_access()
     try:
         return await asyncio.to_thread(accounts.install_plan_cli, "chatgpt_plan", body.acknowledged)
     except ValueError as e:
@@ -104,6 +114,7 @@ async def install_codex_cli(body: PlanConnection) -> dict:
 
 @router.post("/providers/openai/chatgpt-plan/login")
 async def login_codex_cli() -> dict:
+    await _require_admin_access()
     try:
         return await asyncio.to_thread(accounts.launch_plan_login, "chatgpt_plan")
     except ValueError as e:
@@ -111,10 +122,12 @@ async def login_codex_cli() -> dict:
 
 @router.post("/providers/openai/chatgpt-plan/refresh")
 async def refresh_codex_cli() -> dict:
+    await _require_admin_access()
     return await asyncio.to_thread(accounts.refresh_plan_mode, "chatgpt_plan")
 
 @router.post("/providers/google/gemini-plan/connect")
 async def connect_gemini_plan(body: PlanConnection) -> dict:
+    await _require_admin_access()
     try:
         status = await asyncio.to_thread(accounts.connect_gemini_plan, body.acknowledged)
     except ValueError as e:
@@ -124,6 +137,7 @@ async def connect_gemini_plan(body: PlanConnection) -> dict:
 
 @router.delete("/providers/google/gemini-plan")
 async def disconnect_gemini_plan() -> dict:
+    await _require_admin_access()
     return await asyncio.to_thread(accounts.disconnect_gemini_plan)
 
 # --- local models (official Ollama service) ---

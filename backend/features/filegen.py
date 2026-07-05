@@ -38,10 +38,10 @@ _CODE_FENCE = re.compile(r"```(?:python|py)?\s*\n([\s\S]*?)```", re.IGNORECASE)
 _FILE_INTENT = re.compile(
     r"\b(pdf|docx|word\s+doc(?:ument)?|excel|xlsx|spreadsheet|workbook|powerpoint|pptx|"
     r"presentation|slide\s*deck|slides?|deck|csv|chart|graph|plot|diagram|infographic|"
-    r"invoice|resume|cv|brochure|flyer|certificate|html|web\s?page|webpage|website|"
+    r"invoice|resume|cv|brochure|flyer|certificate|tex|latex|html|web\s?page|webpage|website|"
     r"landing page|single[-\s]?page app|audio|sound|sound file|sound effect|voiceover|"
     r"voice-over|narration|text[-\s]?to[-\s]?speech|tts|speech|video|movie|animation|"
-    r"\.(?:pdf|docx?|xlsx?|pptx?|csv|png|jpe?g|gif|webp|svg|zip|wav|mp3|mp4|webm|html?|md|txt|json))\b",
+    r"\.(?:pdf|docx?|xlsx?|pptx?|csv|tex|png|jpe?g|gif|webp|svg|zip|wav|mp3|mp4|webm|html?|md|txt|json))\b",
     re.IGNORECASE,
 )
 _CREATE_VERB = re.compile(
@@ -55,12 +55,13 @@ _CREATE_VERB = re.compile(
 # docgen remains the fast fallback. Plain Word/Excel/PDF docs still route to docgen first.
 _NEEDS_CODE = re.compile(
     r"\b(powerpoint|pptx|presentation|slide\s*deck|slides?|deck|"
+    r"tex|latex|"
     r"html|web\s?page|webpage|website|landing page|single[-\s]?page app|interactive|"
     r"chart|graph|plot|diagram|figure|visuali[sz]|infographic|image|picture|photo|logo|icon|"
     r"video|movie|animation|mp4|webm|"
     r"audio|sound|soundtrack|sound effect|sfx|tone|beep|voiceover|voice-over|narration|wav|mp3|"
     r"calculat|comput|analy[sz]|statistic|regression|simulat|forecast|matplotlib|seaborn|"
-    r"\.(png|jpe?g|gif|webp|svg|zip|tar|html?|mp4|webm))\b",
+    r"\.(tex|png|jpe?g|gif|webp|svg|zip|tar|html?|mp4|webm))\b",
     re.IGNORECASE,
 )
 
@@ -73,6 +74,7 @@ _FORMAT_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("xlsx", re.compile(r"\b(excel|xlsx?|spreadsheet|workbook|sheet)\b|\.xlsx?\b", re.I)),
     ("pptx", re.compile(r"\b(powerpoint|pptx?|presentation|slide\s*deck|slides?|deck)\b|\.pptx?\b", re.I)),
     ("csv", re.compile(r"\bcsv\b|\.csv\b", re.I)),
+    ("tex", re.compile(r"\b(tex|latex|latex\s+source|latex\s+document|latex\s+template)\b|\.tex\b", re.I)),
     ("png", re.compile(r"\bpng\b|\.png\b", re.I)),
     ("jpg", re.compile(r"\bjpe?g\b|\.jpe?g\b", re.I)),
     ("gif", re.compile(r"\bgif\b|\.gif\b", re.I)),
@@ -99,6 +101,7 @@ _EXTENSION_TO_FORMAT = {
     "ppt": "pptx",
     "pptx": "pptx",
     "csv": "csv",
+    "tex": "tex",
     "png": "png",
     "jpg": "jpg",
     "jpeg": "jpg",
@@ -126,6 +129,15 @@ _REMOTE_HTML_REF_RE = re.compile(
     re.IGNORECASE,
 )
 _HTML_SCRIPT_REMOTE_RE = re.compile(r"<script\b[^>]*\bsrc\s*=", re.IGNORECASE)
+_LATEX_STRUCTURE_RE = re.compile(
+    r"\\(?:documentclass|begin\s*\{\s*document\s*\}|section|subsection|title|author|"
+    r"usepackage|begin\s*\{\s*(?:equation|align|tabular|itemize|enumerate)\s*\})",
+    re.IGNORECASE,
+)
+_LATEX_UNSAFE_RE = re.compile(
+    r"\\(?:write18|openout|read|input|include|includegraphics)\s*(?:\{|\s+)(?:/|[A-Za-z]:|\\.\\.|~)",
+    re.IGNORECASE,
+)
 
 _SMALL_ARTIFACT_OK = re.compile(
     r"\b(one\s+page|1\s+page|one\s+slide|1\s+slide|single\s+slide|thumbnail|icon|logo|"
@@ -423,6 +435,22 @@ def _validate_json(data: bytes) -> tuple[str, list[str]]:
     return text, ["parses_as_json"]
 
 
+def _validate_tex(data: bytes) -> tuple[str, list[str]]:
+    if len(data) > 1_000_000:
+        raise ValueError("LaTeX source is too large to preview safely.")
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise ValueError("LaTeX source must be valid UTF-8 text.") from exc
+    if "\x00" in text:
+        raise ValueError("LaTeX source contains binary data.")
+    if not _LATEX_STRUCTURE_RE.search(text):
+        raise ValueError("LaTeX source does not contain recognizable document structure.")
+    if _LATEX_UNSAFE_RE.search(text):
+        raise ValueError("LaTeX source references unsafe host paths or shell-style file access.")
+    return text, ["decodes_as_tex", "has_latex_structure"]
+
+
 def _validate_svg(data: bytes) -> tuple[str, list[str]]:
     import xml.etree.ElementTree as ET
 
@@ -551,6 +579,10 @@ def _extract_and_validate(file: sandbox.SandboxFile, request: str) -> FileCheck:
             text, checks = _validate_json(file.data)
             check.checks.extend(checks)
             _check_text_quality(check, text, request, minimum_chars=20, require_text=False)
+        elif fmt == "tex":
+            text, checks = _validate_tex(file.data)
+            check.checks.extend(checks)
+            _check_text_quality(check, text, request, minimum_chars=80)
         elif fmt in {"md", "txt"}:
             text = _decode_text(file.data)
             check.checks.append(f"decodes_as_{fmt}")

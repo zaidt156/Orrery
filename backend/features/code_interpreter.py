@@ -15,14 +15,11 @@ on a fenced text convention, so no native provider tool-calling is required.
 
 from __future__ import annotations
 
-import asyncio
 import json
-import mimetypes
 from collections.abc import AsyncIterator, Awaitable, Callable
 
+from backend import tools as tool_registry
 from backend.features import events as stream_events
-from backend.features import files as file_library
-from backend.features import mcp, sandbox, websearch
 from backend.features.prompting import strip_think
 from backend.features.reasoning_trace import ThinkStream
 from backend.providers import ai
@@ -101,47 +98,81 @@ class RunStream:
         return text, blocks
 
 
-def _store_files(result: sandbox.SandboxResult) -> list[dict]:
-    produced: list[dict] = []
-    for item in result.files:
-        mime = mimetypes.guess_type(item.name)[0] or "application/octet-stream"
-        try:
-            produced.append({"kind": "file", **file_library.store(item.name, mime, item.data)})
-        except ValueError:
-            continue
-    return produced
+def _tool_artifacts(result: dict) -> list[dict]:
+    artifacts = result.get("artifacts")
+    if isinstance(artifacts, list):
+        return [item for item in artifacts if isinstance(item, dict)]
+    files = result.get("files")
+    if isinstance(files, list) and files and isinstance(files[0], dict):
+        return [item for item in files if isinstance(item, dict)]
+    return []
 
 
-def _sandbox_observation(result: sandbox.SandboxResult, produced: list[dict]) -> str:
-    parts = [f"[sandbox result] exit_code={result.exit_code} timed_out={result.timed_out}"]
-    if result.stdout.strip():
-        parts.append("stdout:\n" + result.stdout[:_STDOUT_FEEDBACK_CHARS])
-    if result.stderr.strip():
-        parts.append("stderr:\n" + result.stderr[:_STDOUT_FEEDBACK_CHARS])
-    if produced:
-        parts.append("files written to out/: " + ", ".join(f["name"] for f in produced))
-    if not result.stdout.strip() and not produced:
-        parts.append("(no stdout and no files — print results or save files to out/)")
+def _tool_observation(key: str, result: dict, artifacts: list[dict] | None = None) -> str:
+    public = {k: v for k, v in result.items() if k not in {"artifacts", "sandbox_runs"}}
+    text = json.dumps(public, ensure_ascii=False, default=str)[:_STDOUT_FEEDBACK_CHARS]
+    parts = [f"[tool result] {key}:\n{text}"]
+    if artifacts:
+        parts.append("files written: " + ", ".join(str(f.get("name") or "file") for f in artifacts))
+    if not artifacts and not str(public.get("stdout") or "").strip():
+        parts.append("(no stdout and no files - print results or save files to out/)")
     return "\n\n".join(parts)
 
 
-async def _run_mcp_tool(servers: list[dict], body: str) -> dict:
-    """Parse an orrery-tool request {server, tool, args} and call the MCP tool. Output is untrusted."""
+async def _run_registry_tool(
+    servers: list[dict],
+    body: str,
+    *,
+    allowed_tools: set[str] | None,
+    context: dict,
+) -> dict:
+    """Parse an orrery-tool request and execute through the shared registry."""
     try:
         spec = json.loads(body)
     except (ValueError, TypeError):
-        return {"ok": False, "label": "invalid request", "observation": "[mcp] The orrery-tool block was not valid JSON."}
-    name = str(spec.get("server", "")).strip()
-    tool = str(spec.get("tool", "")).strip()
+        return {"ok": False, "label": "invalid request", "observation": "[tool] The orrery-tool block was not valid JSON."}
+    if not isinstance(spec, dict):
+        return {"ok": False, "label": "invalid request", "observation": "[tool] The orrery-tool block must be a JSON object."}
+
+    if "server" in spec:
+        name = str(spec.get("server", "")).strip()
+        tool = str(spec.get("tool", "")).strip()
+        args = spec.get("args") if isinstance(spec.get("args"), dict) else {}
+        server = next((s for s in servers if s.get("name") == name or s.get("id") == name), None)
+        if server is None or not tool:
+            return {"ok": False, "label": f"{name}::{tool}", "observation": f"[mcp] No connected server/tool for '{name}::{tool}'."}
+        result = await tool_registry.run_tool(
+            "mcp_call",
+            {"server_id": server["id"], "tool": tool, "args": args},
+            allowed=allowed_tools,
+        )
+        artifacts = _tool_artifacts(result)
+        return {
+            "ok": result.get("ok", False),
+            "label": f"{name}::{tool}",
+            "observation": _tool_observation("mcp_call", result, artifacts),
+            "artifacts": artifacts,
+        }
+
+    key = str(spec.get("tool") or spec.get("key") or "").strip()
     args = spec.get("args") if isinstance(spec.get("args"), dict) else {}
-    server = next((s for s in servers if s.get("name") == name or s.get("id") == name), None)
-    if server is None or not tool:
-        return {"ok": False, "label": f"{name}::{tool}", "observation": f"[mcp] No connected server/tool for '{name}::{tool}'."}
-    res = await mcp.call_tool_by_id(server["id"], tool, args)
-    if res.get("ok"):
-        return {"ok": True, "label": f"{name}::{tool}",
-                "observation": f"[mcp tool result] {name}::{tool}:\n{(res.get('text') or '')[:_STDOUT_FEEDBACK_CHARS]}"}
-    return {"ok": False, "label": f"{name}::{tool}", "observation": f"[mcp tool error] {res.get('error', 'failed')}"}
+    if not key:
+        return {"ok": False, "label": "missing tool", "observation": "[tool] Missing 'tool' key."}
+    if key == "file_generate":
+        args = dict(args)
+        args.setdefault("model", context.get("model") or "")
+        args.setdefault("system_prompt", context.get("system_prompt") or "")
+        args.setdefault("effort", context.get("effort") or "")
+        args.setdefault("trusted_context", context.get("trusted_context") or "")
+        args.setdefault("untrusted_context", context.get("untrusted_context") or "")
+    result = await tool_registry.run_tool(key, args, allowed=allowed_tools)
+    artifacts = _tool_artifacts(result)
+    return {
+        "ok": result.get("ok", False),
+        "label": key,
+        "observation": _tool_observation(key, result, artifacts),
+        "artifacts": artifacts,
+    }
 
 
 async def run(
@@ -155,6 +186,10 @@ async def run(
     max_runs: int = MAX_RUNS,
     allow_web: bool = True,
     mcp_servers: list[dict] | None = None,
+    allowed_tools: set[str] | None = None,
+    system_prompt: str | None = None,
+    trusted_context: str | None = None,
+    untrusted_context: str | None = None,
 ) -> AsyncIterator[dict]:
     """Drive the tool loop (run code / search web -> observe -> continue), then persist the answer.
 
@@ -240,49 +275,41 @@ async def run(
                     "Running Python", "Executing the model's code in the secure sandbox (no network, capped, isolated).",
                     kind="tool", status="running", phase="execute", metadata={"run": run_index + 1},
                 )
-                try:
-                    result = await asyncio.to_thread(sandbox.run_code, body)
-                except sandbox.SandboxError as exc:
-                    yield trace.error("Sandbox unavailable", str(exc))
-                    echo += f"\n\n```orrery-run\n{body}\n```"
-                    observations.append(f"[sandbox error] {exc}. Answer without running code.")
-                    continue
-                produced = _store_files(result)
+                result = await tool_registry.run_tool("run_python", {"code": body}, allowed=allowed_tools)
+                produced = _tool_artifacts(result)
                 if produced:
                     all_files.extend(produced)
                     yield stream_events.files(produced)
+                exit_code = result.get("exit_code")
+                timed_out = bool(result.get("timed_out"))
                 yield trace.step(
-                    "Code finished" if result.ok else "Code run had issues",
-                    f"exit {result.exit_code}, {len(produced)} file(s)" + (" — timed out" if result.timed_out else ""),
-                    kind="result", status="done" if result.ok else "warning", phase="execute",
-                    metadata={"exit_code": result.exit_code, "files": len(produced)},
+                    "Code finished" if result.get("ok") else "Code run had issues",
+                    f"exit {exit_code}, {len(produced)} file(s)" + (" - timed out" if timed_out else ""),
+                    kind="result", status="done" if result.get("ok") else "warning", phase="execute",
+                    metadata={"exit_code": exit_code, "files": len(produced)},
                 )
                 echo += f"\n\n```orrery-run\n{body}\n```"
-                observations.append(_sandbox_observation(result, produced))
+                observations.append(_tool_observation("run_python", result, produced))
             elif kind == "shell":
                 yield trace.step(
                     "Running shell commands", "Executing in the secure sandbox (no network, capped, isolated).",
                     kind="tool", status="running", phase="execute", metadata={"run": run_index + 1},
                 )
-                try:
-                    result = await asyncio.to_thread(sandbox.run_shell, body)
-                except sandbox.SandboxError as exc:
-                    yield trace.error("Sandbox unavailable", str(exc))
-                    echo += f"\n\n```orrery-shell\n{body}\n```"
-                    observations.append(f"[sandbox error] {exc}. Answer without running commands.")
-                    continue
-                produced = _store_files(result)
+                result = await tool_registry.run_tool("run_shell", {"script": body}, allowed=allowed_tools)
+                produced = _tool_artifacts(result)
                 if produced:
                     all_files.extend(produced)
                     yield stream_events.files(produced)
+                exit_code = result.get("exit_code")
+                timed_out = bool(result.get("timed_out"))
                 yield trace.step(
-                    "Commands finished" if result.ok else "Command run had issues",
-                    f"exit {result.exit_code}, {len(produced)} file(s)" + (" — timed out" if result.timed_out else ""),
-                    kind="result", status="done" if result.ok else "warning", phase="execute",
-                    metadata={"exit_code": result.exit_code, "files": len(produced)},
+                    "Commands finished" if result.get("ok") else "Command run had issues",
+                    f"exit {exit_code}, {len(produced)} file(s)" + (" - timed out" if timed_out else ""),
+                    kind="result", status="done" if result.get("ok") else "warning", phase="execute",
+                    metadata={"exit_code": exit_code, "files": len(produced)},
                 )
                 echo += f"\n\n```orrery-shell\n{body}\n```"
-                observations.append(_sandbox_observation(result, produced))
+                observations.append(_tool_observation("run_shell", result, produced))
             elif kind == "search":
                 if not allow_web:
                     echo += f"\n\n```orrery-search\n{body.strip()}\n```"
@@ -291,7 +318,8 @@ async def run(
                 query = next((line.strip() for line in body.splitlines() if line.strip()), "")
                 yield trace.step("Searching the web", query or "(empty query)",
                                  kind="tool", status="running", phase="gather", metadata={"run": run_index + 1})
-                results = await websearch.search(query) if query else []
+                search_res = await tool_registry.run_tool("web_search", {"query": query}, allowed=allowed_tools) if query else {"ok": False, "results": []}
+                results = search_res.get("results") if isinstance(search_res.get("results"), list) else []
                 urls = [r["url"] for r in results if r.get("url")][:8]
                 if urls:
                     yield stream_events.sources(urls)
@@ -302,14 +330,29 @@ async def run(
                     metadata={"results": len(results), "sources": urls},
                 )
                 echo += f"\n\n```orrery-search\n{query}\n```"
-                observations.append(f"[web search results] for \"{query}\":\n{websearch.format_results(results)}")
+                observations.append(_tool_observation("web_search", search_res))
             else:  # tool (MCP)
                 echo += f"\n\n```orrery-tool\n{body.strip()}\n```"
-                tool_res = await _run_mcp_tool(mcp_servers or [], body)
+                tool_res = await _run_registry_tool(
+                    mcp_servers or [],
+                    body,
+                    allowed_tools=allowed_tools,
+                    context={
+                        "model": model,
+                        "system_prompt": system_prompt or "",
+                        "effort": effort or "",
+                        "trusted_context": trusted_context or "",
+                        "untrusted_context": untrusted_context or "",
+                    },
+                )
+                produced = _tool_artifacts(tool_res)
+                if produced:
+                    all_files.extend(produced)
+                    yield stream_events.files(produced)
                 yield trace.step(
-                    "Calling MCP tool" if tool_res["ok"] else "MCP tool issue", tool_res["label"],
+                    "Calling tool" if tool_res["ok"] else "Tool issue", tool_res["label"],
                     kind="tool", status="done" if tool_res["ok"] else "warning", phase="execute",
-                    metadata={"run": run_index + 1},
+                    metadata={"run": run_index + 1, "files": len(produced)},
                 )
                 observations.append(tool_res["observation"])
 

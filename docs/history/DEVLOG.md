@@ -1477,3 +1477,67 @@ Next: full security review pass (user ask), Data tab dataset management, Setting
   SQLite, CSV/Excel/JSON, REST APIs, and Google Sheets - twelve connector types.
 
 Deps: aioodbc/pyodbc, pymongo, defusedxml (pinned).
+
+
+## Step 108 - User/admin access hardening (July 4, 2026)
+
+- **Solo stays simple.** If Orrery has no team users, the local user is still treated as the admin:
+  no access key, no extra setup, and full control over local settings.
+- **Team mode is stricter.** Sensitive routes now require admin access in team mode: provider key
+  changes, official plan/CLI connection actions, primary database connection management, shared
+  model activation/custom model credentials, branding/defaults/privacy/spending caps, and team user
+  management.
+- **Feature access can be per member.** Admins can now set member-specific feature permissions from
+  the Admin tab. The UI hides tabs based on the effective permissions, and chat capability gates use
+  the same backend calculation.
+- **Secrets stay server-side.** Members can use configured models and allowed features, but they
+  cannot retrieve API keys or database URLs. The backend remains the authority; the UI is only a
+  convenience layer.
+- **Documented the model.** Added `docs/security/USER_ADMIN_ACCESS.md` covering solo/team behavior,
+  roles, per-user feature overrides, secret handling, route enforcement, and follow-ups.
+
+Next: broaden route-level feature checks tab by tab, and add automated team-mode authorization tests.
+
+
+## Step 109 - Capability planner foundation, TeX source files, optional Crabbox (July 4, 2026)
+
+- **TeX is now a real file target.** Requests for LaTeX/TeX source route through sandbox file
+  generation, validate strict UTF-8 `.tex` output, check for recognizable LaTeX structure, reject
+  binary/corrupt/placeholder content, and show TeX source as a previewable/downloadable file card.
+  The local sandbox still does not bundle TeX Live or MiKTeX; PDF-from-LaTeX remains source plus a
+  normal Orrery PDF unless a remote compile path is configured later.
+- **The capability loop now has a registry contract.** Existing `orrery-run`, `orrery-shell`,
+  `orrery-search`, and MCP blocks keep working, but execution now goes through `backend.tools`
+  so allow-lists, argument validation, safe errors, and artifact handling are centralized. The new
+  `capability_agent` flag exposes a generated tool catalog for broader model-guided tool choice.
+- **File generation is a registered tool.** `file_generate` wraps the existing validated sandbox
+  builder without persisting generated code or raw model reasoning; final answers, safe trace data,
+  sanitized metadata, and approved artifacts remain the durable outputs.
+- **Crabbox is optional and gated.** Orrery can report Crabbox status with non-mutating
+  `crabbox doctor --json`, stores only non-secret preferences, and exposes `crabbox_run` as a
+  side-effectful tool only when the admin/user feature gate and settings both allow it. Crabbox
+  tokens, provider credentials, and broker config stay in Crabbox's own config/keychain.
+
+Next: build a Settings UI for Crabbox, add optional remote LaTeX compile when a trusted executor is
+configured, and broaden capability-agent tools for RAG/DB/dashboard workflows without bypassing gates.
+
+
+## Step 110 - Capability planner becomes a grounded first-class module (July 5, 2026)
+
+- Reviewed the Step 108/109 foundation (tool registry, Crabbox, automations, TeX skill) — coherent
+  and secure — then finished the planner it set up.
+- New `backend/features/capabilities.py` replaces the ad-hoc tool-catalog string that lived in the
+  chat router. Each tool now states what it is FOR so the model chooses by intent ("self-realization"),
+  and the catalog is GROUNDED: it injects the real ids the model would otherwise have to guess —
+  reachable database connections (db_query), saved dashboards (dashboard_refresh), and document
+  collections (doc_search). file_generate is described as the single file maker spanning HTML/web app,
+  LaTeX (.tex), PDF, Word, Excel, PowerPoint, CSV, image, and audio.
+- Closed the "scattered route-specific code" gap: when the Model-guided tool planner feature is ON,
+  file and image requests are no longer pre-routed by regex to the deterministic handlers — they flow
+  to the model, which self-selects file_generate (or another tool) and the produced files surface as
+  the usual preview/download cards. Default OFF preserves today's routes exactly, so nothing regresses.
+- 223 tests pass (added: grounded-catalog content + end-to-end model self-selection of file_generate
+  with backend-injected model/context).
+
+Next: a Settings UI to enable/configure Crabbox and the capability planner; then Agents (Phase 5)
+building on the same registry.

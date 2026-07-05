@@ -24,11 +24,13 @@ class EchoTool(Tool):
 
 def test_builtin_tools_are_discoverable():
     catalog = {t["key"]: t for t in tools.list_tools()}
-    for key in ("web_search", "doc_search", "db_query", "run_python", "dashboard_refresh", "mcp_call"):
+    for key in ("web_search", "doc_search", "db_query", "run_python", "dashboard_refresh", "mcp_call", "file_generate", "crabbox_run"):
         assert key in catalog, f"missing built-in tool {key}"
         assert catalog[key]["schema"].get("properties"), f"{key} exposes no config schema"
     assert catalog["mcp_call"]["writes"] is True  # external side effects → approval-gated
     assert catalog["db_query"]["writes"] is False
+    assert catalog["crabbox_run"]["writes"] is True
+    assert catalog["file_generate"]["writes"] is True
 
 
 @pytest.mark.anyio
@@ -57,6 +59,19 @@ async def test_tool_exceptions_are_sanitized():
 async def test_db_query_rejects_non_select_before_touching_a_connection():
     out = await run_tool("db_query", {"connection_id": "0" * 36, "sql": "DELETE FROM users"})
     assert out["ok"] is False and "SELECT" in out["error"]
+
+
+@pytest.mark.anyio
+async def test_crabbox_run_refuses_when_feature_gate_is_disabled(monkeypatch):
+    from backend.features import admin
+
+    async def disabled(_name):
+        return False
+
+    monkeypatch.setattr(admin, "feature_enabled", disabled)
+    out = await run_tool("crabbox_run", {"command": ["echo", "hi"]}, allowed={"crabbox_run"})
+    assert out["ok"] is False
+    assert "disabled" in out["error"].lower()
 
 
 def test_duplicate_keys_are_a_bug():

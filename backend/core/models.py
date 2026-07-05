@@ -233,6 +233,60 @@ class DataConnection(Base):
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class Workflow(Base):
+    """A fixed-recipe automation: a DAG of registered nodes saved as JSON, versioned on save.
+
+    spec: {"nodes": [{"id","type","config",{"position"}}], "edges": [{"source","target"}]}.
+    Execution runs as a durable Procrastinate job; every node's input/output lands in
+    workflow_run_steps to power the run-debug view (architecture.md §Automations)."""
+    __tablename__ = "workflows"
+
+    id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(160))
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    spec: Mapped[str] = mapped_column(Text, default="{}")
+    history: Mapped[str | None] = mapped_column(Text, nullable=True)  # spec snapshots (rollback)
+    enabled: Mapped[bool] = mapped_column(default=True)
+    schedule: Mapped[str | None] = mapped_column(String(120), nullable=True)  # cron text (wired later)
+    owner_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class WorkflowRun(Base):
+    __tablename__ = "workflow_runs"
+
+    id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workflow_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("workflows.id", ondelete="CASCADE"), index=True
+    )
+    status: Mapped[str] = mapped_column(String(12), default="queued")  # queued|running|done|failed|canceled
+    trigger: Mapped[str] = mapped_column(String(20), default="manual")
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    started_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class WorkflowRunStep(Base):
+    __tablename__ = "workflow_run_steps"
+
+    id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    run_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("workflow_runs.id", ondelete="CASCADE"), index=True
+    )
+    node_id: Mapped[str] = mapped_column(String(80))
+    node_type: Mapped[str] = mapped_column(String(60))
+    status: Mapped[str] = mapped_column(String(12), default="done")  # done|failed|skipped
+    input: Mapped[str | None] = mapped_column(Text, nullable=True)   # JSON, truncated
+    output: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON, truncated
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    duration_ms: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class DataModel(Base):
     """A user-defined relationship model: a base table joined to related tables on key columns
     (BI-style 'connect your tables'). Stored as a JSON spec; rendered to validated SQL on use."""
