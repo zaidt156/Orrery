@@ -804,6 +804,9 @@ async def stream_reply(
     project_id = turn.project_id
     context_window = turn.context_window
     messages = turn.messages
+    # Single "Claude Opus" (etc.) entry reaches 1M via the window: when the chosen window is above the
+    # 200K standard tier, run the CLI's long-context mode for this turn. No-op for other models.
+    model = ai.plan_long_context_model(model, context_window)
 
     yield stream_events.title(turn.title)
 
@@ -828,8 +831,12 @@ async def stream_reply(
     # Raw/condensed model chain-of-thought is never surfaced here (see reasoning_trace safety rule).
     # Vague follow-ups ("Do it", "yes go ahead") inherit the previous ask's intent, so a request for
     # an HTML dashboard doesn't lose its file route just because the confirmation was three words.
+    has_image_attachment = any((a or {}).get("kind") == "image" for a in attachments)
     plan_text = user_content
-    if retrieval._vague_query(user_content):
+    # Only inherit the PREVIOUS turn's intent when THIS turn has no attachments of its own. A turn that
+    # carries a file/image is about THAT content ("what do you see" + a screenshot is a vision question),
+    # so it must not pick up "…generate a PDF…" from an earlier message.
+    if retrieval._vague_query(user_content) and not attachments:
         prev = next(
             (m["content"] for m in reversed(messages[:-1])
              if m.get("role") == "user" and isinstance(m.get("content"), str) and m["content"].strip()),
@@ -838,6 +845,10 @@ async def stream_reply(
         if prev:
             plan_text = f"{prev}\n{user_content}"
     plan = taskrouter.plan(plan_text, has_attachments=bool(attachments))
+    # An attached image means the user is asking ABOUT that image (vision) — never route such a turn to
+    # file/image generation. taskrouter.plan("") yields the default chat plan.
+    if has_image_attachment and plan.route in ("file", "image"):
+        plan = taskrouter.plan("")
     plan_meta = _plan_metadata(plan)
     plan_meta["reasoning_mode"] = reasoning.label(effort)  # Quick / Standard / Deep / Max
     trace = ReasoningTrace()
@@ -1037,6 +1048,7 @@ async def regenerate(conv_id: str) -> AsyncIterator[dict]:
         model, system_prompt, effort = conv.model, conv.system_prompt, conv.effort
         project_id = conv.project_id
         context_window = _effective_context_window(conv.context_window)
+        model = ai.plan_long_context_model(model, context_window)  # match the live turn's 1M behavior
 
         history = (
             await s.execute(

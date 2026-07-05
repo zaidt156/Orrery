@@ -688,12 +688,15 @@ async def run(
             if attempt == 0
             else f"Fixing the generated file ({attempt + 1}/{max_attempts})…"
         )
+        # Don't advertise a retry counter on the first pass — that reads as a canned "1/N" ladder even
+        # when generation succeeds on the first try. Show the attempt number only once a repair actually
+        # happens (attempt > 0), so the trace reflects what really occurred instead of a fixed script.
         yield reasoning_event(
-            "Writing artifact code" if attempt == 0 else "Repairing artifact code",
+            "Writing the file" if attempt == 0 else "Repairing the file",
             (
-                f"Attempt {attempt + 1}/{max_attempts}: generating Python that builds the requested artifact in the sandbox."
+                "Generating a program that builds the requested artifact in the sandbox."
                 if attempt == 0
-                else f"Attempt {attempt + 1}/{max_attempts}: using the previous runtime or validation failure to improve the generated file."
+                else f"Retry {attempt + 1}: using the previous runtime or validation failure to fix the generated file."
             ),
             kind="script",
             status="running",

@@ -17,6 +17,38 @@ def test_model_provider_custom_and_new_prefixes():
     assert ai.model_provider("deepseek/deepseek-reasoner") == "deepseek"
 
 
+def test_claude_plan_single_entry_reports_full_1m_window():
+    # 1M-capable plan models expose the whole window from one entry; Haiku / the generic route don't
+    assert ai.model_context_window("claude_plan/opus") == 1_000_000
+    assert ai.model_context_window("claude_plan/sonnet") == 1_000_000
+    assert ai.model_context_window("claude_plan/fable") == 1_000_000
+    assert ai.model_context_window("claude_plan/haiku") == 200_000
+    assert ai.model_context_window("claude_plan/default") == 200_000
+
+
+def test_plan_long_context_model_switches_on_large_window():
+    # window > 200K → run the "[1m]" sibling (long-context CLI mode); at/under 200K stays standard
+    assert ai.plan_long_context_model("claude_plan/opus", 1_000_000) == "claude_plan/opus-1m"
+    assert ai.plan_long_context_model("claude_plan/opus", 262_144) == "claude_plan/opus-1m"
+    assert ai.plan_long_context_model("claude_plan/opus", 200_000) == "claude_plan/opus"
+    assert ai.plan_long_context_model("claude_plan/sonnet", 500_000) == "claude_plan/sonnet-1m"
+    # no 1M sibling, non-plan model, already-1m, and missing window are all no-ops
+    assert ai.plan_long_context_model("claude_plan/haiku", 1_000_000) == "claude_plan/haiku"
+    assert ai.plan_long_context_model("anthropic/claude-opus-4-8", 1_000_000) == "anthropic/claude-opus-4-8"
+    assert ai.plan_long_context_model("claude_plan/opus-1m", 1_000_000) == "claude_plan/opus-1m"
+    assert ai.plan_long_context_model("claude_plan/opus", None) == "claude_plan/opus"
+
+
+def test_claude_plan_picker_hides_1m_variants(monkeypatch):
+    # the "-1m" models are internal now (reached via the slider), not separate menu entries
+    from backend.providers import accounts
+    monkeypatch.setattr(accounts, "_stored_claude_plan", lambda: True)
+    monkeypatch.setattr(accounts, "claude_plan_mode_status", lambda: {"configured": True})
+    ids = [m["id"] for m in accounts.claude_plan_models()]
+    assert "claude_plan/opus" in ids
+    assert not any(i.endswith("-1m") for i in ids)
+
+
 def test_model_provider_cli_plans():
     assert ai.model_provider("chatgpt_plan/default") == "chatgpt_plan"
     assert ai.model_provider("gemini_plan/default") == "gemini_plan"

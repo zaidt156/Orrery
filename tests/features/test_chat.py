@@ -315,6 +315,56 @@ async def test_stream_reply_file_route_can_fall_back_to_model_reply(monkeypatch)
 
 
 @pytest.mark.anyio
+async def test_image_attachment_turn_never_routes_to_file(monkeypatch):
+    """A turn that carries an image is a vision question — even if the text screams 'make a PDF',
+    it must answer ABOUT the image (chat), never generate a file. Regression for the bug where
+    'what do you see' + a screenshot produced a session_context_report.pdf."""
+    calls = []
+
+    async def fake_prepare_turn(*args, **kwargs):
+        return _fake_turn()
+
+    async def fake_trusted_context(project_id):
+        return None
+
+    async def fake_record_plan(*args, **kwargs):
+        return "route-1"
+
+    async def fake_route_file(*args, **kwargs):
+        calls.append("file")
+        args[-1].handled = True
+        yield {"status": "should-not-run"}
+
+    async def fake_route_image(*args, **kwargs):
+        calls.append("image")
+        yield {"status": "should-not-run"}
+
+    async def fake_route_model_reply(*args, **kwargs):
+        calls.append("model")
+        yield {"done": True}
+
+    monkeypatch.setattr(chat.router, "_prepare_turn", fake_prepare_turn)
+    monkeypatch.setattr(chat.project_store, "trusted_context", fake_trusted_context)
+    monkeypatch.setattr(chat.route_telemetry, "record_plan", fake_record_plan)
+    monkeypatch.setattr(chat.router, "_route_file", fake_route_file)
+    monkeypatch.setattr(chat.router, "_route_image", fake_route_image)
+    monkeypatch.setattr(chat.router, "_route_model_reply", fake_route_model_reply)
+
+    events = [
+        event
+        async for event in chat.stream_reply(
+            "00000000-0000-0000-0000-000000000001",
+            "generate a PDF report of this",  # strongest possible file-request text
+            attachments=[{"kind": "image", "name": "shot.png", "content": "data:image/png;base64,AAAA"}],
+        )
+    ]
+
+    assert calls == ["model"]  # vision → chat only; file/image generation never fired
+    assert {"status": "should-not-run"} not in events
+    assert events[-1] == {"done": True}
+
+
+@pytest.mark.anyio
 async def test_stream_reply_file_route_sandbox_miss_uses_docspec(monkeypatch):
     calls = []
     outcomes = []

@@ -65,6 +65,7 @@ docs/history/*
 docs/planning/*
 !docs/planning/TASK_ROUTING_ARCHITECTURE.md
 !docs/planning/ORRERY_PLAN.md
+!docs/planning/AGENT_COMPUTER_ARCHITECTURE.md
 !docs/security/
 docs/security/*
 !docs/security/USER_ADMIN_ACCESS.md

@@ -19,6 +19,15 @@ export function requestedFileFormats(text) {
   return EXPORT_FORMATS.filter(({ patterns }) => patterns.some((pattern) => pattern.test(text)));
 }
 
+// True when the assistant reply is a "I couldn't build the file" note (or otherwise refused to
+// produce one). We must not offer on-demand export buttons on such a message — that reads as if a
+// file exists when generation actually failed (e.g. the provider hit a usage limit).
+export function isFileFailureNote(content) {
+  if (!content) return false;
+  return /could not create a real downloadable file|no approved artifact|couldn['’]?t (?:create|build|render)|file (?:generation|builder) (?:failed|error)/i
+    .test(content);
+}
+
 // nearest user message before index i (the prompt the assistant reply answered)
 export function precedingUserText(messages, i) {
   for (let j = i - 1; j >= 0; j -= 1) {

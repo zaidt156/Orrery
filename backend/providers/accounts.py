@@ -372,6 +372,9 @@ def claude_plan_models() -> list[dict]:
     return [
         {"id": vid, "label": label, "provider": "claude_plan", "auth_mode": "claude_plan"}
         for vid, label, _flag in CLAUDE_PLAN_VARIANTS
+        # The "-1m" variants are no longer separate menu entries: a single model reaches 1M via the
+        # context-window slider (Orrery enables long-context mode when the window exceeds 200K).
+        if not vid.endswith("-1m")
     ]
 
 

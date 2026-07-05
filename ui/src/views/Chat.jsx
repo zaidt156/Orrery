@@ -27,7 +27,7 @@ import {
   getDefaults, readFileAsAttachment, getAttachmentText,
 } from "../lib/api.js";
 import {
-  EXPORT_FORMATS, requestedFileFormats, precedingUserText,
+  EXPORT_FORMATS, requestedFileFormats, precedingUserText, isFileFailureNote,
   extractHtml, stripDocSpec, specFormats, extractSvgs, splitThink,
 } from "./chatHelpers.jsx";
 import {
@@ -48,6 +48,12 @@ function contextOptionsFor(maxCtx) {
   const opts = CONTEXT_TIERS.filter((t) => t < max).map((t) => [String(t), `context: ${fmtTokens(t)}`]);
   opts.push([String(max), `context: ${fmtTokens(max)} (max)`]);
   return opts;
+}
+const DEFAULT_CTX = 131072;
+// A model's real context window from the loaded list (the /api/models entries carry it). Used to
+// default a new chat's window to what the model actually supports instead of a blanket 1M.
+function modelCtx(list, id) {
+  return Number(list.find((m) => m.id === id)?.context_window) || DEFAULT_CTX;
 }
 
 // The header chip shows a short model name; long descriptors ("adaptive thinking", "reasoning")
@@ -214,17 +220,21 @@ export default function Chat() {
           setModel(preferredModel.id);
           setSystemPrompt("");
           setEffort("");
-          setContextWindow("1000000");
+          setContextWindow(String(modelCtx(m.value.models, preferredModel.id)));  // this model's real window
           sessionStorage.removeItem("orrery_preferred_model");
         } else if (!hasConversations || startBlankProject) {
           // workspace defaults (Settings → General): default model + reasoning depth for new chats
           try {
             const d = await getDefaults();
             const defModel = m.value.models.find((x) => x.id === d.model);
-            setModel(defModel ? defModel.id : (m.value.models[0] ? m.value.models[0].id : ""));
+            const chosenId = defModel ? defModel.id : (m.value.models[0] ? m.value.models[0].id : "");
+            setModel(chosenId);
+            setContextWindow(String(modelCtx(m.value.models, chosenId)));  // default to the model's max, not 1M
             if (d.effort) setEffort(d.effort);
           } catch {
-            setModel(m.value.models[0] ? m.value.models[0].id : "");
+            const firstId = m.value.models[0] ? m.value.models[0].id : "";
+            setModel(firstId);
+            setContextWindow(String(modelCtx(m.value.models, firstId)));
           }
         }
       } else {
@@ -351,12 +361,16 @@ export default function Chat() {
   async function chooseModel(id) {
     setModel(id);
     setModelMenu(false);
-    // Clamp the context budget to what the new model actually supports.
-    const maxCtx = models.find((m) => m.id === id)?.context_window || 131072;
-    const clamped = Math.min(Number(contextWindow) || maxCtx, maxCtx);
-    if (clamped !== Number(contextWindow)) setContextWindow(String(clamped));
+    // Track the new model's real window. If the user was at the old model's full window (the default),
+    // move to the new model's full window; if they'd deliberately dialed it below the old max, keep
+    // that choice, clamped to the new model's max. This keeps the window "set according to the model".
+    const oldMax = modelCtx(models, model);
+    const newMax = modelCtx(models, id);
+    const cur = Number(contextWindow) || newMax;
+    const next = cur >= oldMax ? newMax : Math.min(cur, newMax);
+    setContextWindow(String(next));
     if (activeId) {
-      await updateConversation(activeId, { model: id, ...(clamped !== Number(contextWindow) ? { context_window: clamped } : {}) });
+      await updateConversation(activeId, { model: id, context_window: next });
       setConvos((p) => p.map((c) => (c.id === activeId ? { ...c, model: id } : c)));
     }
   }
@@ -922,6 +936,7 @@ export default function Chat() {
                 )}
                 {m.id && !m.streaming && !m.error && (() => {
                   if (m.artifacts?.some((artifact) => artifact.kind === "file")) return null;
+                  if (isFileFailureNote(m.content)) return null; // no phantom export on a failed/refused file
                   const formats = requestedFileFormats(precedingUserText(messages, i));
                   const shown = formats.length ? formats : specFormats(m.content);
                   if (!shown.length) return null;

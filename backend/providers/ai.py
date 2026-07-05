@@ -131,12 +131,32 @@ def _claude_plan_flag(model_id: str) -> str:
     return ""
 
 
+def plan_long_context_model(model_id: str, context_window: int | None) -> str:
+    """Reach 1M from a single 'Claude Opus' entry: when the chosen context window exceeds the 200K
+    standard tier, switch a Claude-plan model to its 1M ("[1m]") sibling so the CLI runs long-context
+    mode. The window drives the mode instead of the user picking a separate model. A no-op for windows
+    at/under 200K, non-plan models, and models without a 1M sibling."""
+    if not context_window or context_window <= _PLAN_CONTEXT["claude_plan"]:
+        return model_id
+    if model_provider(model_id) != "claude_plan" or model_id.endswith("-1m"):
+        return model_id
+    from backend.providers import manifest
+    sibling = f"{model_id}-1m"
+    if any(vid == sibling for vid, _label, _flag in manifest.variants("claude_plan")):
+        return sibling
+    return model_id
+
+
 def model_context_window(model_id: str) -> int:
     """Max usable context for a model, so the UI only offers sizes the model actually has."""
     provider = model_provider(model_id)
     if provider == "claude_plan":
-        # "[1m]" variants run the CLI's long-context mode (e.g. claude-fable-5[1m])
-        return _1M if "[1m]" in _claude_plan_flag(model_id) else _PLAN_CONTEXT[provider]
+        # 1M-capable plan models (Opus/Sonnet/Fable) expose the full window from a single entry; Orrery
+        # turns on the CLI's "[1m]" long-context mode at request time when the chosen window exceeds the
+        # 200K standard tier (see plan_long_context_model). Haiku and the generic "adaptive" route,
+        # which have no 1M mode, stay at the standard tier.
+        flag = _claude_plan_flag(model_id)
+        return _1M if ("[1m]" in flag or supports_1m_context(flag.replace("[1m]", ""))) else _PLAN_CONTEXT[provider]
     if provider in _PLAN_CONTEXT:
         return _PLAN_CONTEXT[provider]
     if provider == "anthropic" and supports_1m_context(model_id):

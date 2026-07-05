@@ -1541,3 +1541,99 @@ configured, and broaden capability-agent tools for RAG/DB/dashboard workflows wi
 
 Next: a Settings UI to enable/configure Crabbox and the capability planner; then Agents (Phase 5)
 building on the same registry.
+
+
+## Step 111 - Fix vision-question misrouting + phantom file buttons; write the Agent Computer plan (July 5, 2026)
+
+The user reported several things that "feel patched, not architected," worst of all: attaching a
+screenshot and asking "what do you see" produced a `session_context_report.pdf` instead of just
+answering. We traced and fixed the acute bugs, then wrote the architecture doc we agreed to produce
+before building the bigger "computer for agents."
+
+- **A picture question can no longer turn into a file.** The router used to route purely on text and,
+  for a short prompt like "what do you see", would borrow the *previous* message's wording — so an
+  earlier "…generate a PDF…" hijacked the turn into file generation and ignored the image entirely.
+  Now: a turn that brings its own attachment is about *that* attachment (it never inherits an earlier
+  turn's intent), and any turn carrying an **image** is answered as a vision question — it can never
+  be sent to file or image generation. Locked in with a regression test that even "generate a PDF
+  report of this" plus an attached image stays a normal chat answer.
+- **No more PDF/Word buttons under a failed message.** The file buttons were being drawn from the
+  words in your prompt, regardless of whether a file was actually made — so a reply like "I couldn't
+  create the file (usage limit)" still showed export buttons that implied one existed. The UI now
+  recognizes a "could not create a file" reply and hides the buttons.
+- **The "streaming raw thoughts" turned out to be honest work-steps, not leaked thinking.** We traced
+  every path (normal chat, file generation, the tool loop) and the model's private reasoning is already
+  suppressed at the source: whatever channel a provider uses for thinking (separate reasoning tokens,
+  inline `<think>…</think>`, Anthropic thinking blocks, or the Claude/ChatGPT CLI routes) is counted for
+  diagnostics but never shown or stored. What was visible under "Reasoning" was the play-by-play of what
+  Orrery was *doing* (the work trace). In the mis-routed image case that play-by-play was also alarming
+  because the model was being forced to build a file out of a picture and kept failing — the "Attempt
+  1/3 → Repairing 2/3 → Repairing 3/3" ladder was real retries, now gone since images no longer trigger
+  file generation.
+- **Made the file-generation trace tell the truth instead of looking scripted.** The first pass no
+  longer says "Attempt 1/4" (which read as a canned ladder even when it worked first try); it just says
+  "Writing the file", and a retry counter appears only when a repair genuinely happens.
+- **Wrote `docs/planning/AGENT_COMPUTER_ARCHITECTURE.md`** — the detailed plan for the real goal: a
+  persistent, isolated **Computer** the model/agents can drive across many steps (filesystem, shell,
+  interpreter, optional real OS/network), with pluggable backends (a local Docker computer by
+  default, the user's Crabbox as an optional backend behind the *same* interface). It maps every
+  reported symptom to a root cause, folds file generation and Crabbox into one abstraction instead of
+  scattered routes, keeps the security floor (secrets in the keychain, model code only on a computer,
+  an approval gate for writes/network — closing the current ungated `crabbox_run`), and lays out a
+  phased, non-breaking migration. Today's fixes are "Phase 0" in that plan.
+
+Next (from the plan): Phase 1 — introduce the `Computer` interface and a persistent-per-session local
+Docker backend behind a small broker; then move `file_generate` onto it (Phase 2) so the deterministic
+and sandbox file paths return one unified file card instead of today's buttons-vs-card split.
+
+
+## Step 112 - Heavy scenario testing + context window now follows the model (July 5, 2026)
+
+- **Heavy routing/context test pass.** Added `tests/features/test_heavy_scenarios.py`: a broad matrix of
+  realistic prompts (chat / documents / decks / images / speech / projects) through the planner, plus
+  integration cases through the real chat pipeline covering attachments, vague follow-up inheritance,
+  and the guarantee that an attached image is always answered as a vision question and never turned
+  into a file. Writing it surfaced (and documented) two real behaviors: audio requests are delivered
+  through the file route (there is no separate "audio" route), and a file build that succeeds does not
+  also run the model-reply fallback. 256 tests pass.
+- **Live smoke test of the running app** (no model cost): the SPA shell and freshly built assets serve,
+  the localhost auth boundary holds (real `/api` routes require the session token → 401 without it),
+  unknown artifacts 404 cleanly, and the security headers are present. One small note: unknown
+  extension-less `/api/*` paths fall through to the SPA and return index.html instead of a JSON 404 —
+  harmless (real routes are protected), logged for later tightening.
+- **Context window now matches the chosen model.** The reported problem was "the context window isn't
+  set according to the model." Root cause: the backend already knows each model's true window
+  (Opus/Sonnet 5 = 1M, GPT‑5.5 ≈ 1.05M, a Claude‑plan standard route = 200K and its `-1m` variant = 1M,
+  a local Llama = 8K, …) and `/api/models` already sends it per model — but the chat UI ignored it and
+  defaulted every new chat to a hard‑coded 1,000,000, only ever clamping *down* on an explicit model
+  switch. So an 8K local model, or a 200K plan route, still displayed and budgeted as if it had 1M. Fix:
+  a new‑chat's window now defaults to the selected model's real maximum, and switching models moves the
+  window to the new model's window (keeping a deliberately smaller choice, clamped to the new max). The
+  backend was already the correct source of truth and needed no change.
+
+Next: still Phase 1 of the Agent Computer plan; and optionally tighten the `/api/*` SPA fallback.
+
+
+## Step 113 - One Claude model, 1M reached by the slider (July 5, 2026)
+
+Follow-on to the context-window work: the user picked "Claude Opus (PLAN)" and it capped at 200K even
+though Opus supports 1M. The cause was a confusing two-entry design — a standard "Opus" (200K) and a
+separate "Opus 4.8 - 1M context" model that had to be found, activated, and selected. The user asked to
+merge them into one.
+
+- **One entry per Claude-plan model; the context slider reaches 1M.** The 1M-capable models
+  (Opus / Sonnet / Fable) now report their full 1,000,000 window from a single menu entry, so the
+  per-chat slider offers sizes all the way up. Haiku and the generic "adaptive" route, which have no 1M
+  mode, still show 200K.
+- **The window turns on 1M mode automatically.** When the chosen window is above the 200K standard tier,
+  Orrery runs the Claude CLI's long-context ("[1m]") mode for that turn; at or under 200K it uses the
+  standard mode. So picking a big window *is* how you get 1M — no separate model to hunt for. The old
+  "-1m" entries still exist internally as the flag carriers but are hidden from the picker.
+- **Cost stays in the user's hands:** 1M mode can use the Claude plan's quota faster, so it's driven by
+  an explicit window choice rather than always-on. A new Opus chat defaults to the model's full window
+  (what the user expected), and dialing the slider down to 200K or less returns to standard mode.
+- Backend-only change (models list, `model_context_window`, a new `plan_long_context_model`, and the
+  chat/regenerate paths); the UI already reads each model's real window from `/api/models`. 259 tests
+  pass, including new coverage for the 1M reporting, the window→mode switch, and the hidden "-1m" menu.
+
+Next: unchanged — Phase 1 of the Agent Computer plan.
