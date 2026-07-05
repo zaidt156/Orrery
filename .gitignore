@@ -58,6 +58,8 @@ skills/
 !docs/
 docs/*
 !docs/README.md
+!docs/index.html
+!docs/.nojekyll
 !docs/history/
 docs/history/*
 !docs/history/DEVLOG.md

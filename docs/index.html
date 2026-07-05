@@ -1,0 +1,342 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Orrery — a local-first AI workspace</title>
+<meta name="description" content="Orrery is a local-first desktop AI workspace. Bring your own model accounts and your own database. Chat, data, dashboards, automations, and agents — private by default, on your machine." />
+<meta property="og:title" content="Orrery — a local-first AI workspace" />
+<meta property="og:description" content="Bring your own model keys and your own database. Chat, dashboards, automations, and agents — private by default, on your machine." />
+<meta property="og:type" content="website" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='4' fill='%237c8cff'/%3E%3Cellipse cx='16' cy='16' rx='13' ry='6' fill='none' stroke='%237c8cff' stroke-width='1.5'/%3E%3Ccircle cx='29' cy='16' r='2' fill='%2360e6c4'/%3E%3C/svg%3E" />
+<style>
+  :root{
+    --bg:#05060f; --bg2:#0a0d1f; --panel:rgba(255,255,255,.04); --panel-b:rgba(255,255,255,.09);
+    --ink:#eef1ff; --muted:#a3a9c9; --faint:#6b7099;
+    --accent:#7c8cff; --accent2:#60e6c4; --accent3:#c77dff;
+    --glow:0 0 60px rgba(124,140,255,.35);
+    --radius:18px; --maxw:1120px;
+    --font:'Inter',ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+    --mono:ui-monospace,'SF Mono',SFMono-Regular,'Cascadia Code',Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font);line-height:1.6;
+    -webkit-font-smoothing:antialiased;overflow-x:hidden}
+  a{color:inherit;text-decoration:none}
+  h1,h2,h3{line-height:1.1;letter-spacing:-.02em;margin:0}
+  .wrap{max-width:var(--maxw);margin:0 auto;padding:0 24px}
+  .grad{background:linear-gradient(120deg,var(--accent),var(--accent2) 55%,var(--accent3));
+    -webkit-background-clip:text;background-clip:text;color:transparent}
+
+  /* starfield + orbit backdrop */
+  #stars{position:fixed;inset:0;z-index:0;pointer-events:none}
+  .aura{position:fixed;z-index:0;pointer-events:none;filter:blur(80px);opacity:.5}
+  .aura.a{width:520px;height:520px;left:-120px;top:-80px;background:radial-gradient(circle,#3a49c9,transparent 70%)}
+  .aura.b{width:600px;height:600px;right:-160px;top:240px;background:radial-gradient(circle,#1f7a68,transparent 70%)}
+  .aura.c{width:480px;height:480px;left:30%;top:1600px;background:radial-gradient(circle,#7a2fb0,transparent 70%)}
+
+  /* nav */
+  header{position:sticky;top:0;z-index:20;backdrop-filter:blur(12px);
+    background:linear-gradient(to bottom,rgba(5,6,15,.85),rgba(5,6,15,.4));border-bottom:1px solid var(--panel-b)}
+  nav{display:flex;align-items:center;gap:22px;height:64px}
+  .brand{display:flex;align-items:center;gap:11px;font-weight:700;letter-spacing:-.01em}
+  .brand svg{width:30px;height:30px}
+  .brand b{font-size:18px}
+  .navlinks{margin-left:auto;display:flex;gap:26px;align-items:center}
+  .navlinks a{color:var(--muted);font-size:14.5px;font-weight:500;transition:color .2s}
+  .navlinks a:hover{color:var(--ink)}
+  .btn{display:inline-flex;align-items:center;gap:9px;border-radius:12px;padding:11px 18px;font-weight:600;
+    font-size:14.5px;border:1px solid transparent;cursor:pointer;transition:transform .15s,box-shadow .2s,background .2s}
+  .btn:hover{transform:translateY(-2px)}
+  .btn.primary{background:linear-gradient(120deg,var(--accent),#5b6cff);color:#fff;box-shadow:0 8px 30px rgba(91,108,255,.4)}
+  .btn.primary:hover{box-shadow:0 12px 40px rgba(91,108,255,.55)}
+  .btn.ghost{background:var(--panel);border-color:var(--panel-b);color:var(--ink)}
+  .btn.ghost:hover{border-color:var(--accent)}
+  .navlinks .btn{padding:9px 16px}
+
+  section{position:relative;z-index:1}
+
+  /* hero */
+  .hero{padding:88px 0 40px;text-align:center}
+  .pill{display:inline-flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);
+    background:var(--panel);border:1px solid var(--panel-b);padding:7px 15px;border-radius:999px;margin-bottom:26px}
+  .pill .dot{width:7px;height:7px;border-radius:50%;background:var(--accent2);box-shadow:0 0 10px var(--accent2)}
+  .hero h1{font-size:clamp(38px,7vw,74px);font-weight:800;margin:0 auto;max-width:14ch}
+  .hero p.sub{font-size:clamp(17px,2.4vw,21px);color:var(--muted);max-width:60ch;margin:22px auto 0}
+  .cta{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;margin-top:34px}
+  .cta small{display:block;color:var(--faint);font-size:12px;margin-top:14px;width:100%}
+  .trust{display:flex;gap:10px 26px;justify-content:center;flex-wrap:wrap;margin-top:40px;color:var(--faint);font-size:13.5px}
+  .trust span{display:inline-flex;align-items:center;gap:8px}
+  .trust svg{width:15px;height:15px;color:var(--accent2)}
+
+  /* orbit visual */
+  .orbit{position:relative;height:340px;margin:50px auto 0;max-width:640px}
+  .orbit .ring{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);border:1px solid rgba(124,140,255,.18);border-radius:50%}
+  .orbit .r1{width:160px;height:160px}.orbit .r2{width:300px;height:300px}.orbit .r3{width:460px;height:460px;border-color:rgba(96,230,196,.12)}
+  .orbit .sun{position:absolute;top:50%;left:50%;width:74px;height:74px;transform:translate(-50%,-50%);border-radius:50%;
+    background:radial-gradient(circle at 35% 30%,#aeb8ff,#5b6cff 60%,#3a49c9);box-shadow:0 0 60px rgba(91,108,255,.7)}
+  .orbit .planet{position:absolute;top:50%;left:50%;border-radius:50%}
+  .spin{animation:spin linear infinite}
+  .s1{animation-duration:14s}.s2{animation-duration:26s}.s3{animation-duration:40s}
+  @keyframes spin{to{transform:translate(-50%,-50%) rotate(360deg)}}
+  .orbit .p{position:absolute;top:-6px;left:50%;transform:translateX(-50%);width:14px;height:14px;border-radius:50%}
+  .p.a{background:#60e6c4;box-shadow:0 0 16px #60e6c4}
+  .p.b{background:#c77dff;box-shadow:0 0 16px #c77dff}
+  .p.c{background:#ffd479;box-shadow:0 0 16px #ffd479}
+
+  /* sections */
+  .sec{padding:70px 0}
+  .sec-head{text-align:center;max-width:60ch;margin:0 auto 46px}
+  .sec-head .tag{color:var(--accent2);font-family:var(--mono);font-size:13px;letter-spacing:.14em;text-transform:uppercase}
+  .sec-head h2{font-size:clamp(28px,4vw,42px);font-weight:800;margin-top:12px}
+  .sec-head p{color:var(--muted);margin-top:14px;font-size:17px}
+
+  .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+  .card{background:var(--panel);border:1px solid var(--panel-b);border-radius:var(--radius);padding:26px;
+    transition:transform .2s,border-color .2s,background .2s}
+  .card:hover{transform:translateY(-4px);border-color:rgba(124,140,255,.5);background:rgba(124,140,255,.06)}
+  .card .ic{width:44px;height:44px;border-radius:12px;display:grid;place-items:center;margin-bottom:16px;
+    background:linear-gradient(135deg,rgba(124,140,255,.22),rgba(96,230,196,.14));border:1px solid var(--panel-b)}
+  .card .ic svg{width:22px;height:22px;color:var(--accent)}
+  .card h3{font-size:18.5px;margin-bottom:8px}
+  .card p{color:var(--muted);font-size:14.5px;margin:0}
+
+  .principles{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-top:20px}
+  .pr{background:linear-gradient(180deg,rgba(255,255,255,.05),rgba(255,255,255,.02));border:1px solid var(--panel-b);
+    border-radius:14px;padding:20px}
+  .pr b{display:block;font-size:15px;margin-bottom:6px}
+  .pr span{color:var(--muted);font-size:13.5px}
+
+  /* download */
+  .dl{background:linear-gradient(160deg,rgba(124,140,255,.12),rgba(96,230,196,.06));
+    border:1px solid var(--panel-b);border-radius:26px;padding:44px;text-align:center;position:relative;overflow:hidden}
+  .dl h2{font-size:clamp(26px,4vw,38px);font-weight:800}
+  .dl p{color:var(--muted);max-width:56ch;margin:14px auto 0}
+  .dlrow{display:flex;gap:16px;justify-content:center;flex-wrap:wrap;margin-top:28px}
+  .dlcard{background:var(--bg2);border:1px solid var(--panel-b);border-radius:16px;padding:22px 26px;min-width:230px;text-align:left}
+  .dlcard .os{display:flex;align-items:center;gap:10px;font-weight:700;font-size:16px;margin-bottom:4px}
+  .dlcard .os svg{width:20px;height:20px}
+  .dlcard small{color:var(--faint);font-size:12.5px}
+  .dlcard .btn{width:100%;justify-content:center;margin-top:14px}
+  .note{margin-top:26px;font-size:13px;color:var(--muted);background:rgba(255,212,121,.08);
+    border:1px solid rgba(255,212,121,.25);border-radius:12px;padding:14px 18px;max-width:60ch;margin-left:auto;margin-right:auto}
+  .note b{color:#ffd479}
+
+  /* steps */
+  .steps{display:grid;grid-template-columns:repeat(4,1fr);gap:18px;counter-reset:s}
+  .step{background:var(--panel);border:1px solid var(--panel-b);border-radius:16px;padding:24px;position:relative}
+  .step::before{counter-increment:s;content:"0" counter(s);font-family:var(--mono);font-size:13px;color:var(--accent2);
+    font-weight:700;letter-spacing:.1em}
+  .step h3{font-size:16px;margin:10px 0 6px}
+  .step p{color:var(--muted);font-size:14px;margin:0}
+  .step code{font-family:var(--mono);font-size:12.5px;background:rgba(255,255,255,.06);padding:2px 7px;border-radius:6px;color:var(--accent2)}
+
+  /* docs links */
+  .doclinks{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+  .doc{display:flex;gap:14px;align-items:flex-start;background:var(--panel);border:1px solid var(--panel-b);
+    border-radius:14px;padding:20px;transition:border-color .2s,transform .2s}
+  .doc:hover{border-color:var(--accent);transform:translateY(-3px)}
+  .doc svg{width:20px;height:20px;color:var(--accent);flex:0 0 auto;margin-top:2px}
+  .doc b{font-size:15px}.doc span{display:block;color:var(--muted);font-size:13.5px;margin-top:3px}
+
+  footer{border-top:1px solid var(--panel-b);margin-top:80px;padding:40px 0;position:relative;z-index:1}
+  .foot{display:flex;gap:18px;align-items:center;flex-wrap:wrap;color:var(--faint);font-size:13.5px}
+  .foot .brand b{font-size:15px}
+  .foot .fl{margin-left:auto;display:flex;gap:22px}
+  .foot a{color:var(--muted)}.foot a:hover{color:var(--ink)}
+
+  @media(max-width:860px){
+    .grid,.principles,.steps,.doclinks{grid-template-columns:1fr 1fr}
+    .navlinks a:not(.btn){display:none}
+    .orbit{height:300px}
+  }
+  @media(max-width:560px){
+    .grid,.principles,.steps,.doclinks{grid-template-columns:1fr}
+    .foot .fl{margin-left:0;width:100%}
+  }
+</style>
+</head>
+<body>
+<canvas id="stars"></canvas>
+<div class="aura a"></div><div class="aura b"></div><div class="aura c"></div>
+
+<header>
+  <div class="wrap">
+    <nav>
+      <a class="brand" href="#top">
+        <svg viewBox="0 0 32 32" fill="none"><circle cx="16" cy="16" r="4" fill="#7c8cff"/><ellipse cx="16" cy="16" rx="13" ry="6" stroke="#7c8cff" stroke-width="1.5"/><ellipse cx="16" cy="16" rx="13" ry="6" stroke="#60e6c4" stroke-width="1.2" transform="rotate(60 16 16)" opacity=".6"/><circle cx="29" cy="16" r="2" fill="#60e6c4"/></svg>
+        <b>Orrery</b>
+      </a>
+      <div class="navlinks">
+        <a href="#features">Features</a>
+        <a href="#download">Download</a>
+        <a href="#docs">Docs</a>
+        <a href="https://github.com/zaidt156/Orrery">GitHub</a>
+        <a class="btn primary" href="#download">Get Orrery</a>
+      </div>
+    </nav>
+  </div>
+</header>
+
+<a id="top"></a>
+<section class="hero">
+  <div class="wrap">
+    <span class="pill"><span class="dot"></span> Local-first · your keys · your database</span>
+    <h1>Your own AI workspace, <span class="grad">on your machine</span>.</h1>
+    <p class="sub">Orrery ties your model accounts and your database into one private desktop app — chat, data, dashboards, automations, and agents. Nothing leaves your computer except the calls to the providers you chose.</p>
+    <div class="cta">
+      <a class="btn primary" href="#download">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14"/></svg>
+        Download for Windows
+      </a>
+      <a class="btn ghost" href="https://github.com/zaidt156/Orrery">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.58 2 12.26c0 4.5 2.87 8.32 6.84 9.67.5.09.68-.22.68-.49 0-.24-.01-.87-.01-1.71-2.78.62-3.37-1.37-3.37-1.37-.45-1.18-1.11-1.5-1.11-1.5-.91-.63.07-.62.07-.62 1 .07 1.53 1.05 1.53 1.05.89 1.56 2.34 1.11 2.91.85.09-.66.35-1.11.63-1.36-2.22-.26-4.56-1.14-4.56-5.07 0-1.12.39-2.03 1.03-2.75-.1-.26-.45-1.3.1-2.71 0 0 .84-.28 2.75 1.05a9.3 9.3 0 0 1 5 0c1.91-1.33 2.75-1.05 2.75-1.05.55 1.41.2 2.45.1 2.71.64.72 1.03 1.63 1.03 2.75 0 3.94-2.34 4.81-4.57 5.06.36.32.68.94.68 1.9 0 1.37-.01 2.47-.01 2.81 0 .27.18.59.69.49A10.02 10.02 0 0 0 22 12.26C22 6.58 17.52 2 12 2z"/></svg>
+        View source
+      </a>
+      <small>Windows 10/11 · free &amp; open source · bring your own model keys</small>
+    </div>
+
+    <div class="orbit" aria-hidden="true">
+      <div class="ring r1"></div><div class="ring r2"></div><div class="ring r3"></div>
+      <div class="sun"></div>
+      <div class="planet spin s1" style="width:160px;height:160px"><span class="p a"></span></div>
+      <div class="planet spin s2" style="width:300px;height:300px"><span class="p b"></span></div>
+      <div class="planet spin s3" style="width:460px;height:460px"><span class="p c"></span></div>
+    </div>
+
+    <div class="trust">
+      <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg> Private by default</span>
+      <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-9-9"/><path d="M12 7v5l3 2"/></svg> Bring your own keys</span>
+      <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/></svg> Bring your own database</span>
+      <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 18l6-6-6-6M8 6l-6 6 6 6"/></svg> Open source</span>
+    </div>
+  </div>
+</section>
+
+<section class="sec" id="features">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="tag">One workspace</div>
+      <h2>Everything, wired together</h2>
+      <p>Six surfaces that share one engine, one tool registry, and one set of safety rules — so an automation can start an agent, a chart can pin to a dashboard, and chat can drive any of them.</p>
+    </div>
+    <div class="grid">
+      <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div><h3>Chat</h3><p>Stream from any model you connect, with optional retrieval over your own documents — and a command surface that can run anything else in the app.</p></div>
+      <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg></div><h3>Data</h3><p>Connect your PostgreSQL databases, build document collections for retrieval, and browse tables read-only. Your data never leaves your machine.</p></div>
+      <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><rect x="7" y="10" width="3" height="8"/><rect x="12" y="6" width="3" height="12"/><rect x="17" y="13" width="3" height="5"/></svg></div><h3>Dashboards</h3><p>Describe a dashboard; the model writes the SQL and picks the charts. Orrery saves it as a spec and refreshes it for free — the AI is the designer, not the renderer.</p></div>
+      <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="3"/><circle cx="18" cy="18" r="3"/><path d="M9 6h6a3 3 0 0 1 3 3v6"/></svg></div><h3>Automations</h3><p>Visual, fixed-recipe workflows on a canvas — triggered by a schedule, a webhook, a manual run, or a database change. You design the steps.</p></div>
+      <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M12 8V4M8 2h8M9 14h.01M15 14h.01"/></svg></div><h3>Agents</h3><p>Goal-driven workers that plan, act, self-check, and improve within a strict scope — keeping learning notes and handing off to automations or to you.</p></div>
+      <div class="card"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="M21 15l-5-5L5 21"/></svg></div><h3>Media Hub</h3><p>A playground for image and video generation on your own media keys or a local model — prompts and settings saved, assets reusable everywhere.</p></div>
+    </div>
+
+    <div class="principles" style="margin-top:26px">
+      <div class="pr"><b>🔒 Security is the floor</b><span>Keys live in your OS keychain. Model-written code runs only in a locked-down sandbox. AI-written SQL is shown, not hidden.</span></div>
+      <div class="pr"><b>🛰️ Local-first</b><span>The backend binds to localhost. No analytics, no crash reporting, no phone-home. Only the providers you chose are ever contacted.</span></div>
+      <div class="pr"><b>🎯 Accuracy over guessing</b><span>Queries are parameterized and validated. What the AI can't ground in your schema or data, it declines instead of inventing.</span></div>
+      <div class="pr"><b>🧩 Bring your own everything</b><span>Your model accounts, your API keys, your database. Orrery is the framework that ties them together — you stay in control.</span></div>
+    </div>
+  </div>
+</section>
+
+<section class="sec" id="download">
+  <div class="wrap">
+    <div class="dl">
+      <h2>Download &amp; run in minutes</h2>
+      <p>Grab the package, point it at a PostgreSQL database (or use the bundled Docker one), connect a model account, and you're working — all on your own machine.</p>
+      <div class="dlrow">
+        <div class="dlcard">
+          <div class="os"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 5.5L10 4.5v7H3zM11 4.3L21 3v8.5H11zM3 12.5h7v7L3 18.5zM11 12.5h10V21l-10-1.3z"/></svg> Windows</div>
+          <small>Windows 10 / 11 · 64-bit</small>
+          <a class="btn primary" href="https://github.com/zaidt156/Orrery/releases/latest/download/Orrery-Windows.zip">Download .zip</a>
+        </div>
+        <div class="dlcard">
+          <div class="os"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M16.4 12.9c0-2.3 1.9-3.4 2-3.5-1.1-1.6-2.8-1.8-3.4-1.8-1.4-.1-2.8.9-3.5.9s-1.8-.9-3-.8c-1.5 0-2.9.9-3.7 2.3-1.6 2.7-.4 6.7 1.1 8.9.7 1.1 1.6 2.3 2.8 2.2 1.1 0 1.6-.7 2.9-.7s1.8.7 3 .7 2-1.1 2.7-2.1c.8-1.2 1.2-2.4 1.2-2.5-.1 0-2.3-.9-2.3-3.3zM14.2 5.9c.6-.8 1-1.8.9-2.9-.9 0-2 .6-2.6 1.4-.6.7-1.1 1.7-.9 2.7 1 .1 2-.5 2.6-1.2z"/></svg> macOS</div>
+          <small>Apple Silicon &amp; Intel</small>
+          <a class="btn ghost" href="https://github.com/zaidt156/Orrery/releases/latest">Get from Releases</a>
+        </div>
+        <div class="dlcard">
+          <div class="os"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 18l6-6-6-6M8 6l-6 6 6 6"/></svg> Source</div>
+          <small>Run from Python + Node</small>
+          <a class="btn ghost" href="https://github.com/zaidt156/Orrery">Clone the repo</a>
+        </div>
+      </div>
+      <div class="note"><b>First-run note:</b> this preview isn't code-signed yet, so Windows SmartScreen shows a one-time "Windows protected your PC" box. Click <b>More info → Run anyway</b> — it's expected for any new, unsigned app, not a warning about Orrery. A signed release is planned.</div>
+    </div>
+  </div>
+</section>
+
+<section class="sec" id="start">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="tag">Getting started</div>
+      <h2>From zip to working in four steps</h2>
+    </div>
+    <div class="steps">
+      <div class="step"><h3>Extract</h3><p>Unzip the whole folder and keep it together — run <code>setup-orrery.bat</code>, not the loose exe.</p></div>
+      <div class="step"><h3>Pick a database</h3><p>Use the bundled Docker PostgreSQL, or paste your own connection string. pgvector powers retrieval.</p></div>
+      <div class="step"><h3>Connect a model</h3><p>Add an API key or connect a plan account in Settings. Keys are stored in your OS keychain.</p></div>
+      <div class="step"><h3>Start working</h3><p>Chat, build a dashboard, wire an automation, or set an agent loose — from one window.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="sec" id="docs">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="tag">Docs</div>
+      <h2>Read how it works</h2>
+      <p>Plain-language design notes and the running development log — written so a non-expert can follow what happened and why.</p>
+    </div>
+    <div class="doclinks">
+      <a class="doc" href="https://github.com/zaidt156/Orrery#readme"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg><div><b>Read me first</b><span>What Orrery is, how to run it, and how the pieces fit together.</span></div></a>
+      <a class="doc" href="https://github.com/zaidt156/Orrery/blob/main/docs/planning/TASK_ROUTING_ARCHITECTURE.md"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 3H5a2 2 0 0 0-2 2v4m6-6h10a2 2 0 0 1 2 2v4M9 3v18m0 0H5a2 2 0 0 1-2-2v-4m6 6h10a2 2 0 0 0 2-2v-4"/></svg><div><b>Task routing</b><span>How a request is classified and sent to the right capability.</span></div></a>
+      <a class="doc" href="https://github.com/zaidt156/Orrery/blob/main/docs/planning/AGENT_COMPUTER_ARCHITECTURE.md"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg><div><b>Agent Computer</b><span>The design for the persistent sandbox agents drive to do real work.</span></div></a>
+      <a class="doc" href="https://github.com/zaidt156/Orrery/blob/main/docs/history/DEVLOG.md"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8v4l3 2"/><circle cx="12" cy="12" r="9"/></svg><div><b>Development log</b><span>Every step, in plain words: what we did, why, and what's next.</span></div></a>
+      <a class="doc" href="https://github.com/zaidt156/Orrery/blob/main/docs/security/USER_ADMIN_ACCESS.md"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg><div><b>Access &amp; security</b><span>How access, keys, and the localhost boundary are handled.</span></div></a>
+      <a class="doc" href="https://github.com/zaidt156/Orrery/issues"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg><div><b>Issues &amp; ideas</b><span>Report a bug or request a feature on GitHub.</span></div></a>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap foot">
+    <a class="brand" href="#top">
+      <svg viewBox="0 0 32 32" fill="none"><circle cx="16" cy="16" r="4" fill="#7c8cff"/><ellipse cx="16" cy="16" rx="13" ry="6" stroke="#7c8cff" stroke-width="1.5"/><circle cx="29" cy="16" r="2" fill="#60e6c4"/></svg>
+      <b>Orrery</b>
+    </a>
+    <span>Local-first AI workspace · your keys, your data.</span>
+    <div class="fl">
+      <a href="#features">Features</a>
+      <a href="#download">Download</a>
+      <a href="https://github.com/zaidt156/Orrery">GitHub</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+  // lightweight starfield
+  (function(){
+    const c = document.getElementById('stars'), x = c.getContext('2d');
+    let w, h, stars;
+    function init(){
+      w = c.width = innerWidth; h = c.height = innerHeight;
+      stars = Array.from({length: Math.min(160, Math.floor(w*h/12000))}, () => ({
+        x: Math.random()*w, y: Math.random()*h, r: Math.random()*1.3+.2,
+        a: Math.random()*.6+.2, s: Math.random()*.02+.004
+      }));
+    }
+    function draw(){
+      x.clearRect(0,0,w,h);
+      for(const st of stars){
+        st.a += st.s; if(st.a>.9||st.a<.15) st.s*=-1;
+        x.globalAlpha = st.a; x.fillStyle = '#cdd6ff';
+        x.beginPath(); x.arc(st.x, st.y, st.r, 0, 6.283); x.fill();
+      }
+      requestAnimationFrame(draw);
+    }
+    addEventListener('resize', init); init(); draw();
+  })();
+</script>
+</body>
+</html>
