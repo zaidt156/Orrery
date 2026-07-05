@@ -1659,3 +1659,24 @@ Clearing two more of the reported screenshot issues.
 
 Next: uploaded-file context relevance (stop pulling unrelated attachments into a turn), then the
 write-tool approval gate; then Phase 1 of the Agent Computer.
+
+
+## Step 115 - A real download page and installable build (July 5, 2026)
+
+We turned Orrery into something a person can actually download and run, and gave it a home on the web.
+
+- **Built the Windows package.** Ran the existing packaging pipeline to produce a self-contained
+  Windows folder (Orrery.exe plus its runtime) zipped as `Orrery-Windows.zip` (~310 MB). It carries the
+  setup/run helper scripts, the optional bundled PostgreSQL, and the sandbox image definition.
+- **Published it as a download.** Uploaded the Windows zip to the GitHub release so it sits alongside
+  the macOS build. Both download links resolve. Because the preview isn't code-signed yet, Windows will
+  show a one-time "Windows protected your PC" box — the fix for that is a code-signing certificate
+  (a paid, identity-verified cert), so for now the "More info -> Run anyway" step is documented in the
+  packaged README, on the site, and in the release notes.
+- **Built a landing site.** A single self-contained page (`docs/index.html`) with an orbital/cosmic
+  look that fits the name: a hero, the six-surface feature grid, the local-first principles, a download
+  section wired straight to the release assets, a getting-started flow, and links into the docs.
+- **Hosted it on GitHub Pages** from `main/docs`, live at https://zaidt156.github.io/Orrery/. Verified
+  the page serves and the Windows/macOS download buttons resolve to real files.
+
+Next (unchanged): the write-tool approval gate, then Phase 1 of the Agent Computer.
