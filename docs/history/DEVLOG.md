@@ -1637,3 +1637,25 @@ merge them into one.
   pass, including new coverage for the 1M reporting, the window→mode switch, and the hidden "-1m" menu.
 
 Next: unchanged — Phase 1 of the Agent Computer plan.
+
+
+## Step 114 - Attachments preview as the real file; file results look consistent (July 5, 2026)
+
+Clearing two more of the reported screenshot issues.
+
+- **Attachments now preview as the actual file, not just their text.** Orrery had only kept the raw
+  bytes of image attachments; for a PDF or Office file it stored just the extracted text, so clicking
+  one could only ever show text. Now the real bytes of every binary attachment (PDF, Word, Excel,
+  PowerPoint, images) are kept, and opening one shows the true file — a PDF renders as a PDF, an image
+  as an image, text as text. Office files (which a browser can't render inline) open as the real file
+  via the preview pane's "Open" action instead of dumping text. (Applies to files attached from now
+  on; older messages had only image bytes saved.)
+- **A requested file looks the same whether it was pre-built or made from the reply.** Before, a real
+  generated file showed a rich card (thumbnail, name, size, Preview/Download) while a reply that could
+  be turned into the asked-for format showed a different little "Requested file:" row of chips — the
+  "why do I get buttons instead of a file?" confusion. Both now use the same file card, so the result
+  is consistent. (The deeper unification — always producing one real stored file for every file
+  request regardless of path — remains Phase 2 of the Agent Computer plan.)
+
+Next: uploaded-file context relevance (stop pulling unrelated attachments into a turn), then the
+write-tool approval gate; then Phase 1 of the Agent Computer.

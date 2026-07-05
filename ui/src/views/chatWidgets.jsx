@@ -59,6 +59,9 @@ export function TaskBrainPanel({ onOpenConversation }) {
 }
 
 // Requested file controls: click the file chip to preview; use the download icon to save.
+// The reply can be turned into the file the user asked for (rendered on demand). Presented as the
+// SAME rich file card as a pre-generated file (GeneratedFileCard) so the experience is consistent —
+// the user always sees "a file to preview/download", not a different-looking row of chips.
 export function ReplyFiles({ formats, onPreview, onDownload }) {
   const [busy, setBusy] = useState(null);
   async function run(kind, fn) {
@@ -67,27 +70,33 @@ export function ReplyFiles({ formats, onPreview, onDownload }) {
   }
   return (
     <div className="reply-files">
-      <span className="reply-files-label">Requested file:</span>
       {formats.map(({ id, label, Icon }) => (
-        <span key={id} className="file-pair">
-          <button
-            className="file-chip file-main"
-            disabled={!!busy}
-            onClick={() => run(`${id}:preview`, () => onPreview(id))}
-            title={`Preview ${label}`}
-          >
-            <Icon /> {busy === `${id}:preview` ? "Opening..." : label}
-          </button>
-          <button
-            className="file-chip file-save"
-            disabled={!!busy}
-            onClick={() => run(`${id}:download`, () => onDownload(id))}
-            title={`Download ${label}`}
-            aria-label={`Download ${label}`}
-          >
-            <Download />
-          </button>
-        </span>
+        <div key={id} className="file-card2">
+          <span className="file-thumb" aria-hidden="true"><Icon /></span>
+          <span className="file-card2-meta">
+            <span className="file-card2-name">{label} file</span>
+            <span className="file-card2-sub">Made from this reply · {label}</span>
+          </span>
+          <span className="file-card2-actions">
+            <button
+              className="file-btn ghost"
+              disabled={!!busy}
+              onClick={() => run(`${id}:preview`, () => onPreview(id))}
+              title={`Preview ${label}`}
+            >
+              <Eye /> {busy === `${id}:preview` ? "Opening…" : "Preview"}
+            </button>
+            <button
+              className="file-btn primary"
+              disabled={!!busy}
+              onClick={() => run(`${id}:download`, () => onDownload(id))}
+              title={`Download ${label}`}
+              aria-label={`Download ${label}`}
+            >
+              <Download /> {busy === `${id}:download` ? "Saving…" : "Download"}
+            </button>
+          </span>
+        </div>
       ))}
     </div>
   );

@@ -270,7 +270,7 @@ body{
 .artifact-media audio{width:min(520px,100%)}
 
 /* requested file strip under a reply */
-.reply-files{display:flex; flex-wrap:wrap; align-items:center; gap:7px; margin-top:9px}
+.reply-files{display:flex; flex-direction:column; gap:8px; margin-top:9px}
 .reply-files-label{font-size:11px; color:var(--faint); font-family:var(--font-mono); letter-spacing:.04em}
 .file-pair{display:inline-flex; align-items:center; min-width:0}
 .file-chip{display:inline-flex; align-items:center; justify-content:center; gap:5px; font-size:11.5px; color:var(--muted);
