@@ -341,16 +341,20 @@ async def _prepare_turn(cid: uuid.UUID, user_content: str, attachments: list[dic
         messages.append({"role": "user", "content": _build_user_content(user_content, attachments)})
 
         # Attachment metadata rides in artifacts so reloads render real chips (name+kind), not a
-        # text blob baked into the message. Text content stays out of it (it lives in context/RAG);
-        # image BYTES are kept in the file library so view/thumbnail works after reloads too.
+        # text blob baked into the message. Extracted text stays out of it (it lives in context/RAG);
+        # the file's real BYTES are kept in the file library — for every binary attachment, not just
+        # images — so it can be previewed in its actual form (a PDF as a PDF, not its text) after a
+        # reload. Plain-text files carry their text and need no stored copy.
         att_meta = []
         for a in attachments:
             meta = {"kind": "attachment", "name": a.get("name", "file"), "mime": a.get("mime", ""),
                     "att": a.get("kind", "file")}
-            if a.get("kind") == "image" and str(a.get("content", "")).startswith("data:"):
+            if str(a.get("content", "")).startswith("data:"):  # image / pdf / office → base64 data URL
                 try:
                     b64 = str(a["content"]).split(",", 1)[1]
-                    stored = file_library.store(meta["name"], a.get("mime") or "image/png", base64.b64decode(b64))
+                    stored = file_library.store(
+                        meta["name"], a.get("mime") or "application/octet-stream", base64.b64decode(b64)
+                    )
                     meta["file_id"] = stored["id"]
                 except Exception:  # noqa: BLE001 — preview persistence is best-effort
                     pass

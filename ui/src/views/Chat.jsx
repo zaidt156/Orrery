@@ -56,6 +56,17 @@ function modelCtx(list, id) {
   return Number(list.find((m) => m.id === id)?.context_window) || DEFAULT_CTX;
 }
 
+// Turn a base64 data URL (how the composer holds a freshly attached image/PDF/office file) into a
+// blob URL so the preview pane can render the real file, not a text extract.
+function dataUrlToBlobUrl(dataUrl) {
+  const comma = dataUrl.indexOf(",");
+  const mime = (dataUrl.slice(0, comma).match(/data:([^;]+)/) || [])[1] || "application/octet-stream";
+  const bin = atob(dataUrl.slice(comma + 1));
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i += 1) bytes[i] = bin.charCodeAt(i);
+  return { url: URL.createObjectURL(new Blob([bytes], { type: mime })), mime };
+}
+
 // The header chip shows a short model name; long descriptors ("adaptive thinking", "reasoning")
 // and the "<Brand> plan -" prefix become a small plan badge — the menu keeps the full labels.
 const MODEL_DESCRIPTOR = /^(adaptive thinking|reasoning|fast( reasoning)?|thinking|default|best available.*)$/i;
@@ -152,14 +163,21 @@ export default function Chat() {
     setArtifact({ image: `data:image/svg+xml,${encodeURIComponent(svg)}`, title: title || "SVG preview" });
   }
 
+  // Render a real file in the preview pane by its type: image → <img>, av → player, html → sandboxed
+  // iframe, everything else (PDF, Office, text) → a plain iframe that shows the file as-is.
+  function showFileArtifact(url, mime, name) {
+    const m = mime || "";
+    if (m.startsWith("image/")) setArtifact({ image: url, title: name });
+    else if (m.startsWith("video/")) setArtifact({ media: url, mediaType: "video", title: name });
+    else if (m.startsWith("audio/")) setArtifact({ media: url, mediaType: "audio", title: name });
+    else setArtifact({ url, title: name, sandbox: m.startsWith("text/html") });
+  }
+
   async function openGeneratedPreview(file) {
     setBanner(null);
     try {
       const { url, mime } = await previewGeneratedFile(file.id);
-      if ((mime || "").startsWith("image/")) setArtifact({ image: url, title: file.name });
-      else if ((mime || "").startsWith("video/")) setArtifact({ media: url, mediaType: "video", title: file.name });
-      else if ((mime || "").startsWith("audio/")) setArtifact({ media: url, mediaType: "audio", title: file.name });
-      else setArtifact({ url, title: file.name, sandbox: (mime || "").startsWith("text/html") });
+      showFileArtifact(url, mime, file.name);
     } catch (e) {
       setBanner(String(e.message || e));
     }
@@ -576,28 +594,31 @@ export default function Chat() {
     }
   }
 
-  // Open an attachment so the user can confirm exactly what was sent: fresh ones carry their
-  // content; reloaded images load their stored bytes (file_id); other files fetch indexed text.
+  // Open an attachment as the ACTUAL file (a PDF renders as a PDF, an image as an image), not a text
+  // extract. Reloaded files fetch their stored bytes by id; a just-sent file is still in the composer
+  // as a data URL; plain-text files carry their text; only as a last resort do we show indexed text.
   async function openAttachment(a) {
     try {
-      if (a.kind === "image" && a.content) {
-        setArtifact({ image: a.content, title: a.name });
+      if (a.file_id) {
+        const { url, mime } = await previewGeneratedFile(a.file_id);
+        showFileArtifact(url, mime || a.mime, a.name);
         return;
       }
-      if (a.kind === "image" && a.file_id) {
-        const { url } = await previewGeneratedFile(a.file_id);
-        setArtifact({ image: url, title: a.name });
+      if (typeof a.content === "string" && a.content.startsWith("data:")) {
+        const { url, mime } = dataUrlToBlobUrl(a.content);
+        showFileArtifact(url, a.mime || mime, a.name);
         return;
       }
-      let text = a.kind === "text" && a.content ? a.content : null;
-      if (text === null) {
-        const r = await getAttachmentText(activeId, a.name);
-        text = r.text;
+      if (a.kind === "text" && a.content != null) {
+        const url = URL.createObjectURL(new Blob([a.content], { type: "text/plain;charset=utf-8" }));
+        setArtifact({ url, title: a.name });
+        return;
       }
-      const url = URL.createObjectURL(new Blob([text], { type: "text/plain;charset=utf-8" }));
+      const r = await getAttachmentText(activeId, a.name);
+      const url = URL.createObjectURL(new Blob([r.text], { type: "text/plain;charset=utf-8" }));
       setArtifact({ url, title: a.name });
     } catch {
-      setBanner(`No stored preview for ${a.name} — its text may not have been indexable.`);
+      setBanner(`No stored preview for ${a.name} — it may not have been saved.`);
     }
   }
 
