@@ -12,6 +12,16 @@ Included in this folder:
 - docker-compose.yml for the optional included PostgreSQL database
 - sandbox\Dockerfile for sandboxed file generation
 
+First-run security warning (important):
+Because this preview build is not code-signed yet, Windows SmartScreen shows a blue
+"Windows protected your PC" box the first time you run setup-orrery.bat or Orrery.exe.
+This is expected for any new, unsigned app - it is NOT a virus warning about Orrery.
+To run it:
+  1. In the blue box, click "More info".
+  2. Click the "Run anyway" button that appears.
+You only need to do this once per file. If your browser warned while downloading the .zip,
+choose "Keep". A code-signed release (which removes this prompt) is planned.
+
 Quick start:
 1. Extract the full Orrery-Windows.zip folder.
 2. Do not copy Orrery.exe out by itself.
