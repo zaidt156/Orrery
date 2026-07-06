@@ -13,6 +13,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+import time
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -66,8 +67,17 @@ class SandboxResult:
     manifest: dict[str, Any] = field(default_factory=dict)
 
 
-def image_ready() -> bool:
-    """True once the sandbox image has been built and is available locally."""
+# The readiness probe shells out to `docker image inspect`, which is slow (and blocks the
+# event loop from its async callers) and is hit several times per chat turn. The image state
+# changes rarely, so cache the answer per process: a present image is trusted for longer,
+# while an absent one is re-checked sooner so a just-started Docker Desktop is picked up
+# quickly. Degrades safely either way — a stale "ready" that fails just falls back to docgen.
+_READY_TTL_OK = 30.0
+_READY_TTL_MISS = 5.0
+_ready_cache: tuple[bool, float] | None = None  # (value, monotonic expiry)
+
+
+def _probe_image_ready() -> bool:
     try:
         result = proc.run(
             [_docker_bin(), "image", "inspect", IMAGE],
@@ -76,6 +86,17 @@ def image_ready() -> bool:
         return result.returncode == 0
     except Exception:  # noqa: BLE001 — any failure means "not ready"
         return False
+
+
+def image_ready(*, refresh: bool = False) -> bool:
+    """True once the sandbox image has been built and is available locally (briefly cached)."""
+    global _ready_cache
+    now = time.monotonic()
+    if not refresh and _ready_cache is not None and now < _ready_cache[1]:
+        return _ready_cache[0]
+    value = _probe_image_ready()
+    _ready_cache = (value, now + (_READY_TTL_OK if value else _READY_TTL_MISS))
+    return value
 
 
 def _collect_outputs(out_dir: Path) -> list[SandboxFile]:
