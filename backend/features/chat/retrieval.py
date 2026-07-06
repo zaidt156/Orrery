@@ -67,3 +67,23 @@ def _vague_query(text: str) -> bool:
     """Too little signal to judge file relevance (e.g. 'Do it', 'contineou', 'yes please')."""
     meaningful = [w for w in re.findall(r"[A-Za-z0-9]+", text or "") if len(w) > 2]
     return len(meaningful) < 4
+
+
+# A short turn can be a "proceed with the previous job" confirmation ("do it", "yes", "make it
+# blue") OR a fresh question about the current turn ("what do you see", "who is this?"). Only the
+# former may inherit an earlier file/image-generation intent. A question must be planned on its own
+# merits, or a vision-style ask silently produces another file. (Reported: "what do you see" after
+# a file turn generated a second, useless PDF — see docs/history/DEVLOG.md.)
+_QUESTION_LEAD = re.compile(
+    r"^(?:what|why|how|who|whom|whose|which|when|where|"
+    r"do\s+(?:you|we|i)|does|are\s+(?:you|we|there|these|those)|is\s+(?:this|that|it|there)|"
+    r"can\s+you|could\s+you|would\s+you|should\s+(?:i|we|it)|"
+    r"tell\s+me|explain|describe)\b",
+    re.IGNORECASE,
+)
+
+
+def _is_question(text: str) -> bool:
+    """True when a short turn reads as a fresh question (so it must NOT inherit a prior intent)."""
+    stripped = (text or "").strip()
+    return bool(stripped) and ("?" in stripped or bool(_QUESTION_LEAD.match(stripped)))

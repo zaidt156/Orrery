@@ -180,3 +180,16 @@ async def test_vague_followup_does_not_inherit_when_this_turn_has_an_attachment(
         {"role": "assistant", "content": "Here is a draft."},
     ]
     assert await _drive(monkeypatch, "make it navy blue", attachments=[_IMG], history=history) == ["model"]
+
+
+@pytest.mark.anyio
+async def test_vague_question_followup_does_not_inherit_prior_file_intent(monkeypatch):
+    # Reported bug: a plain question after a file turn ("what do you see") is a FRESH ask, not a
+    # "proceed" confirmation — it must be answered in chat, never spawn a second useless file, even
+    # when this text-only turn carries no attachment for the has-image guard to catch.
+    history = [
+        {"role": "user", "content": "create a PDF resume for me"},
+        {"role": "assistant", "content": "Here is a draft."},
+    ]
+    assert await _drive(monkeypatch, "what do you see", history=history) == ["model"]
+    assert await _drive(monkeypatch, "who is this?", history=history) == ["model"]

@@ -1680,3 +1680,37 @@ We turned Orrery into something a person can actually download and run, and gave
   the page serves and the Windows/macOS download buttons resolve to real files.
 
 Next (unchanged): the write-tool approval gate, then Phase 1 of the Agent Computer.
+
+
+## Step 116 — Stop plain questions from generating junk files, and a full architecture grind (July 6, 2026)
+
+Two things this session: a real bug fix you reported with a screenshot, and a deep,
+plain-words map of how the app actually works so we can decide together what to speed up.
+
+- **Fixed the "what do you see" → useless PDF bug.** You attached a screenshot and typed
+  "what do you see"; instead of looking at the image, Orrery built a `session_context_report.pdf`
+  — and the same thing happened after an earlier file turn even with no attachment. The cause:
+  a short message like "what do you see" counts as "vague," and a vague follow-up was allowed to
+  **inherit the previous turn's intent** ("…make a PDF…"). So a plain question after a file
+  request quietly kept making files. The fix: a vague turn that is actually a **question**
+  ("what do you see", "who is this?") is treated as a fresh question and never inherits a prior
+  file/image intent. Added regression tests; the whole routing/retrieval suite passes (73 tests).
+  The "broken preview" you also saw was just that junk PDF failing to render — with the routing
+  fixed, the junk file is never produced, so that clears too.
+- **Ground-up architecture grind.** You asked to understand, before changing anything, how
+  Context, RAG, document indexing/chunking, project context, the sandbox, file generation, and
+  artifacts/preview really work. Nine focused readers went through the actual code and reported
+  how each piece works today, its strengths, its weak points, and where it gets slower as the
+  app grows. The full briefing — with file references and a ranked performance list and a
+  decision menu — is saved at `docs/planning/ARCHITECTURE_GRIND.md`. Headline: the app feels
+  slower as it grows mainly because (1) every chat turn reloads the **entire** conversation
+  history from the database, (2) the chat screen re-draws every message on every streamed word,
+  and (3) a Docker check runs on the main thread on every turn. All three are fixable without
+  changing what the app does.
+
+Next: you decide which improvement track to take first (backend speed pass, history/pagination,
+frontend streaming, filegen routing, or the security/policy questions). Also still open from
+your messages: attach/publish the Windows + macOS builds via the release workflows and prompt
+for prerequisites (Docker) during install; a README/contribution overhaul; the Dashboard
+onboarding + state-persistence work; and in-place message versioning (‹ › like Claude/GPT)
+instead of appending a duplicate on resubmit/redo.

@@ -839,8 +839,10 @@ async def stream_reply(
     plan_text = user_content
     # Only inherit the PREVIOUS turn's intent when THIS turn has no attachments of its own. A turn that
     # carries a file/image is about THAT content ("what do you see" + a screenshot is a vision question),
-    # so it must not pick up "…generate a PDF…" from an earlier message.
-    if retrieval._vague_query(user_content) and not attachments:
+    # so it must not pick up "…generate a PDF…" from an earlier message. A vague turn that is itself a
+    # question ("what do you see", "who is this?") is a fresh ask, not a "proceed" confirmation, so it
+    # must not inherit either — otherwise a plain question after a file turn spawns another useless file.
+    if retrieval._vague_query(user_content) and not attachments and not retrieval._is_question(user_content):
         prev = next(
             (m["content"] for m in reversed(messages[:-1])
              if m.get("role") == "user" and isinstance(m.get("content"), str) and m["content"].strip()),
