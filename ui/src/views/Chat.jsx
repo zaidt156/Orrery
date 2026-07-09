@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import {
   Check,
+  ChevronLeft,
+  ChevronRight,
   Copy,
   Download,
   Eye,
@@ -24,7 +26,7 @@ import {
   updateConversation, deleteConversation, streamMessage, regenerateMessage,
   downloadMessageExport, streamCodeImage, createArtifact, previewExport, saveClientFile,
   downloadGeneratedFile, previewGeneratedFile, stopGeneration, resumeGeneration, listProjects, saveReasoning,
-  getDefaults, readFileAsAttachment, getAttachmentText,
+  getDefaults, readFileAsAttachment, getAttachmentText, activateMessageVersion,
 } from "../lib/api.js";
 import {
   EXPORT_FORMATS, requestedFileFormats, precedingUserText, isFileFailureNote,
@@ -493,17 +495,23 @@ export default function Chat() {
     }
   }
 
-  // Re-attach to a generation that kept running in the background while we were away, then
-  // reload the saved reply (the resume stream only carries the tail it didn't already emit).
-  async function resumeRun(cid) {
-    await runStream(cid, (onEvent, signal) => resumeGeneration(cid, onEvent, signal));
+  // Reload the saved thread (ids + ‹ › version metadata land only via a fetch — the stream
+  // doesn't carry them). Keeps whatever streamed if the fetch fails.
+  async function syncThread(cid) {
     try {
       const full = await getConversation(cid);
       if (cid === activeIdRef.current) setMessages(full.messages.map(hydrateReasoning));
     } catch { /* keep what streamed */ }
   }
 
-  async function submitPrompt(rawContent, rawAttachments = [], { clearComposer = false } = {}) {
+  // Re-attach to a generation that kept running in the background while we were away, then
+  // reload the saved reply (the resume stream only carries the tail it didn't already emit).
+  async function resumeRun(cid) {
+    await runStream(cid, (onEvent, signal) => resumeGeneration(cid, onEvent, signal));
+    await syncThread(cid);
+  }
+
+  async function submitPrompt(rawContent, rawAttachments = [], { clearComposer = false, siblingOf = null } = {}) {
     const content = String(rawContent || "").trim();
     if ((!content && rawAttachments.length === 0) || sending) return;
     if (!model) { setBanner("Connect an account or add an API key in Settings to pick a model."); return; }
@@ -528,13 +536,23 @@ export default function Chat() {
       setInput("");
       setAttachments([]);
     }
-    setMessages((p) => [...p, { role: "user", content, attachments: atts }]);
     const codeImage = atts.length === 0 && isCodeImagePrompt(content);
+    const sid = codeImage ? null : siblingOf; // the code-image route has no in-place versioning
+    if (sid) {
+      // resubmit-in-place: the revised prompt replaces the old one on screen (the old version
+      // stays switchable via ‹ ›), so drop it and everything after before streaming the new turn
+      setMessages((p) => {
+        const at = p.findIndex((x) => x.id === sid);
+        return at >= 0 ? p.slice(0, at) : p;
+      });
+    }
+    setMessages((p) => [...p, { role: "user", content, attachments: atts }]);
     await runStream(cid, (onEvent, signal) =>
       codeImage
         ? streamCodeImage(cid, content, onEvent, signal)
-        : streamMessage(cid, content, atts, collectionId, onEvent, signal)
+        : streamMessage(cid, content, atts, collectionId, onEvent, signal, sid)
     );
+    await syncThread(cid); // pick up saved ids + ‹ › version metadata
   }
 
   async function send() {
@@ -546,7 +564,8 @@ export default function Chat() {
   }
 
   async function resubmitPrompt(message) {
-    await submitPrompt(message.content || "", message.attachments || []);
+    // saved messages revise in place (a new ‹ › version); unsaved ones fall back to an append
+    await submitPrompt(message.content || "", message.attachments || [], { siblingOf: message.id || null });
   }
 
   function editPrompt(text) {
@@ -572,6 +591,18 @@ export default function Chat() {
     });
     const cid = activeId;
     await runStream(cid, (onEvent, signal) => regenerateMessage(cid, onEvent, signal));
+    await syncThread(cid); // the old reply is now a switchable ‹ › version of the new one
+  }
+
+  async function switchVersion(targetId) {
+    if (sending || !activeId) return;
+    const cid = activeId;
+    try {
+      const full = await activateMessageVersion(cid, targetId);
+      if (cid === activeIdRef.current) setMessages(full.messages.map(hydrateReasoning));
+    } catch (e) {
+      setBanner(String(e.message || e));
+    }
   }
 
   function stop() {
@@ -832,6 +863,7 @@ export default function Chat() {
                   </div>
                 )}
                 <div className="prompt-actions">
+                  <VersionSwitch m={m} disabled={sending} onSwitch={switchVersion} />
                   <button type="button" title="Copy prompt" aria-label="Copy prompt" className={copiedKey === `p${i}` ? "copied-pop" : ""} onClick={(e) => copy(promptText || "", `p${i}`, e)}>
                     {copiedKey === `p${i}` ? <Check /> : <Copy />}
                   </button>
@@ -915,6 +947,7 @@ export default function Chat() {
                 )}
                 {!m.streaming && !m.error && (
                   <div className="msg-actions">
+                    <VersionSwitch m={m} disabled={sending} onSwitch={switchVersion} />
                     <button type="button" title="Copy reply" aria-label="Copy reply" className={copiedKey === `r${i}` ? "copied-pop" : ""} onClick={(e) => copy(m.content, `r${i}`, e)}>
                       {copiedKey === `r${i}` ? <Check /> : <Copy />}
                     </button>
@@ -1128,6 +1161,27 @@ function appendStep(setMessages, step) {
     a[a.length - 1] = { ...last, steps, status: step };
     return a;
   });
+}
+
+// ‹ n/m › switcher shown on any message that has sibling versions (regenerated or resubmitted).
+function VersionSwitch({ m, disabled, onSwitch }) {
+  if (!m?.id || !(m.versions > 1)) return null;
+  const at = (m.version || 1) - 1;
+  const go = (delta) => {
+    const target = (m.siblings || [])[at + delta];
+    if (target && target !== m.id) onSwitch(target);
+  };
+  return (
+    <span className="version-switch">
+      <button type="button" title="Previous version" aria-label="Previous version" disabled={disabled || at <= 0} onClick={() => go(-1)}>
+        <ChevronLeft />
+      </button>
+      <span className="version-count">{at + 1}/{m.versions}</span>
+      <button type="button" title="Next version" aria-label="Next version" disabled={disabled || at + 1 >= m.versions} onClick={() => go(1)}>
+        <ChevronRight />
+      </button>
+    </span>
+  );
 }
 
 // Rebuild a loaded message's reasoning panel fields from its persisted reasoning snapshot.

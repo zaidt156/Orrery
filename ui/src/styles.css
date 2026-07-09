@@ -450,6 +450,10 @@ body{
 .msg-actions button svg,.prompt-actions button svg{width:14px; height:14px; stroke-width:1.8}
 .msg-actions button:hover,.prompt-actions button:hover{color:var(--text); border-color:var(--ice)}
 .msg-actions button:disabled,.prompt-actions button:disabled{opacity:.45; cursor:default; color:var(--faint); border-color:var(--line)}
+/* ‹ n/m › message-version switcher (regenerated / resubmitted turns) */
+.version-switch{display:inline-flex; align-items:center; gap:1px; margin-right:2px}
+.version-switch .version-count{font-family:var(--font-mono); font-size:10.5px; color:var(--faint); min-width:24px; text-align:center; user-select:none}
+.msg-actions .version-switch button,.prompt-actions .version-switch button{width:20px; border:none; background:transparent}
 .export-wrap{position:relative;display:flex}
 .export-menu{
   position:absolute;right:0;bottom:calc(100% + 7px);z-index:8;min-width:132px;
