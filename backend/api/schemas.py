@@ -33,6 +33,9 @@ class NewMessage(BaseModel):
     content: str
     attachments: list[Attachment] = []
     collection_id: str | None = None
+    # Resubmit-in-place: id of the user message this content REVISES. The new message becomes the
+    # active sibling version of that message (same parent) instead of appending to the end.
+    sibling_of: str | None = None
 
 
 class ProviderKey(BaseModel):

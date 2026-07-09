@@ -77,6 +77,16 @@ def ancestors(messages: list, target_id: str) -> list:
     return chain
 
 
+def sibling_turn_seed(messages: list, target_id: str) -> tuple | None:
+    """(parent_id, prior_history) for resubmitting a user turn as a new sibling version: the new
+    message shares the target's parent, and the model sees only the chain BEFORE the target.
+    None when the target isn't a known user message (caller falls back to a normal append)."""
+    chain = ancestors(messages, target_id)
+    if not chain or getattr(chain[-1], "role", "") != "user":
+        return None
+    return getattr(chain[-1], "parent_id", None), chain[:-1]
+
+
 def trim_to_last_user(path: list) -> list:
     """The path up to (and including) its most recent user turn — the regenerate anchor. Trailing
     assistant replies are dropped (not deleted: the new reply becomes their sibling version)."""

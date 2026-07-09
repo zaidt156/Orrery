@@ -18,7 +18,7 @@ from backend.features.chat import conversations, generation, persistence, retrie
 # conversation CRUD + message metadata
 from backend.features.chat.conversations import (  # noqa: F401
     attachment_text, can_access_conversation, create_conversation, delete_conversation,
-    get_conversation, list_conversations, save_reasoning, update_conversation,
+    get_conversation, list_conversations, save_reasoning, set_active_version, update_conversation,
     _load_reasoning, _owned_by,
 )
 

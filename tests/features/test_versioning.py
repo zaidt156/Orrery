@@ -116,3 +116,30 @@ def test_trim_to_last_user_keeps_a_path_already_ending_on_a_user_turn():
 def test_trim_to_last_user_empty_when_no_user_turn():
     msgs = [_m("b", None, True, 1, "assistant")]
     assert versioning.trim_to_last_user(versioning.active_path(msgs)) == []
+
+
+def test_sibling_turn_seed_gives_parent_and_prior_history():
+    # resubmitting user turn "c" (a → b → c): the new version shares c's parent (b) and the
+    # model sees only the history BEFORE c
+    msgs = [
+        _m("a", None, True, 1, "user"),
+        _m("b", "a", True, 2, "assistant"),
+        _m("c", "b", True, 3, "user"),
+        _m("d", "c", True, 4, "assistant"),   # everything after the edit point is left behind
+    ]
+    parent, history = versioning.sibling_turn_seed(msgs, "c")
+    assert parent == "b"
+    assert [m.id for m in history] == ["a", "b"]
+
+
+def test_sibling_turn_seed_of_the_first_message_roots_the_new_version():
+    msgs = [_m("a", None, True, 1, "user"), _m("b", "a", True, 2, "assistant")]
+    parent, history = versioning.sibling_turn_seed(msgs, "a")
+    assert parent is None
+    assert history == []
+
+
+def test_sibling_turn_seed_rejects_non_user_or_unknown_targets():
+    msgs = [_m("a", None, True, 1, "user"), _m("b", "a", True, 2, "assistant")]
+    assert versioning.sibling_turn_seed(msgs, "b") is None
+    assert versioning.sibling_turn_seed(msgs, "zz") is None

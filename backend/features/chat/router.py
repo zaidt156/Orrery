@@ -319,8 +319,13 @@ def _is_indexable_attachment(attachment: dict) -> bool:
     return name.endswith((".docx", ".xlsx", ".xlsm", ".pptx"))
 
 
-async def _prepare_turn(cid: uuid.UUID, user_content: str, attachments: list[dict]) -> _TurnContext | None:
-    """Load the conversation + history and persist the incoming user message. None if missing."""
+async def _prepare_turn(
+    cid: uuid.UUID, user_content: str, attachments: list[dict], sibling_of: str | None = None
+) -> _TurnContext | None:
+    """Load the conversation + history and persist the incoming user message. None if missing.
+
+    With sibling_of, the new message is saved as the active sibling VERSION of that user message
+    (resubmit-in-place) — same parent, prior versions kept switchable — instead of appended."""
     owner = await team.current_owner_id()
     async with get_sessionmaker()() as s:
         conv = await s.get(Conversation, cid)
@@ -337,7 +342,13 @@ async def _prepare_turn(cid: uuid.UUID, user_content: str, attachments: list[dic
                 select(Message).where(Message.conversation_id == cid).order_by(Message.created_at)
             )
         ).scalars().all()
-        history = versioning.active_path(rows)  # the model sees the currently-viewed version path
+        seed = versioning.sibling_turn_seed(rows, sibling_of) if sibling_of else None
+        if seed is not None:
+            parent_id, history = seed
+            await persistence._deactivate_children(s, cid, parent_id)
+        else:  # normal turn (or an unknown/non-user sibling target): thread onto the active path
+            history = versioning.active_path(rows)
+            parent_id = history[-1].id if history else None
         messages = _model_history(history)
         messages.append({"role": "user", "content": _build_user_content(user_content, attachments)})
 
@@ -366,7 +377,8 @@ async def _prepare_turn(cid: uuid.UUID, user_content: str, attachments: list[dic
             content=user_content or "",
             context=_history_text(user_content, attachments),  # keeps file/PDF text for later turns
             artifacts=json.dumps(att_meta) if att_meta else None,
-            parent_id=history[-1].id if history else None,  # thread onto the active path's tip
+            parent_id=parent_id,
+            active=True,
         ))
         if conv.title == "New chat" and not rows:
             seed = user_content or (attachments[0].get("name") if attachments else "")
@@ -797,12 +809,13 @@ async def stream_reply(
     user_content: str,
     attachments: list[dict] | None = None,
     collection_id: str | None = None,
+    sibling_of: str | None = None,
 ) -> AsyncIterator[dict]:
     """Persist the user message (with any attachments), then stream + persist the reply."""
     cid = uuid.UUID(conv_id)
     attachments = attachments or []
 
-    turn = await _prepare_turn(cid, user_content, attachments)
+    turn = await _prepare_turn(cid, user_content, attachments, sibling_of)
     if turn is None:
         yield stream_events.error("Conversation not found.")
         return

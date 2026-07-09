@@ -77,6 +77,37 @@ def test_branding_accepts_uploaded_raster_images_only():
         Branding(logo="data:image/svg+xml;base64,PHN2Zz4=")
 
 
+def test_activate_message_version_returns_refreshed_conversation(monkeypatch):
+    seen = {}
+
+    async def fake_set_active_version(cid, mid):
+        seen["args"] = (cid, mid)
+        return {"id": cid, "messages": [{"id": mid, "version": 2, "versions": 2}]}
+
+    monkeypatch.setattr(chat, "set_active_version", fake_set_active_version, raising=False)
+
+    r = _client().post(
+        "/api/conversations/c1/messages/m2/activate", headers={"X-Orrery-Token": TOKEN}
+    )
+
+    assert r.status_code == 200
+    assert seen["args"] == ("c1", "m2")
+    assert r.json()["messages"][0]["version"] == 2
+
+
+def test_activate_message_version_unknown_message_is_404(monkeypatch):
+    async def fake_set_active_version(cid, mid):
+        return None
+
+    monkeypatch.setattr(chat, "set_active_version", fake_set_active_version, raising=False)
+
+    r = _client().post(
+        "/api/conversations/c1/messages/nope/activate", headers={"X-Orrery-Token": TOKEN}
+    )
+
+    assert r.status_code == 404
+
+
 def test_providers_never_return_raw_key():
     secrets.set_provider_key("openai", "sk-proj-SECRETKEY999")
     r = _client().get("/api/providers", headers={"X-Orrery-Token": TOKEN})

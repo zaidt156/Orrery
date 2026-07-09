@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from backend.core.database import get_sessionmaker
 from backend.core.models import Conversation, Message, Project
@@ -127,6 +127,34 @@ async def get_conversation(conv_id: str) -> dict | None:
                 for m in path
             ],
         }
+
+
+async def set_active_version(conv_id: str, message_id: str) -> dict | None:
+    """Make this message the visible ‹ › version among its siblings, then return the refreshed
+    conversation (the thread re-follows the active path, restoring the branch's own replies)."""
+    owner = await team.current_owner_id()
+    try:
+        cid, mid = uuid.UUID(conv_id), uuid.UUID(message_id)
+    except ValueError:
+        return None
+    async with get_sessionmaker()() as s:
+        conv = await s.get(Conversation, cid)
+        if conv is None or not _owned_by(conv, owner):
+            return None
+        target = await s.get(Message, mid)
+        if target is None or target.conversation_id != conv.id:
+            return None
+        siblings = (
+            Message.parent_id.is_(None) if target.parent_id is None
+            else Message.parent_id == target.parent_id
+        )
+        await s.execute(
+            update(Message)
+            .where(Message.conversation_id == conv.id, siblings)
+            .values(active=(Message.id == mid))
+        )
+        await s.commit()
+    return await get_conversation(conv_id)
 
 
 def _load_reasoning(raw: str | None) -> dict | None:

@@ -57,7 +57,7 @@ async def remove_conversation(cid: str) -> dict:
 async def send_message(cid: str, body: NewMessage) -> StreamingResponse:
     await _require_conversation_access(cid)
     attachments = [a.model_dump() for a in body.attachments]
-    return _sse_run(cid, chat.stream_reply(cid, body.content, attachments, body.collection_id))
+    return _sse_run(cid, chat.stream_reply(cid, body.content, attachments, body.collection_id, body.sibling_of))
 
 @router.get("/conversations/{cid}/attachment-text")
 async def conversation_attachment_text(cid: str, source: str) -> dict:
@@ -92,6 +92,13 @@ async def generate_code_image(cid: str, body: NewMessage) -> StreamingResponse:
     if body.attachments:
         raise HTTPException(status_code=400, detail="Code-rendered images do not accept attachments yet")
     return _sse_run(cid, chat.stream_code_image(cid, body.content))
+
+@router.post("/conversations/{cid}/messages/{mid}/activate")
+async def activate_message_version(cid: str, mid: str) -> dict:
+    conv = await chat.set_active_version(cid, mid)
+    if conv is None:
+        raise HTTPException(status_code=404, detail="Message not found")
+    return conv
 
 @router.post("/conversations/{cid}/regenerate")
 async def regenerate_message(cid: str) -> StreamingResponse:
