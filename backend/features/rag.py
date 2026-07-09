@@ -134,11 +134,15 @@ async def list_collections(kind: str = "collection") -> list[dict]:
         rows = (await s.execute(
             select(Collection).where(Collection.kind == kind).order_by(Collection.created_at)
         )).scalars().all()
-        out = []
-        for c in rows:
-            n = (await s.execute(select(func.count()).select_from(Chunk).where(Chunk.collection_id == c.id))).scalar()
-            out.append(_collection_dict(c, n))
-        return out
+        # One grouped query for all chunk counts instead of a COUNT(*) per collection (N+1).
+        counts = dict(
+            (await s.execute(
+                select(Chunk.collection_id, func.count())
+                .where(Chunk.collection_id.in_([c.id for c in rows]))
+                .group_by(Chunk.collection_id)
+            )).all()
+        ) if rows else {}
+        return [_collection_dict(c, counts.get(c.id, 0)) for c in rows]
 
 
 async def create_collection(name: str, kind: str = "collection", description: str | None = None) -> dict:
@@ -246,12 +250,15 @@ async def delete_source(cid: str, source: str) -> int:
 MAX_COSINE_DISTANCE = 0.58
 
 
-async def search(cid: str, query: str, k: int = 5) -> list[dict]:
+async def search(cid: str, query: str, k: int = 5, query_vector: list[float] | None = None) -> list[dict]:
     """Hybrid retrieval: vector (pgvector) + keyword (Postgres FTS), fused by RRF.
 
     Relevance-gated: vector hits past MAX_COSINE_DISTANCE are dropped; keyword hits always pass
-    (the text literally matched). An empty result means "these files say nothing about this"."""
-    qv = _vec(await embed_query(query))
+    (the text literally matched). An empty result means "these files say nothing about this".
+
+    Pass `query_vector` (from embed_query) to reuse one embedding across several collections in a
+    single turn instead of re-embedding the same query per collection."""
+    qv = _vec(query_vector if query_vector is not None else await embed_query(query))
     async with get_sessionmaker()() as s:
         vec = (await s.execute(
             text("SELECT id::text AS id, source, content, (embedding <=> (:q)::vector) AS dist "

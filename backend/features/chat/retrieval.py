@@ -44,9 +44,18 @@ async def _gather_rag(
     seen: set[tuple[str, str]] = set()
     blocks: list[str] = []
     sources: list[str] = []
-    for collection_id in dict.fromkeys(cid for cid in collection_ids if cid):  # dedupe, keep order
+    ordered_ids = list(dict.fromkeys(cid for cid in collection_ids if cid))  # dedupe, keep order
+    # Embed the query ONCE and reuse the vector across every collection, instead of re-embedding the
+    # same text per collection (a project chat searches data + project + chat + N ontologies).
+    query_vector: list[float] | None = None
+    if ordered_ids:
         try:
-            results = await rag.search(collection_id, query, k=settings.rag_top_k)
+            query_vector = await rag.embed_query(query)
+        except Exception:  # noqa: BLE001 — fall back to per-collection embedding inside rag.search
+            query_vector = None
+    for collection_id in ordered_ids:
+        try:
+            results = await rag.search(collection_id, query, k=settings.rag_top_k, query_vector=query_vector)
         except Exception:  # noqa: BLE001 — a retrieval failure on one collection shouldn't break the chat
             continue
         gate_strict = strict or collection_id in auto

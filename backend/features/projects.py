@@ -101,16 +101,12 @@ async def list_projects() -> list[dict]:
         grouped: dict[str, list[dict]] = {}
         for conv in conversations:
             grouped.setdefault(str(conv.project_id), []).append(_conversation_dict(conv))
-        counts = {
-            str(project_id): count
-            for project_id, count in (
-                await s.execute(cq.with_only_columns(Conversation.project_id, func.count(Conversation.id)).group_by(Conversation.project_id))
-            ).all()
-        }
+        # Counts come straight from the already-loaded grouping — no separate GROUP BY round trip.
         out = []
         for project in projects:
-            item = _project_dict(project, counts.get(str(project.id), 0))
-            item["conversations"] = grouped.get(str(project.id), [])
+            convs = grouped.get(str(project.id), [])
+            item = _project_dict(project, len(convs))
+            item["conversations"] = convs
             out.append(item)
         return out
 

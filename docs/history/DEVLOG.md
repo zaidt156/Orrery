@@ -1714,3 +1714,36 @@ your messages: attach/publish the Windows + macOS builds via the release workflo
 for prerequisites (Docker) during install; a README/contribution overhaul; the Dashboard
 onboarding + state-persistence work; and in-place message versioning (‹ › like Claude/GPT)
 instead of appending a duplicate on resubmit/redo.
+
+
+## Step 117 — Backend speed quick-wins (July 9, 2026)
+
+You chose the low-risk backend speed pass first, so we removed redundant per-turn work without
+changing what the app does. Four fixes, all covered by tests:
+
+- **The Docker check no longer runs on every turn.** Before, Orrery ran a `docker image inspect`
+  (to see if the code sandbox is available) several times per message, on the main thread — so if
+  Docker was slow or starting up, the whole app stalled. Now the answer is remembered for a short
+  while (30s when the sandbox is present, 5s when it's missing so a just-started Docker is noticed
+  quickly). Shipped earlier this session and now joined by the rest.
+- **The search query is turned into numbers once, not once per place we search.** Answering with
+  "use my data" searches several collections at once (your data, the project's files, this chat's
+  attachments, connected knowledge). Each search was separately re-encoding the *same* question.
+  Now it's encoded a single time and reused everywhere — same results, less repeated work, and it
+  stops growing as you connect more knowledge sources.
+- **Listing your collections is one database query instead of one-per-collection.** The Data and
+  Ontology tabs counted each collection's chunks with a separate query in a loop; now a single
+  grouped query returns them all.
+- **Listing projects dropped a redundant count query.** It already had every project's chats loaded
+  in memory, yet ran a second query just to count them — now the count comes from what's already
+  loaded.
+
+Deliberately deferred: caching the "is team mode on?" check. It's called a lot per turn, but caching
+it carelessly could, for a moment right after someone turns team mode on, make a locked client look
+like a solo user (which removes the per-user privacy filter). That one needs a fresh-per-request
+approach, not a timed cache, so it waits.
+
+Next (from your messages): the README + contribution overhaul with an install-time prerequisite
+check (Docker/Postgres) — you said do this now and you'll trigger the build; then the bigger speed
+levers (bounding the per-turn history load, frontend streaming re-renders); then Dashboards
+onboarding + the reset-on-close bug, and in-place ‹ › message versioning.
