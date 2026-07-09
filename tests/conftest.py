@@ -5,6 +5,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
 import pytest
 
+from backend.features import admin, team
 from backend.providers import accounts
 from backend.security import secrets
 
@@ -22,6 +23,23 @@ def fake_keyring(monkeypatch):
     monkeypatch.setattr(accounts, "_command_version", lambda _cmd: None)
     monkeypatch.setattr(accounts, "_verify_claude_ready", lambda: None)
     monkeypatch.setattr(accounts, "_verify_codex_ready", lambda: None)
+
+    async def default_flags():
+        return {name: default for name, (_label, default) in admin.FEATURES.items()}
+
+    async def solo_team_mode():
+        return False
+
+    async def solo_current_user():
+        return team.SOLO_USER
+
+    async def solo_is_admin():
+        return True
+
+    monkeypatch.setattr(admin, "get_flags", default_flags)
+    monkeypatch.setattr(team, "team_mode", solo_team_mode)
+    monkeypatch.setattr(team, "current_user", solo_current_user)
+    monkeypatch.setattr(team, "is_admin", solo_is_admin)
     return store
 
 

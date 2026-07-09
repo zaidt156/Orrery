@@ -1798,3 +1798,32 @@ follow the active version, add the switch-version action, and add the â€¹ â€º ar
 Next: finish wiring message versioning, and triage the rest of the current backlog (landing-site
 redesign, 4 selectable themes, the dashboard connection-persistence bug, the macOS build not
 launching, and adding the new GPT models).
+
+## Step 120 — Message versioning finished and verified (July 9, 2026)
+
+Finished the Claude/GPT-style in-place message versioning that Step 119 started. The backend now
+keeps both edited user prompts and regenerated assistant replies as sibling versions in the message
+tree, instead of appending duplicates to the bottom of the chat. Conversation loading follows the
+active path, so switching versions restores that version's own branch of replies.
+
+- **Regenerate now branches in place.** Re-answering a turn keeps the old assistant reply as a
+  switchable sibling and saves the new reply as the active version under the same user message.
+- **Resubmit/edit now branches in place.** Revising a saved prompt creates a new user-message sibling
+  with its own follow-up reply, while the old prompt and old reply stay available.
+- **The API can switch versions.** `POST /api/conversations/{cid}/messages/{mid}/activate` flips the
+  active sibling and returns the refreshed conversation.
+- **The UI shows `‹ n/m ›` controls.** Chat bubbles with sibling versions now show previous/next
+  arrows, and switching reloads the active branch rather than duplicating messages.
+- **Added an end-to-end regression test.** The new DB-backed smoke test creates a disposable chat,
+  sends a normal prompt, resubmits it as a user sibling, switches back to the older prompt, regenerates
+  an assistant sibling, and switches back to the older assistant reply. Model calls are mocked, so the
+  test exercises persistence without spending tokens.
+- **Hardened test isolation.** Tests now default to solo/admin mode with default feature flags, so the
+  suite no longer inherits local team-mode or feature-toggle state from the developer database.
+
+Verification:
+- `python -m pytest -q` -> **285 passed**, 1 existing Starlette/httpx deprecation warning.
+- `cd ui && npm run build` -> passed; Vite still warns about large dashboard/chat chunks.
+
+Next: triage the remaining backlog — landing-site redesign, 4 selectable themes, dashboard
+connection-persistence/reset-on-close bug, macOS build not launching, and new GPT model entries.
