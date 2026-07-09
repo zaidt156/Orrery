@@ -60,6 +60,9 @@ docs/*
 !docs/README.md
 !docs/index.html
 !docs/.nojekyll
+!docs/assets/
+docs/assets/*
+!docs/assets/orrery.png
 !docs/history/
 docs/history/*
 !docs/history/DEVLOG.md
