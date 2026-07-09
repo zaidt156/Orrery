@@ -1,0 +1,76 @@
+"""Message versioning: the conversation is a tree (Message.parent_id), and exactly one sibling per
+parent is `active`. These pure helpers turn the flat row set into the currently-viewed path plus the
+‹ › switcher metadata, so both history assembly and conversation loading follow the same active path.
+
+Kept dependency-free (attribute access only) so it unit-tests without a database: any object with
+`.id`, `.parent_id`, `.active`, and `.created_at` works (ORM rows in prod, stubs in tests)."""
+from __future__ import annotations
+
+from collections import defaultdict
+from typing import Any
+
+
+def _key(created_at: Any, mid: Any) -> tuple:
+    # created_at may be None on freshly-built rows not yet flushed; fall back to id for a stable order.
+    return (created_at is not None, created_at, str(mid))
+
+
+def _children_map(messages: list) -> dict:
+    children: dict = defaultdict(list)
+    for m in messages:
+        children[_pid(m)].append(m)
+    for group in children.values():
+        group.sort(key=lambda m: _key(m.created_at, m.id))
+    return children
+
+
+def _pid(m) -> str | None:
+    pid = getattr(m, "parent_id", None)
+    return str(pid) if pid is not None else None
+
+
+def _pick_active(group: list):
+    """The active sibling in a group, or the newest as a safe fallback if none/many are flagged."""
+    actives = [m for m in group if getattr(m, "active", True)]
+    if len(actives) == 1:
+        return actives[0]
+    if actives:
+        return max(actives, key=lambda m: _key(m.created_at, m.id))
+    return group[-1] if group else None
+
+
+def active_path(messages: list) -> list:
+    """Root-to-leaf list of messages on the active path (following the active child at each step)."""
+    if not messages:
+        return []
+    children = _children_map(messages)
+    path: list = []
+    node = _pick_active(children.get(None, []))
+    seen: set = set()
+    while node is not None and str(node.id) not in seen:
+        seen.add(str(node.id))
+        path.append(node)
+        node = _pick_active(children.get(str(node.id), []))
+    return path
+
+
+def version_map(messages: list) -> dict:
+    """{message_id: {"version": 1-based index, "versions": count, "siblings": [ids in order]}}.
+
+    Only messages that have at least one sibling get an entry worth showing arrows for, but every
+    path message is included so the frontend can look each one up uniformly."""
+    children = _children_map(messages)
+    out: dict = {}
+    for group in children.values():
+        ordered_ids = [str(m.id) for m in group]  # already time-sorted by _children_map
+        count = len(group)
+        active = _pick_active(group)
+        active_id = str(active.id) if active is not None else None
+        for i, m in enumerate(group):
+            out[str(m.id)] = {
+                "version": i + 1,
+                "versions": count,
+                "siblings": ordered_ids,
+                "active_sibling": active_id,
+            }
+    return out

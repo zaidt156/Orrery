@@ -4,7 +4,7 @@ import datetime
 import uuid
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import Boolean, CheckConstraint, Computed, DateTime, Float, ForeignKey, Index, Integer, String, Text, func
+from sqlalchemy import Boolean, CheckConstraint, Computed, DateTime, Float, ForeignKey, Index, Integer, String, Text, func, text
 from sqlalchemy.dialects.postgresql import TSVECTOR
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -82,6 +82,15 @@ class Message(Base):
     # JSON snapshot of the reasoning panel (live thinking + trace steps + sources) so it survives reloads.
     reasoning: Mapped[str | None] = mapped_column(Text, nullable=True)
     model: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    # Message versioning (Claude/GPT-style ‹ ›): regenerating a reply or editing/resubmitting a prompt
+    # creates a SIBLING (same parent_id) instead of replacing or appending a duplicate. `active` marks
+    # which sibling is on the currently-viewed path — exactly one active sibling per parent. History for
+    # the model and the loaded conversation both follow the active path from root to leaf; inactive
+    # siblings (and their subtrees) are kept so the ‹ › switcher can bring them back.
+    parent_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("messages.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=text("true"))
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     conversation: Mapped["Conversation"] = relationship(back_populates="messages")

@@ -1773,3 +1773,28 @@ Windows/macOS release build runs — which is the step you said you'd trigger.
 Next: the bigger speed levers (bound the per-turn history load, then the frontend streaming
 re-renders), then Dashboards onboarding + the reset-on-close state bug, then in-place ‹ › message
 versioning.
+
+
+## Step 119 — Message versioning: the safe foundation (July 9, 2026)
+
+Starting the Claude/GPT-style ‹ › message versions you asked for — so pressing redo/resubmit revises
+a message *in place* with little arrows to flip between versions, instead of dumping a duplicate at
+the bottom. This step lays the groundwork without changing any behavior yet:
+
+- **The conversation becomes a tree.** Each message can now point to the one it follows (a "parent"),
+  and one flag marks which version is the one you're currently looking at. Regenerating a reply or
+  editing a prompt will later add a *sibling* version instead of replacing or duplicating — every
+  version is kept so the arrows can bring it back.
+- **Existing chats are safely upgraded.** A one-time backfill links every current message into a
+  single straight line (its natural order), so nothing looks different today; new versions branch off
+  from there. The change is additive — no data is moved or lost, and every existing test still passes.
+- **The path logic is written and tested on its own.** The rules for "which version is showing" and
+  "how many versions exist" are pure, database-free functions with their own tests (linear chains,
+  regenerated replies, hidden branches, fallback when nothing is flagged). 272 tests pass.
+
+Still to come for this feature: wire regenerate/resubmit to create versions, make history + loading
+follow the active version, add the switch-version action, and add the ‹ › arrows in the chat bubble.
+
+Next: finish wiring message versioning, and triage the rest of the current backlog (landing-site
+redesign, 4 selectable themes, the dashboard connection-persistence bug, the macOS build not
+launching, and adding the new GPT models).

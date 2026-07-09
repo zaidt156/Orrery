@@ -61,6 +61,16 @@ _VERSIONED_MIGRATIONS: list[tuple[str, list[str]]] = [
         "CREATE INDEX IF NOT EXISTS ix_task_route_events_route_created ON task_route_events (route, created_at)",
         "CREATE INDEX IF NOT EXISTS ix_task_route_events_outcome_created ON task_route_events (outcome, created_at)",
     ]),
+    ("0004_message_versioning_backfill", [
+        # Link existing (pre-versioning) messages into a linear active chain: each message's parent is
+        # the previous message in the same conversation by time. Only fills NULLs, so it's a no-op on
+        # rows already threaded, and every existing message stays active (the single path). New
+        # regenerate/edit turns then branch off this chain.
+        "UPDATE messages m SET parent_id = o.prev "
+        "FROM (SELECT id, LAG(id) OVER (PARTITION BY conversation_id ORDER BY created_at, id) AS prev "
+        "      FROM messages) o "
+        "WHERE m.id = o.id AND m.parent_id IS NULL AND o.prev IS NOT NULL",
+    ]),
 ]
 
 
@@ -122,6 +132,22 @@ async def run_migrations() -> None:
         await conn.execute(text("ALTER TABLE messages ADD COLUMN IF NOT EXISTS context TEXT"))
         await conn.execute(text("ALTER TABLE messages ADD COLUMN IF NOT EXISTS artifacts TEXT"))
         await conn.execute(text("ALTER TABLE messages ADD COLUMN IF NOT EXISTS reasoning TEXT"))
+        # Message versioning: parent_id makes the conversation a tree; active marks the viewed path.
+        await conn.execute(text("ALTER TABLE messages ADD COLUMN IF NOT EXISTS parent_id UUID"))
+        await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_messages_parent_id ON messages (parent_id)"))
+        await conn.execute(text("ALTER TABLE messages ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT TRUE"))
+        await conn.execute(text(
+            """
+            DO $$
+            BEGIN
+                ALTER TABLE messages
+                ADD CONSTRAINT fk_messages_parent_id
+                FOREIGN KEY (parent_id) REFERENCES messages(id) ON DELETE CASCADE;
+            EXCEPTION WHEN duplicate_object THEN
+                NULL;
+            END $$;
+            """
+        ))
         await conn.execute(text("ALTER TABLE conversations ADD COLUMN IF NOT EXISTS collection_id UUID"))
         # Ontologies are collections with a kind + a connected flag (connected => used as chat context)
         await conn.execute(text("ALTER TABLE collections ADD COLUMN IF NOT EXISTS kind VARCHAR(20) NOT NULL DEFAULT 'collection'"))
