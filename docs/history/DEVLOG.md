@@ -1747,3 +1747,29 @@ Next (from your messages): the README + contribution overhaul with an install-ti
 check (Docker/Postgres) — you said do this now and you'll trigger the build; then the bigger speed
 levers (bounding the per-turn history load, frontend streaming re-renders); then Dashboards
 onboarding + the reset-on-close bug, and in-place ‹ › message versioning.
+
+
+## Step 118 — First-run prerequisite check and docs polish (July 9, 2026)
+
+You asked that installing Orrery should actively push people to install what it needs (like Docker)
+during setup, and that the README be tidied up.
+
+- **Setup now surveys prerequisites up front.** Before the Windows and macOS setup menus appear,
+  Orrery now checks whether Docker Desktop is installed and running (and whether Ollama is present
+  for local models), prints a clear OK / needs-attention / optional line for each, and — if Docker is
+  missing — offers to open the Docker Desktop download page for you. Docker is only required for the
+  bundled database and the file sandbox, so if you bring your own PostgreSQL you can still continue.
+  The old checks only complained *after* you'd already picked a Docker option and gave no link; now
+  it's a friendly, actionable first screen on both platforms.
+- **README + contribution docs polished.** Documented the new prerequisite check in both the Windows
+  and macOS run sections, and fixed a stale cross-reference in the contribution guide (it pointed at
+  a "Getting started" section that had been renamed). Confirmed the whole docs set is intact —
+  README, CONTRIBUTING, CODE_OF_CONDUCT, SECURITY, the bug/feature issue templates, and the PR
+  template all present and linked.
+
+Note: these are source changes to the packaged setup scripts and docs. They ship the next time the
+Windows/macOS release build runs — which is the step you said you'd trigger.
+
+Next: the bigger speed levers (bound the per-turn history load, then the frontend streaming
+re-renders), then Dashboards onboarding + the reset-on-close state bug, then in-place ‹ › message
+versioning.

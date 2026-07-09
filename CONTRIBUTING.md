@@ -11,8 +11,8 @@ Thanks for your interest in improving Orrery! This guide explains how to propose
 
 ## Development setup
 
-See the **Getting started** section of the [README](README.md) for prerequisites and how to run the
-app locally (Python 3.12+, Node.js 20+, Docker Desktop).
+See the **Run From Source** section of the [README](README.md) for prerequisites and how to run the
+app locally (Python 3.12+, Node.js 20+, Docker Desktop, PostgreSQL + pgvector).
 
 ## Pull request workflow
 

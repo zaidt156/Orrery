@@ -6,6 +6,8 @@ cd "$(dirname "$0")"
 APP="./Orrery.app"
 BIN="$APP/Contents/MacOS/Orrery"
 DEFAULT_DB_URL="postgresql+psycopg://orrery:orrery_dev_password@127.0.0.1:5432/orrery"
+DOCKER_URL="https://www.docker.com/products/docker-desktop/"
+OLLAMA_URL="https://ollama.com/download"
 
 check_package() {
   if [[ ! -d "$APP" || ! -x "$BIN" ]]; then
@@ -34,11 +36,46 @@ write_database_url() {
   } > ".env"
 }
 
+check_prerequisites() {
+  clear
+  echo "Orrery - checking prerequisites"
+  echo "==============================="
+  echo
+  if command -v docker >/dev/null 2>&1; then
+    if docker info >/dev/null 2>&1; then
+      echo "  [ OK ]     Docker Desktop is installed and running."
+    else
+      echo "  [ WAIT ]   Docker Desktop is installed but NOT running - start it for the bundled database and file sandbox."
+    fi
+  else
+    echo "  [ NEEDED ] Docker Desktop is not installed."
+    echo "             It powers the included PostgreSQL database and the file-generation sandbox."
+    echo "             Download: $DOCKER_URL"
+  fi
+  if command -v ollama >/dev/null 2>&1; then
+    echo "  [ OK ]     Ollama is installed (optional, for local models)."
+  else
+    echo "  [ OPT ]    Ollama not found (optional) - only needed to run local models. $OLLAMA_URL"
+  fi
+  echo
+  echo "  You can still continue: choosing \"your own PostgreSQL database\" (option 2) does not need Docker."
+  echo
+  if ! command -v docker >/dev/null 2>&1; then
+    read -r -p "Open the Docker Desktop download page now? [y/N]: " open_docker
+    case "$open_docker" in y|Y) open "$DOCKER_URL" ;; esac
+  fi
+  echo
+  read -r -p "Press return to continue..."
+}
+
 require_docker() {
   if ! command -v docker >/dev/null 2>&1; then
     echo
     echo "Docker was not found."
-    echo "Install/start Docker Desktop, or choose option 2 and use your own PostgreSQL server."
+    echo "Install Docker Desktop, or go back and choose option 2 to use your own PostgreSQL server."
+    echo "Download: $DOCKER_URL"
+    read -r -p "Open the Docker download page now? [y/N]: " open_docker
+    case "$open_docker" in y|Y) open "$DOCKER_URL" ;; esac
     read -r -p "Press return to continue..."
     return 1
   fi
@@ -90,6 +127,7 @@ start_orrery() {
 
 check_package
 ensure_env
+check_prerequisites
 
 while true; do
   clear

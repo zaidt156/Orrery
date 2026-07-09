@@ -3,9 +3,12 @@ setlocal EnableExtensions EnableDelayedExpansion
 cd /d "%~dp0"
 
 set "DEFAULT_DB_URL=postgresql+psycopg://orrery:orrery_dev_password@127.0.0.1:5432/orrery"
+set "DOCKER_URL=https://www.docker.com/products/docker-desktop/"
+set "OLLAMA_URL=https://ollama.com/download"
 
 call :check_package || exit /b 1
 call :ensure_env
+call :check_prerequisites
 
 :menu
 cls
@@ -100,6 +103,45 @@ if not exist "_internal\pptx" (
 )
 exit /b 0
 
+:check_prerequisites
+rem First-run survey: tell the user up front what's installed and what to get, before the menu.
+cls
+echo Orrery - checking prerequisites
+echo ===============================
+echo.
+set "DOCKER_OK=0"
+set "DOCKER_RUNNING=0"
+where docker >nul 2>nul && set "DOCKER_OK=1"
+if "%DOCKER_OK%"=="1" (
+  docker info >nul 2>nul && set "DOCKER_RUNNING=1"
+)
+if "%DOCKER_RUNNING%"=="1" (
+  echo   [ OK ]     Docker Desktop is installed and running.
+) else if "%DOCKER_OK%"=="1" (
+  echo   [ WAIT ]   Docker Desktop is installed but NOT running - start it for the bundled database and file sandbox.
+) else (
+  echo   [ NEEDED ] Docker Desktop is not installed.
+  echo              It powers the included PostgreSQL database and the file-generation sandbox.
+  echo              Download: %DOCKER_URL%
+)
+set "OLLAMA_OK=0"
+where ollama >nul 2>nul && set "OLLAMA_OK=1"
+if "%OLLAMA_OK%"=="1" (
+  echo   [ OK ]     Ollama is installed ^(optional, for local models^).
+) else (
+  echo   [ OPT ]    Ollama not found ^(optional^) - only needed to run local models. %OLLAMA_URL%
+)
+echo.
+echo   You can still continue: choosing "your own PostgreSQL database" ^(option 2^) does not need Docker.
+echo.
+if "%DOCKER_OK%"=="0" (
+  set /p "OPEN_DOCKER=Open the Docker Desktop download page now? [y/N]: "
+  if /i "!OPEN_DOCKER!"=="y" start "" "%DOCKER_URL%"
+)
+echo.
+pause
+exit /b 0
+
 :ensure_env
 if not exist ".env" (
   if exist ".env.example" (
@@ -124,7 +166,10 @@ where docker >nul 2>nul
 if errorlevel 1 (
   echo.
   echo Docker was not found in PATH.
-  echo Install/start Docker Desktop, or choose option 2 and use your own PostgreSQL server.
+  echo Install Docker Desktop, or go back and choose option 2 to use your own PostgreSQL server.
+  echo Download: %DOCKER_URL%
+  set /p "OPEN_DOCKER=Open the Docker download page now? [y/N]: "
+  if /i "!OPEN_DOCKER!"=="y" start "" "%DOCKER_URL%"
   pause
   exit /b 1
 )

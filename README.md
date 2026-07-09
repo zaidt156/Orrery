@@ -104,6 +104,12 @@ to install Microsoft Edge WebView2 separately for the Orrery window.
 
 From the extracted `Orrery-Windows.zip` folder:
 
+On first launch, `setup-orrery.bat` runs a **prerequisite check**: it reports whether Docker Desktop
+is installed and running (and Ollama, if you want local models), and offers to open the Docker
+download page if it is missing — so you can install what you need before continuing. Docker is
+required only for the bundled PostgreSQL database and the file-generation sandbox; if you bring your
+own PostgreSQL (menu option 2) you can proceed without it.
+
 ```powershell
 # First-run setup menu: choose included Docker PostgreSQL, your own database,
 # sandbox-only setup, or start-only.
@@ -141,6 +147,10 @@ Install these before running the macOS preview package:
 ### Run The macOS Release
 
 From the extracted `Orrery-macOS.zip` folder:
+
+Like the Windows package, `setup-orrery.command` runs a **prerequisite check** on first launch —
+reporting Docker Desktop (and optional Ollama) status and offering to open the Docker download page
+if it is missing — before showing the setup menu.
 
 ```bash
 # First-run setup menu: choose included Docker PostgreSQL, your own database,
