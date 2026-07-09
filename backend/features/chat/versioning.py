@@ -54,6 +54,29 @@ def active_path(messages: list) -> list:
     return path
 
 
+def leaf_id(messages: list) -> str | None:
+    """The id (str) of the active path's tip — where a newly sent message attaches as a child."""
+    path = active_path(messages)
+    return str(path[-1].id) if path else None
+
+
+def ancestors(messages: list, target_id: str) -> list:
+    """Root-to-target chain (inclusive) following parent pointers — works for messages on OR off
+    the active path, so per-message actions (evaluate, export) see the history that actually led
+    to that exact version. Empty list when the target isn't in the set."""
+    by_id = {str(m.id): m for m in messages}
+    node = by_id.get(str(target_id))
+    chain: list = []
+    seen: set = set()
+    while node is not None and str(node.id) not in seen:
+        seen.add(str(node.id))
+        chain.append(node)
+        pid = _pid(node)
+        node = by_id.get(pid) if pid is not None else None
+    chain.reverse()
+    return chain
+
+
 def version_map(messages: list) -> dict:
     """{message_id: {"version": 1-based index, "versions": count, "siblings": [ids in order]}}.
 

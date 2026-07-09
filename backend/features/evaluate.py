@@ -19,6 +19,7 @@ from sqlalchemy import select
 from backend.core.database import get_sessionmaker
 from backend.core.models import Conversation, Message
 from backend.features import team
+from backend.features.chat import versioning
 from backend.features.prompting import strip_think
 from backend.providers import ai
 
@@ -64,12 +65,13 @@ async def _load_turn(cid: uuid.UUID, mid: uuid.UUID) -> tuple[Conversation, Mess
             return None
         rows = (
             await s.execute(
-                select(Message)
-                .where(Message.conversation_id == cid, Message.created_at < target.created_at)
-                .order_by(Message.created_at)
+                select(Message).where(Message.conversation_id == cid).order_by(Message.created_at)
             )
         ).scalars().all()
-        history = [{"role": m.role, "content": m.context or m.content} for m in rows]
+        # Follow the version chain that actually led to THIS message (it may be an inactive version),
+        # not everything in the conversation by time — siblings from other branches must not leak in.
+        chain = versioning.ancestors(rows, str(mid))
+        history = [{"role": m.role, "content": m.context or m.content} for m in chain[:-1]]
         return conv, target, history
 
 

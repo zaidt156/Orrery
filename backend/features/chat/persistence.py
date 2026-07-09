@@ -6,9 +6,12 @@ import json
 import re
 import uuid
 
+from sqlalchemy import select
+
 from backend.core.database import get_sessionmaker
 from backend.core.models import Conversation, Message
 from backend.features import files as file_library
+from backend.features.chat import versioning
 
 _HTML_DOC = re.compile(r"(<!doctype html.*?</html\s*>|<html[\s>].*?</html\s*>)", re.IGNORECASE | re.DOTALL)
 
@@ -45,12 +48,17 @@ async def _persist_assistant(
         if converted:
             text, artifacts = converted
     async with get_sessionmaker()() as s:
+        rows = (
+            await s.execute(select(Message).where(Message.conversation_id == cid))
+        ).scalars().all()
+        tip = versioning.leaf_id(rows)  # thread onto the active path (normally the user turn just saved)
         message = Message(
             conversation_id=cid,
             role="assistant",
             content=text,
             model=model,
             artifacts=json.dumps(artifacts) if artifacts else None,
+            parent_id=uuid.UUID(tip) if tip else None,
         )
         s.add(message)
         conv = await s.get(Conversation, cid)

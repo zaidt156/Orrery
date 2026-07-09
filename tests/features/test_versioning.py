@@ -68,3 +68,30 @@ def test_no_active_flag_falls_back_to_newest_sibling():
 def test_empty_conversation():
     assert versioning.active_path([]) == []
     assert versioning.version_map([]) == {}
+
+
+def test_leaf_id_is_the_active_path_tip():
+    msgs = [
+        _m("a", None, True, 1, "user"),
+        _m("b1", "a", False, 2, "assistant"),
+        _m("b2", "a", True, 3, "assistant"),
+    ]
+    assert versioning.leaf_id(msgs) == "b2"
+    assert versioning.leaf_id([]) is None
+
+
+def test_ancestors_returns_root_to_target_even_off_the_active_path():
+    msgs = [
+        _m("a", None, True, 1, "user"),
+        _m("b1", "a", False, 2, "assistant"),   # inactive old version
+        _m("b2", "a", True, 3, "assistant"),
+        _m("c", "b2", True, 4, "user"),
+    ]
+    assert [m.id for m in versioning.ancestors(msgs, "b1")] == ["a", "b1"]
+    assert [m.id for m in versioning.ancestors(msgs, "c")] == ["a", "b2", "c"]
+
+
+def test_ancestors_of_unknown_or_missing_target_is_empty():
+    msgs = [_m("a", None, True, 1)]
+    assert versioning.ancestors(msgs, "zz") == []
+    assert versioning.ancestors([], "a") == []

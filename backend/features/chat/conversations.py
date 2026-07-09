@@ -13,6 +13,7 @@ from sqlalchemy import select
 from backend.core.database import get_sessionmaker
 from backend.core.models import Conversation, Message, Project
 from backend.features import rag, team
+from backend.features.chat import versioning
 from backend.features.chat_context import (
     DEFAULT_CONTEXT_WINDOW, _effective_context_window, _message_artifacts,
 )
@@ -102,6 +103,10 @@ async def get_conversation(conv_id: str) -> dict | None:
                 select(Message).where(Message.conversation_id == conv.id).order_by(Message.created_at)
             )
         ).scalars().all()
+        # The visible thread is the ACTIVE path through the version tree; each message carries its
+        # ‹ › switcher metadata (1-based index, sibling count, sibling ids in time order).
+        path = versioning.active_path(msgs)
+        vmap = versioning.version_map(msgs)
         return {
             "id": str(conv.id), "title": conv.title, "model": conv.model,
             "project_id": str(conv.project_id) if conv.project_id else None,
@@ -115,8 +120,11 @@ async def get_conversation(conv_id: str) -> dict | None:
                     "model": m.model,
                     "artifacts": _message_artifacts(m.artifacts),
                     "reasoning": _load_reasoning(m.reasoning),
+                    "version": vmap.get(str(m.id), {}).get("version", 1),
+                    "versions": vmap.get(str(m.id), {}).get("versions", 1),
+                    "siblings": vmap.get(str(m.id), {}).get("siblings", [str(m.id)]),
                 }
-                for m in msgs
+                for m in path
             ],
         }
 

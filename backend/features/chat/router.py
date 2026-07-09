@@ -30,7 +30,7 @@ from backend.features.chat_context import (
 from backend.features.reasoning_trace import ReasoningTrace, ThinkStream
 from backend.providers import ai
 from backend.security import privacy
-from backend.features.chat import conversations, generation, persistence, retrieval
+from backend.features.chat import conversations, generation, persistence, retrieval, versioning
 
 _log = logging.getLogger("orrery.chat")
 
@@ -332,11 +332,12 @@ async def _prepare_turn(cid: uuid.UUID, user_content: str, attachments: list[dic
         project_id = conv.project_id
         context_window = _effective_context_window(conv.context_window)
 
-        history = (
+        rows = (
             await s.execute(
                 select(Message).where(Message.conversation_id == cid).order_by(Message.created_at)
             )
         ).scalars().all()
+        history = versioning.active_path(rows)  # the model sees the currently-viewed version path
         messages = _model_history(history)
         messages.append({"role": "user", "content": _build_user_content(user_content, attachments)})
 
@@ -365,8 +366,9 @@ async def _prepare_turn(cid: uuid.UUID, user_content: str, attachments: list[dic
             content=user_content or "",
             context=_history_text(user_content, attachments),  # keeps file/PDF text for later turns
             artifacts=json.dumps(att_meta) if att_meta else None,
+            parent_id=history[-1].id if history else None,  # thread onto the active path's tip
         ))
-        if conv.title == "New chat" and not history:
+        if conv.title == "New chat" and not rows:
             seed = user_content or (attachments[0].get("name") if attachments else "")
             conv.title = _title_from(seed)
         title = conv.title
@@ -1028,11 +1030,13 @@ async def stream_code_image(conv_id: str, user_content: str) -> AsyncIterator[di
                 select(Message).where(Message.conversation_id == cid).order_by(Message.created_at)
             )
         ).scalars().all()
+        path = versioning.active_path(history)
         s.add(Message(
             conversation_id=cid,
             role="user",
             content=user_content,
             context=f"[code-rendered image request]\n{code_images.image_prompt(user_content)}",
+            parent_id=path[-1].id if path else None,  # thread onto the active path's tip
         ))
         if conv.title == "New chat" and not history:
             conv.title = _title_from(code_images.image_prompt(user_content))

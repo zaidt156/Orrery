@@ -71,6 +71,15 @@ _VERSIONED_MIGRATIONS: list[tuple[str, list[str]]] = [
         "      FROM messages) o "
         "WHERE m.id = o.id AND m.parent_id IS NULL AND o.prev IS NOT NULL",
     ]),
+    ("0005_message_versioning_rethread_strays", [
+        # Messages written between the 0004 backfill and the code that sets parent_id on insert have
+        # NULL parents (stray roots). Re-run the same NULL-only threading once, before any branching
+        # exists, so every conversation is a single connected chain when the active-path logic ships.
+        "UPDATE messages m SET parent_id = o.prev "
+        "FROM (SELECT id, LAG(id) OVER (PARTITION BY conversation_id ORDER BY created_at, id) AS prev "
+        "      FROM messages) o "
+        "WHERE m.id = o.id AND m.parent_id IS NULL AND o.prev IS NOT NULL",
+    ]),
 ]
 
 

@@ -40,6 +40,7 @@ from sqlalchemy import select
 
 from backend.core.database import get_sessionmaker
 from backend.core.models import Conversation, Message
+from backend.features.chat import versioning
 
 MAX_EXPORT_CHARS = 2_000_000
 MAX_TABLE_CELLS = 50_000
@@ -1016,21 +1017,18 @@ async def _load_export_payload(conversation_id: str, message_id: str, export_for
             )
         ).scalars().all()
 
-        target_index = -1
-        for index, message in enumerate(messages):
-            if message.id == message_uuid:
-                target_index = index
-                break
-        if target_index < 0 or messages[target_index].role != "assistant":
+        # Follow the version chain that led to this exact reply (it may be an inactive version).
+        chain = versioning.ancestors(messages, str(message_uuid))
+        if not chain or chain[-1].role != "assistant":
             raise ExportNotFound("Reply not found")
 
         prompt = ""
-        for previous in reversed(messages[:target_index]):
+        for previous in reversed(chain[:-1]):
             if previous.role == "user":
                 prompt = previous.context or previous.content
                 break
 
-        message = messages[target_index]
+        message = chain[-1]
         title = conversation.title or "Orrery reply"
         model = message.model or conversation.model
         selected = select_export_content(prompt, message.content, export_format)
