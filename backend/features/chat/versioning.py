@@ -77,6 +77,15 @@ def ancestors(messages: list, target_id: str) -> list:
     return chain
 
 
+def trim_to_last_user(path: list) -> list:
+    """The path up to (and including) its most recent user turn — the regenerate anchor. Trailing
+    assistant replies are dropped (not deleted: the new reply becomes their sibling version)."""
+    end = len(path)
+    while end and getattr(path[end - 1], "role", "") != "user":
+        end -= 1
+    return path[:end]
+
+
 def version_map(messages: list) -> dict:
     """{message_id: {"version": 1-based index, "versions": count, "siblings": [ids in order]}}.
 

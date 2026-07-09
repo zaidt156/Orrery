@@ -95,3 +95,24 @@ def test_ancestors_of_unknown_or_missing_target_is_empty():
     msgs = [_m("a", None, True, 1)]
     assert versioning.ancestors(msgs, "zz") == []
     assert versioning.ancestors([], "a") == []
+
+
+def test_trim_to_last_user_drops_trailing_assistant_replies():
+    msgs = [
+        _m("a", None, True, 1, "user"),
+        _m("b", "a", True, 2, "assistant"),
+        _m("c", "b", True, 3, "assistant"),   # chained second reply (e.g. file + note)
+    ]
+    trimmed = versioning.trim_to_last_user(versioning.active_path(msgs))
+    assert [m.id for m in trimmed] == ["a"]
+
+
+def test_trim_to_last_user_keeps_a_path_already_ending_on_a_user_turn():
+    msgs = [_m("a", None, True, 1, "user"), _m("b", "a", True, 2, "assistant"), _m("c", "b", True, 3, "user")]
+    trimmed = versioning.trim_to_last_user(versioning.active_path(msgs))
+    assert [m.id for m in trimmed] == ["a", "b", "c"]
+
+
+def test_trim_to_last_user_empty_when_no_user_turn():
+    msgs = [_m("b", None, True, 1, "assistant")]
+    assert versioning.trim_to_last_user(versioning.active_path(msgs)) == []

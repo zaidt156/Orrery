@@ -25,6 +25,7 @@ async def _generate(
     effort: str | None = None,
     untrusted_context: str | None = None,
     trusted_context: str | None = None,
+    branch_from: uuid.UUID | None = None,
 ) -> AsyncIterator[dict]:
     """Stream the assistant reply and persist it (saved even if the client cancels)."""
     parts: list[str] = []
@@ -71,13 +72,13 @@ async def _generate(
         failed_text = _strip_think("".join(parts)).strip()
         error_note = f"⚠️ The model call failed: {exc}"
         failed_text = f"{failed_text}\n\n{error_note}" if failed_text else error_note
-        message_id = await persistence._persist_assistant(cid, failed_text, model)
+        message_id = await persistence._persist_assistant(cid, failed_text, model, branch_from=branch_from)
         parts.clear()  # already persisted with the error note; don't re-persist in finally
         yield stream_events.message_id(message_id)
         return
     finally:
         if parts:  # runs on normal completion AND on client-cancel (GeneratorExit)
-            message_id = await persistence._persist_assistant(cid, _strip_think("".join(parts)), model)
+            message_id = await persistence._persist_assistant(cid, _strip_think("".join(parts)), model, branch_from=branch_from)
     if message_id:
         yield stream_events.message_id(message_id)
     if usage_out.get("tokens_out") or usage_out.get("tokens_in"):

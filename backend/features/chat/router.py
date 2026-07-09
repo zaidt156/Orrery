@@ -1049,7 +1049,8 @@ async def stream_code_image(conv_id: str, user_content: str) -> AsyncIterator[di
 
 
 async def regenerate(conv_id: str) -> AsyncIterator[dict]:
-    """Re-answer the last user turn: drop trailing assistant message(s), re-stream."""
+    """Re-answer the last user turn IN PLACE: the old reply stays as a switchable ‹ › version and
+    the new one streams in as its active sibling — nothing is deleted."""
     cid = uuid.UUID(conv_id)
     owner = await team.current_owner_id()
 
@@ -1066,20 +1067,16 @@ async def regenerate(conv_id: str) -> AsyncIterator[dict]:
         context_window = _effective_context_window(conv.context_window)
         model = ai.plan_long_context_model(model, context_window)  # match the live turn's 1M behavior
 
-        history = (
+        rows = (
             await s.execute(
                 select(Message).where(Message.conversation_id == cid).order_by(Message.created_at)
             )
         ).scalars().all()
-        history = list(history)
-        while history and history[-1].role == "assistant":
-            await s.delete(history[-1])
-            history.pop()
-        await s.commit()
-
-        if not history or history[-1].role != "user":
+        history = versioning.trim_to_last_user(versioning.active_path(rows))
+        if not history:
             yield stream_events.error("Nothing to regenerate.")
             return
+        anchor_id = history[-1].id  # the user turn being re-answered; the new reply branches here
         messages = _model_history(history)
 
     trusted_context = await project_store.trusted_context(project_id)
@@ -1090,7 +1087,7 @@ async def regenerate(conv_id: str) -> AsyncIterator[dict]:
     yield trace.outer("Regenerating the answer", "Re-answering the last turn with the selected model.", status="running", phase="route")
     if trusted_context:
         yield trace.step("Preparing project context", "Loaded the current project's standing context and instructions.", kind="context", status="done", phase="context")
-    async for event in generation._generate(cid, model, system_prompt, messages, effort, trusted_context=trusted_context):
+    async for event in generation._generate(cid, model, system_prompt, messages, effort, trusted_context=trusted_context, branch_from=anchor_id):
         if event.get("done"):
             yield trace.done("Finished streaming and saved the regenerated reply.")
             yield trace.summary()

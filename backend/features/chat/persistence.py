@@ -6,7 +6,7 @@ import json
 import re
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from backend.core.database import get_sessionmaker
 from backend.core.models import Conversation, Message
@@ -37,28 +37,46 @@ def _html_artifact_from_reply(text: str) -> tuple[str, list[dict]] | None:
     return cleaned, [{"kind": "file", **stored}]
 
 
+async def _deactivate_children(s, cid: uuid.UUID, parent_id: uuid.UUID | None) -> None:
+    """Take every existing sibling under this parent off the active path (the newcomer replaces them)."""
+    cond = Message.parent_id.is_(None) if parent_id is None else Message.parent_id == parent_id
+    await s.execute(
+        update(Message).where(Message.conversation_id == cid, cond).values(active=False)
+    )
+
+
 async def _persist_assistant(
     cid: uuid.UUID,
     text: str,
     model: str,
     artifacts: list[dict] | None = None,
+    *,
+    branch_from: uuid.UUID | None = None,
 ) -> str:
+    """Save the reply. Default: thread onto the active path's tip (a normal turn). With branch_from
+    (regenerate): save as the new ACTIVE sibling under that message, keeping the old reply switchable."""
     if not artifacts:
         converted = _html_artifact_from_reply(text)
         if converted:
             text, artifacts = converted
     async with get_sessionmaker()() as s:
-        rows = (
-            await s.execute(select(Message).where(Message.conversation_id == cid))
-        ).scalars().all()
-        tip = versioning.leaf_id(rows)  # thread onto the active path (normally the user turn just saved)
+        if branch_from is not None:
+            await _deactivate_children(s, cid, branch_from)
+            parent_id = branch_from
+        else:
+            rows = (
+                await s.execute(select(Message).where(Message.conversation_id == cid))
+            ).scalars().all()
+            tip = versioning.leaf_id(rows)  # normally the user turn just saved
+            parent_id = uuid.UUID(tip) if tip else None
         message = Message(
             conversation_id=cid,
             role="assistant",
             content=text,
             model=model,
             artifacts=json.dumps(artifacts) if artifacts else None,
-            parent_id=uuid.UUID(tip) if tip else None,
+            parent_id=parent_id,
+            active=True,
         )
         s.add(message)
         conv = await s.get(Conversation, cid)

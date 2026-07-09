@@ -181,6 +181,35 @@ async def test_generate_returns_saved_message_id(monkeypatch):
 
 
 @pytest.mark.anyio
+async def test_generate_passes_branch_point_to_persistence(monkeypatch):
+    """Regenerate re-answers a user turn IN PLACE: the reply must persist as a sibling version
+    branching from that user message, not as a fresh append at the end."""
+    seen = {}
+
+    async def fake_stream_chat(*args, **kwargs):
+        yield "reply"
+
+    async def fake_persist_assistant(cid, text, model, artifacts=None, *, branch_from=None):
+        seen["branch_from"] = branch_from
+        return "00000000-0000-0000-0000-000000000099"
+
+    monkeypatch.setattr(chat.ai, "stream_chat", fake_stream_chat)
+    monkeypatch.setattr(chat.persistence, "_persist_assistant", fake_persist_assistant)
+
+    anchor = uuid.UUID("00000000-0000-0000-0000-000000000042")
+    async for _ in chat._generate(
+        uuid.UUID("00000000-0000-0000-0000-000000000001"),
+        "openai/test",
+        None,
+        [{"role": "user", "content": "hello"}],
+        branch_from=anchor,
+    ):
+        pass
+
+    assert seen["branch_from"] == anchor
+
+
+@pytest.mark.anyio
 async def test_docspec_delivery_repairs_missing_spec(monkeypatch):
     prompts = []
 
