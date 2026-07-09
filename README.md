@@ -161,12 +161,29 @@ if it is missing — before showing the setup menu.
 ./run-orrery.command
 ```
 
-The macOS preview is not notarized yet. If Gatekeeper blocks it, right-click `Orrery.app` and choose
-Open, or remove quarantine from the extracted folder only if you trust the downloaded release:
+**Pick the build for your Mac.** The DMG is published per-architecture:
+`Orrery-<version>-mac-arm64.dmg` for Apple Silicon (M1/M2/M3/M4) and `Orrery-<version>-mac-x64.dmg`
+for Intel Macs. Installing the wrong one is the most common "it won't launch" cause — an Apple
+Silicon build will not run on an Intel Mac and vice versa. To check your Mac:  → About This Mac.
+
+**"Orrery is damaged and can't be opened."** The preview isn't code-signed/notarized yet, so macOS
+quarantines it after download. This does not mean the app is actually damaged. Fix it by removing the
+quarantine flag (only for a release you trust):
+
+```bash
+# after dragging Orrery to /Applications from the DMG:
+xattr -dr com.apple.quarantine /Applications/Orrery.app
+```
+
+For the portable `.zip` (non-DMG) package, right-click `Orrery.app` and choose Open, or clear
+quarantine on the extracted folder:
 
 ```bash
 xattr -dr com.apple.quarantine Orrery.app setup-orrery.command run-orrery.command
 ```
+
+A signed, notarized build (which removes these steps entirely) is planned; it requires a paid Apple
+Developer ID certificate.
 
 ## Run From Source On Windows
 
