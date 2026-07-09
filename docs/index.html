@@ -119,6 +119,14 @@
   .dlcard .os svg{width:20px;height:20px}
   .dlcard small{color:var(--faint);font-size:12.5px}
   .dlcard .btn{width:100%;justify-content:center;margin-top:14px}
+  .dlalt{display:block;text-align:center;margin-top:10px;color:var(--muted);font-size:12.5px;
+    text-decoration:underline;text-underline-offset:2px;transition:color .2s}
+  .dlalt:hover{color:var(--ink)}
+  .relchip{display:inline-flex;align-items:center;gap:8px;font-size:12.5px;font-weight:600;
+    color:var(--accent2);background:rgba(96,230,196,.10);border:1px solid rgba(96,230,196,.28);
+    padding:6px 14px;border-radius:999px;margin-bottom:18px;font-family:var(--mono);letter-spacing:.02em}
+  .relchip .reldot{width:7px;height:7px;border-radius:50%;background:var(--accent2);box-shadow:0 0 10px var(--accent2)}
+  .relchip:hover{border-color:var(--accent2)}
   .note{margin-top:26px;font-size:13px;color:var(--muted);background:rgba(255,212,121,.08);
     border:1px solid rgba(255,212,121,.25);border-radius:12px;padding:14px 18px;max-width:60ch;margin-left:auto;margin-right:auto}
   .note b{color:#ffd479}
@@ -242,26 +250,36 @@
 <section class="sec" id="download">
   <div class="wrap">
     <div class="dl">
+      <a class="relchip" href="https://github.com/zaidt156/Orrery/releases/latest"><span class="reldot"></span> Latest release · v0.1.0-preview</a>
       <h2>Download &amp; run in minutes</h2>
-      <p>Grab the package, point it at a PostgreSQL database (or use the bundled Docker one), connect a model account, and you're working — all on your own machine.</p>
+      <p>Grab the installer, point it at a PostgreSQL database (or use the bundled Docker one), connect a model account, and you're working — all on your own machine.</p>
       <div class="dlrow">
         <div class="dlcard">
           <div class="os"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 5.5L10 4.5v7H3zM11 4.3L21 3v8.5H11zM3 12.5h7v7L3 18.5zM11 12.5h10V21l-10-1.3z"/></svg> Windows</div>
           <small>Windows 10 / 11 · 64-bit</small>
-          <a class="btn primary" href="https://github.com/zaidt156/Orrery/releases/latest/download/Orrery-Windows.zip">Download .zip</a>
+          <a class="btn primary" href="https://github.com/zaidt156/Orrery/releases/download/v0.1.0-preview/Orrery-0.2.0-win-x64.exe">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14"/></svg>
+            Download installer (.exe)
+          </a>
+          <a class="dlalt" href="https://github.com/zaidt156/Orrery/releases/latest/download/Orrery-Windows.zip">or portable .zip</a>
         </div>
         <div class="dlcard">
           <div class="os"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M16.4 12.9c0-2.3 1.9-3.4 2-3.5-1.1-1.6-2.8-1.8-3.4-1.8-1.4-.1-2.8.9-3.5.9s-1.8-.9-3-.8c-1.5 0-2.9.9-3.7 2.3-1.6 2.7-.4 6.7 1.1 8.9.7 1.1 1.6 2.3 2.8 2.2 1.1 0 1.6-.7 2.9-.7s1.8.7 3 .7 2-1.1 2.7-2.1c.8-1.2 1.2-2.4 1.2-2.5-.1 0-2.3-.9-2.3-3.3zM14.2 5.9c.6-.8 1-1.8.9-2.9-.9 0-2 .6-2.6 1.4-.6.7-1.1 1.7-.9 2.7 1 .1 2-.5 2.6-1.2z"/></svg> macOS</div>
-          <small>Apple Silicon &amp; Intel</small>
-          <a class="btn ghost" href="https://github.com/zaidt156/Orrery/releases/latest/download/Orrery-macOS.zip">Download .zip</a>
+          <small>Apple Silicon</small>
+          <a class="btn primary" href="https://github.com/zaidt156/Orrery/releases/download/v0.1.0-preview/Orrery-0.2.0-mac-arm64.dmg">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14"/></svg>
+            Download installer (.dmg)
+          </a>
+          <a class="dlalt" href="https://github.com/zaidt156/Orrery/releases/latest/download/Orrery-macOS.zip">or portable .zip</a>
         </div>
         <div class="dlcard">
           <div class="os"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 18l6-6-6-6M8 6l-6 6 6 6"/></svg> Source</div>
           <small>Run from Python + Node</small>
-          <a class="btn ghost" href="https://github.com/zaidt156/Orrery">Clone the repo</a>
+          <a class="btn ghost" href="https://github.com/zaidt156/Orrery#run-from-source-on-windows">Clone the repo</a>
+          <a class="dlalt" href="https://github.com/zaidt156/Orrery/releases">all releases &amp; assets</a>
         </div>
       </div>
-      <div class="note"><b>First-run note:</b> this preview isn't code-signed yet, so Windows SmartScreen shows a one-time "Windows protected your PC" box. Click <b>More info → Run anyway</b> — it's expected for any new, unsigned app, not a warning about Orrery. A signed release is planned.</div>
+      <div class="note"><b>First-run note:</b> this preview isn't code-signed yet, so Windows SmartScreen shows a one-time "Windows protected your PC" box (macOS Gatekeeper shows a similar prompt). Click <b>More info → Run anyway</b> (or right-click → Open on macOS) — it's expected for any new, unsigned app, not a warning about Orrery. A signed release is planned. The setup helper checks for Docker/Ollama on first run and links you to anything you still need.</div>
     </div>
   </div>
 </section>
