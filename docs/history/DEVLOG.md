@@ -1895,3 +1895,37 @@ You asked that installing Orrery push the user through Docker setup instead of l
 Next: the ontology fix (chat cannot see inside ontology files — embedding/vector build + a
 300-file, multi-ontology stress test), the thinking-stream raw-thoughts view, and the macOS build
 verification in the cloud.
+
+
+## Step 123 — Ontologies proven at scale, and the context-mixing leak closed (July 10, 2026)
+
+You asked to make chat genuinely see inside ontology files and to hard-test the architecture with
+300 files across multiple ontologies.
+
+- **The pipeline itself was sound** — a full test against the real local database (3 ontologies ×
+  100 files, each carrying a unique retrievable fact) showed ingestion, embedding, search, and the
+  chat-level gathering all working, with correct attribution and good speed (600 chunks embedded in
+  about 23 seconds; searches in fractions of a second).
+- **What was actually broken was the relevance gate — in both directions.** Measured on real prose,
+  a single fixed "how close must a snippet be" threshold cannot tell an off-topic question apart
+  from an on-topic one: unrelated questions were pulling ontology text into chats (the dangerous
+  context-mixing on the issue list), while the same threshold could starve legitimate questions.
+  The gate is now anchored on each ontology's BEST match: if the best match isn't close enough, the
+  whole ontology stays out of that turn; if it is, only that best match's neighbourhood rides along.
+  Exact word matches always pass.
+- **Connected ontologies now count as automatic context** (like a chat's own uploads), so standing
+  knowledge answers on-topic questions and never tags along on unrelated ones. Collections the user
+  explicitly picked ("use my data", a project) keep their generous bar.
+- The 300-file stress test is saved as a repeatable script (scripts/stress_ontology_rag.py) and
+  passes every check, including "an unrelated question must pull nothing".
+
+## Step 124 — The thinking stream shows the model's raw thoughts (July 10, 2026)
+
+The activity panel used to show only Orrery's own narration of the work; the model's raw thinking
+was silently discarded. Now the raw thoughts stream into the same panel — click the activity card
+open to read them, live while the model thinks — and they're saved with the rest of the panel so
+they survive reloads. The boundaries stay: thoughts never appear in the answer itself, are never
+fed back into prompts, and are never written to logs.
+
+Next: verify and fix the macOS build in the cloud (GitHub Actions macOS runner), then the rest of
+the backlog (4 selectable themes, dashboard connection persistence, new GPT models).
