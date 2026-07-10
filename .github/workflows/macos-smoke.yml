@@ -78,15 +78,23 @@ jobs:
           MAIN="$(find /tmp/Orrery.app/Contents/MacOS -type f -perm +111 | head -1)"
           echo "launching: $MAIN"
           set +e
-          timeout 90 "$MAIN" >logs/launch.log 2>&1
+          "$MAIN" >logs/launch.log 2>&1 &   # macOS has no GNU timeout; background + kill instead
+          APP_PID=$!
+          sleep 90
+          kill "$APP_PID" 2>/dev/null && echo "still running after 90s (killed)" >>logs/launch.log
+          wait "$APP_PID"
           echo "launch exit: $?" | tee -a logs/launch.log
+          # The Electron shell pipes the backend's output to its own log — that's where a
+          # first-run failure actually lands, not stdout.
+          cp "$HOME/Library/Application Support/Orrery/logs/electron-backend.log" logs/backend.log 2>/dev/null || \
+            echo "(no electron-backend.log was written)" > logs/backend.log
           set -e
           echo '--- launch output (tail) ---'
           tail -80 logs/launch.log
           # Diagnosis guide, printed into the run log:
-          if grep -q "ORRERY_SETUP:" logs/launch.log; then
+          if grep -q "ORRERY_SETUP:" logs/launch.log logs/backend.log; then
             echo '::notice::New-style build: exited with an actionable setup marker (expected without Docker).'
-          elif grep -qi "EOFError\|EOF when reading a line" logs/launch.log; then
+          elif grep -qi "EOFError\|EOF when reading a line" logs/launch.log logs/backend.log; then
             echo '::warning::Reproduced the first-run crash: the backend asked for a connection string on a console that does not exist (fixed by the Docker self-provisioning change; needs a rebuilt release).'
           fi
 
@@ -109,10 +117,9 @@ jobs:
               echo "::notice::$1: $chunk"
             done
           }
-          echo "::notice::bundle-executables: $(ls /tmp/Orrery.app/Contents/MacOS/ 2>/dev/null | tr '\n' ' ')"
-          emit probe-tail logs/probe.log 8
-          emit launch-tail logs/launch.log 14
-          echo "::notice::crash-reports: $(ls logs/crashes 2>/dev/null | head -5 | tr '\n' ' ' )"
+          emit probe-tail logs/probe.log 4
+          emit launch-tail logs/launch.log 8
+          emit backend-log logs/backend.log 12
 
       - name: Upload diagnostics
         if: always()
