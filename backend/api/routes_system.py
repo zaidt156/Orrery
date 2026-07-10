@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from backend.core import database
 from backend.core.clipboard import set_clipboard_text
 from backend.core.config import settings
-from backend.features import app_updates
+from backend.features import app_updates, connectivity
 
 router = APIRouter()
 
@@ -20,6 +20,12 @@ class ClipboardCopyIn(BaseModel):
 async def health() -> dict:
     db_ok = await database.check_connection()
     return {"status": "ok", "database": "ok" if db_ok else "error", "dev": settings.orrery_dev}
+
+
+@router.post("/system/check-connections")
+async def check_connections() -> dict:
+    """Live-probe the database and every configured model connection (sidebar button)."""
+    return await connectivity.check_all()
 
 
 @router.get("/app/update")

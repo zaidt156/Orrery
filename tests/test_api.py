@@ -108,6 +108,21 @@ def test_activate_message_version_unknown_message_is_404(monkeypatch):
     assert r.status_code == 404
 
 
+def test_check_connections_route(monkeypatch):
+    from backend.features import connectivity
+
+    async def fake_check_all():
+        return {"ok": True, "at": "t", "checks": [{"id": "database", "label": "PostgreSQL", "ok": True, "detail": "Connected", "ms": 5}]}
+
+    monkeypatch.setattr(connectivity, "check_all", fake_check_all)
+
+    r = _client().post("/api/system/check-connections", headers={"X-Orrery-Token": TOKEN})
+
+    assert r.status_code == 200
+    assert r.json()["ok"] is True
+    assert r.json()["checks"][0]["id"] == "database"
+
+
 def test_providers_never_return_raw_key():
     secrets.set_provider_key("openai", "sk-proj-SECRETKEY999")
     r = _client().get("/api/providers", headers={"X-Orrery-Token": TOKEN})

@@ -458,6 +458,32 @@ _DISCOVERY: dict[str, tuple] = {
 _KEYED = ("anthropic", "openai", "google", "mistral", "deepseek", "openrouter")
 
 
+async def probe_provider(provider: str) -> tuple[bool, str]:
+    """Live connectivity probe for a keyed provider: one real models-list call, never cached.
+
+    Returns (ok, safe_detail) and never raises — errors come back sanitized (a provider error
+    string can carry the key or request fragments)."""
+    key = secrets.get_provider_key(provider)
+    if not key:
+        return False, "No API key configured."
+    try:
+        if provider == "deepseek":  # its catalog fetch is a static list — make a real call here
+            async with httpx.AsyncClient(timeout=6) as c:
+                r = await c.get("https://api.deepseek.com/models", headers={"Authorization": f"Bearer {key}"})
+                r.raise_for_status()
+                count = len(r.json().get("data", []))
+        else:
+            entry = _DISCOVERY.get(provider)
+            if not entry:
+                return False, "Unknown provider."
+            count = len(await asyncio.wait_for(entry[0](key), 6.0))
+    except asyncio.TimeoutError:
+        return False, "Timed out after 6 seconds."
+    except Exception as exc:  # noqa: BLE001 — a probe must report, never raise
+        return False, _sanitize(exc)
+    return True, f"{count} models visible"
+
+
 async def provider_models(provider: str) -> list[dict]:
     """Curated models for one provider (used to auto-activate when a key is first added)."""
     if provider == "ollama":
