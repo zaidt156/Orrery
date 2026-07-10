@@ -13,32 +13,51 @@ import {
   Sparkles,
   Workflow,
 } from "lucide-react";
-import { getAdmin, getAppUpdate, getBranding, getHealth, getTeam } from "./lib/api.js";
+import { getAdmin, getAppUpdate, getBranding, getDefaults, getHealth, getModels, getTeam } from "./lib/api.js";
 import { Logo } from "./components/icons.jsx";
 
-function BrandHeader() {
+// Concept top bar: workspace identity on the left (custom branding when set), the workspace's
+// real default model as a chip on the right. Purely informational — model/effort are changed in
+// Chat and Settings, so nothing here pretends to be a control.
+function TopBar() {
   const [b, setB] = useState(null);
+  const [modelLabel, setModelLabel] = useState("");
   useEffect(() => {
     let alive = true;
     getBranding().then((x) => alive && setB(x)).catch(() => {});
-    const update = (event) => {
-      if (alive && event.detail) setB(event.detail);
-    };
+    const loadModel = () =>
+      Promise.all([getDefaults().catch(() => ({})), getModels().catch(() => ({ models: [] }))])
+        .then(([d, m]) => {
+          if (!alive) return;
+          const hit = (m.models || []).find((x) => x.id === d.model);
+          setModelLabel(hit?.label || d.model || "");
+        });
+    loadModel();
+    const update = (event) => { if (alive && event.detail) setB(event.detail); };
     window.addEventListener("orrery-branding-changed", update);
+    window.addEventListener("orrery-models-changed", loadModel);
     return () => {
       alive = false;
       window.removeEventListener("orrery-branding-changed", update);
+      window.removeEventListener("orrery-models-changed", loadModel);
     };
   }, []);
-  if (!b || !b.enabled || (!b.name && !b.logo)) return null;
+  const branded = b?.enabled && (b.name || b.logo);
   return (
-    <header className="brand-header">
-      {b.logo && <img className="brand-logo" src={b.logo} alt={b.name || "logo"} />}
-      <div className="brand-text">
-        {b.name && <div className="brand-name">{b.name}</div>}
-        {b.tagline && <div className="brand-tagline">{b.tagline}</div>}
-        {b.details && <div className="brand-details">{b.details}</div>}
+    <header className="topbar">
+      <div className="topbar-left">
+        {branded && b.logo && <img className="brand-logo" src={b.logo} alt={b.name || "logo"} />}
+        <div className="brand-text">
+          <div className="brand-name">{branded && b.name ? b.name : "Personal workspace"}</div>
+          {branded && b.tagline ? <div className="brand-tagline">{b.tagline}</div> : null}
+        </div>
       </div>
+      {modelLabel && (
+        <div className="provider-pill" title="Workspace default model — change it in Settings or per chat">
+          <i className="pulse-dot" />
+          <span>{modelLabel}</span>
+        </div>
+      )}
     </header>
   );
 }
@@ -143,25 +162,32 @@ export default function App() {
           >×</button>
         </div>
       )}
-      <BrandHeader />
+      <TopBar />
       <div className="app-body">
         <nav className="rail" aria-label="Main navigation">
-          <div className="logo" title="Orrery"><Logo /></div>
+          <div className="rail-brand">
+            <div className="logo" title="Orrery"><Logo /></div>
+            <span className="rail-wordmark">Orrery</span>
+          </div>
           {visibleTabs.map(({ key, label, Icon }) => (
             <button
               key={key}
               className={`tab${key === active ? " active" : ""}`}
-              aria-label={label}
               onClick={() => setActive(key)}
             >
               <Icon />
+              <span>{label}</span>
             </button>
           ))}
           <div className="spacer" />
-          <div className="db-status" title={dbTitle}>
+          <div className={`rail-health ${pulseClass || "ok"}`} title={dbTitle}>
             <div className={`pulse ${pulseClass}`} />
-            <span>DATABASE</span>
+            <div className="rail-health-text">
+              <b>{db === "ok" ? "System healthy" : db === "down" ? "Backend unreachable" : "Database issue"}</b>
+              <span>{db === "ok" ? "Database connected" : "Check Settings → Database"}</span>
+            </div>
           </div>
+          <div className="rail-meta">Open source · MIT License</div>
         </nav>
         <Suspense fallback={<section className="view"><div className="s-sub">Loading...</div></section>}>
           <ActiveView onNavigate={setActive} />

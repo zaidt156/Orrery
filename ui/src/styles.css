@@ -15,6 +15,9 @@
     radial-gradient(1px 1px at 88% 64%, #ffffff33 50%, transparent 51%),
     radial-gradient(1px 1px at 54% 40%, #F2B14E44 50%, transparent 51%),
     radial-gradient(1.5px 1.5px at 8% 88%, #ffffff33 50%, transparent 51%);
+  --chrome:#111831;            /* sidebar + top bar surface */
+  --blue:#3F8CFF; --blue-dim:#3F8CFF33;
+  --radius-ui:10px;            /* corner personality — themes reshape it */
   --font-display:"Bricolage Grotesque Variable","Bricolage Grotesque",sans-serif;
   --font-ui:"IBM Plex Sans",system-ui,sans-serif;
   --font-mono:"IBM Plex Mono",monospace;
@@ -24,60 +27,69 @@
 }
 
 /* ── Themes ─────────────────────────────────────────────────────────────────
-   Simple (the base :root above) is the default. Each theme only re-tunes the
-   palette variables; semantic colors (--green ok / --red error) stay identical
-   everywhere so status meaning never shifts with the look. The attribute is
-   set on <html> before first paint (main.jsx) and by the Settings picker. */
+   Four COMPLETE looks, not four recolorings: each theme changes the palette,
+   the sky (page background scene), the corner geometry, and the surface
+   treatment of the main chrome. Semantic colors (--green ok / --red error)
+   stay identical everywhere so status meaning never shifts with the look.
+   The attribute is set on <html> before first paint (main.jsx) and by the
+   Settings → Appearance picker.
+
+   SIMPLE (base :root above): the quiet star map — flat surfaces, thin lines,
+   compact 10px corners, no glow. Calm and minimal. */
+
+/* FUTURISTIC — the concept-art look: deep blue navy, amber sun + electric
+   blue, a faint holo-grid over the starfield, glowing accents, 14px corners. */
 :root[data-theme="futuristic"]{
-  --bg0:#05070E; --bg1:#090E1C; --bg2:#0E1630; --bg3:#141F42;
-  --line:#1D2A50; --line-soft:#141E3C;
-  --text:#E6F1FF; --muted:#7C8DB5; --faint:#48547A;
-  --amber:#4EE0D3; --amber-dim:#4EE0D333;
-  --ice:#A78BFA; --ice-dim:#A78BFA33;
-  --page:#020409;
+  --bg0:#0A1428; --bg1:#0D1B33; --bg2:#132344; --bg3:#1A2F5A;
+  --line:#22365F; --line-soft:#182A4D;
+  --text:#E8EFFA; --muted:#8FA0C4; --faint:#5D6C93;
+  --amber:#F5A83C; --amber-dim:#F5A83C33;
+  --ice:#3F8CFF; --ice-dim:#3F8CFF33;
+  --chrome:#0B1730;
+  --page:#060D1D;
+  --radius-ui:14px;
   --stars:
-    radial-gradient(1px 1px at 12% 22%, #4EE0D366 50%, transparent 51%),
-    radial-gradient(1px 1px at 78% 12%, #ffffff44 50%, transparent 51%),
-    radial-gradient(1.5px 1.5px at 32% 78%, #A78BFA55 50%, transparent 51%),
-    radial-gradient(1px 1px at 88% 64%, #4EE0D344 50%, transparent 51%),
-    radial-gradient(1px 1px at 54% 40%, #ffffff33 50%, transparent 51%),
-    radial-gradient(1.5px 1.5px at 8% 88%, #A78BFA44 50%, transparent 51%);
+    linear-gradient(90deg, #3F8CFF0A 1px, transparent 1px),
+    linear-gradient(180deg, #3F8CFF08 1px, transparent 1px),
+    radial-gradient(1px 1px at 12% 22%, #ffffff55 50%, transparent 51%),
+    radial-gradient(1.5px 1.5px at 78% 12%, #3F8CFF66 50%, transparent 51%),
+    radial-gradient(2px 2px at 32% 78%, #F5A83C55 50%, transparent 51%),
+    radial-gradient(1px 1px at 88% 64%, #ffffff44 50%, transparent 51%),
+    radial-gradient(1.5px 1.5px at 54% 40%, #3F8CFF44 50%, transparent 51%),
+    radial-gradient(1px 1px at 8% 88%, #ffffff33 50%, transparent 51%);
 }
+:root[data-theme="futuristic"] body{background-size:56px 56px, 56px 56px, auto, auto, auto, auto, auto, auto}
+:root[data-theme="futuristic"] .tab.active{box-shadow:0 0 18px #3F8CFF22, inset 0 0 12px #3F8CFF14}
+:root[data-theme="futuristic"] .tab.active svg{filter:drop-shadow(0 0 6px #F5A83C88)}
+:root[data-theme="futuristic"] .provider-pill{border-color:#3F8CFF55; box-shadow:0 0 14px #3F8CFF1E}
+:root[data-theme="futuristic"] .rail,
+:root[data-theme="futuristic"] .topbar{background:linear-gradient(180deg,#0C1832,#0A142B)}
+:root[data-theme="futuristic"] .send{box-shadow:0 0 16px #F5A83C55}
+
+/* WINTER — bright frost: icy gradient sky, translucent frosted-glass chrome,
+   generous 16px corners, falling snow (pure CSS, reduced-motion aware). */
 :root[data-theme="winter"]{
-  --bg0:#F4F7FC; --bg1:#FFFFFF; --bg2:#EAF0F9; --bg3:#DEE7F5;
-  --line:#C9D6EA; --line-soft:#D8E2F1;
-  --text:#1C2540; --muted:#5A6890; --faint:#8C99BC;
+  --bg0:#F0F5FB; --bg1:#FFFFFF; --bg2:#E7EEF8; --bg3:#DAE5F4;
+  --line:#C6D4E9; --line-soft:#D6E1F1;
+  --text:#1C2540; --muted:#56658E; --faint:#8996BA;
   --amber:#E8A424; --amber-dim:#E8A42433;
-  --ice:#5E86D8; --ice-dim:#5E86D833;
-  --page:#E9EFF8;
+  --ice:#4C7FD6; --ice-dim:#4C7FD633;
+  --chrome:#FFFFFFB8;
+  --page:#DDE8F5;
+  --radius-ui:16px;
   --stars:
+    radial-gradient(60vw 40vh at 80% -8%, #FFFFFFCC 20%, transparent 70%),
     radial-gradient(1.5px 1.5px at 12% 22%, #ffffffEE 50%, transparent 51%),
     radial-gradient(1px 1px at 78% 12%, #ffffffCC 50%, transparent 51%),
     radial-gradient(1.5px 1.5px at 32% 78%, #ffffffEE 50%, transparent 51%),
-    radial-gradient(1px 1px at 88% 64%, #ffffffCC 50%, transparent 51%),
-    radial-gradient(1px 1px at 54% 40%, #ffffffAA 50%, transparent 51%),
-    radial-gradient(1.5px 1.5px at 8% 88%, #ffffffCC 50%, transparent 51%);
+    linear-gradient(180deg, #E4EDF9, #D5E2F2);
   color-scheme:light;
 }
-:root[data-theme="summer"]{
-  --bg0:#FDF6EC; --bg1:#FFFDF7; --bg2:#F8EEDC; --bg3:#F1E3C9;
-  --line:#E0D0AF; --line-soft:#EADDBF;
-  --text:#2E2617; --muted:#79684A; --faint:#A59472;
-  --amber:#E0862E; --amber-dim:#E0862E33;
-  --ice:#2E9E97; --ice-dim:#2E9E9733;
-  --page:#F7EDDA;
-  --stars:
-    radial-gradient(1.5px 1.5px at 12% 22%, #E0862E33 50%, transparent 51%),
-    radial-gradient(1px 1px at 78% 12%, #E8A42433 50%, transparent 51%),
-    radial-gradient(1.5px 1.5px at 32% 78%, #2E9E9733 50%, transparent 51%),
-    radial-gradient(1px 1px at 88% 64%, #E0862E22 50%, transparent 51%),
-    radial-gradient(1px 1px at 54% 40%, #E8A42433 50%, transparent 51%),
-    radial-gradient(1.5px 1.5px at 8% 88%, #2E9E9722 50%, transparent 51%);
-  color-scheme:light;
-}
-/* Winter's falling snow: pure CSS, three drifting flake layers, clicks pass through. */
+:root[data-theme="winter"] .rail,
+:root[data-theme="winter"] .topbar{backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px)}
+:root[data-theme="winter"] .rail-health{background:#5BC48920}
 :root[data-theme="winter"] body::after{
-  content:""; position:fixed; inset:0; z-index:2147483647; pointer-events:none; opacity:.55;
+  content:""; position:fixed; inset:0; z-index:2147483647; pointer-events:none; opacity:.6;
   background-image:
     radial-gradient(2.4px 2.4px at 22% 18%, #ffffff 50%, transparent 55%),
     radial-gradient(1.8px 1.8px at 68% 42%, #ffffff 50%, transparent 55%),
@@ -91,6 +103,29 @@
 @media (prefers-reduced-motion: reduce){
   :root[data-theme="winter"] body::after{animation:none}
 }
+
+/* SUMMER — golden hour: warm sun-glow sky, cream paper surfaces with soft
+   warm shadows, the roundest corners (18px), terracotta + sea-teal accents. */
+:root[data-theme="summer"]{
+  --bg0:#FBF3E4; --bg1:#FFFCF4; --bg2:#F7ECD6; --bg3:#F0E0C0;
+  --line:#DFCFA9; --line-soft:#EADCBC;
+  --text:#31281A; --muted:#7A684A; --faint:#A69470;
+  --amber:#E0862E; --amber-dim:#E0862E33;
+  --ice:#2E9E97; --ice-dim:#2E9E9733;
+  --chrome:#FFF9EE;
+  --page:#F3E6CD;
+  --radius-ui:18px;
+  --stars:
+    radial-gradient(50vw 36vh at 14% -6%, #F7C25E66 10%, transparent 70%),
+    radial-gradient(40vw 30vh at 92% 8%, #E0862E22 10%, transparent 70%),
+    radial-gradient(1.5px 1.5px at 32% 78%, #2E9E9733 50%, transparent 51%),
+    linear-gradient(180deg, #F8EDD6, #F0E1C2);
+  color-scheme:light;
+}
+:root[data-theme="summer"] .rail,
+:root[data-theme="summer"] .topbar{box-shadow:0 8px 24px #8a601812}
+:root[data-theme="summer"] .provider-block,
+:root[data-theme="summer"] .provider-pill{box-shadow:0 6px 18px #8a601814}
 /* option lists render via the engine's own dark mode (color-scheme above); forcing a blue
    background on options made every row look pre-highlighted */
 .update-banner{display:flex;align-items:center;gap:10px;justify-content:center;background:linear-gradient(90deg,#1d2a52,#233462);border-bottom:1px solid var(--line);padding:7px 12px;font-size:12.5px}
@@ -105,46 +140,64 @@ body{
   background-image:var(--stars);
 }
 
-.app{display:flex; flex-direction:column; height:100vh; background:var(--bg0); overflow:hidden}
+/* transparent so each theme's sky (body --page + --stars scene) shows through the chrome */
+.app{display:flex; flex-direction:column; height:100vh; background:transparent; overflow:hidden}
 .app-body{display:flex; flex:1; min-height:0; overflow:hidden}
-.brand-header{
-  display:flex; align-items:center; gap:12px; padding:8px 18px; flex:none;
-  background:var(--bg1); border-bottom:1px solid var(--line-soft);
+/* ── top bar (concept: workspace identity left, default-model chip right) ── */
+.topbar{
+  display:flex; align-items:center; justify-content:space-between; gap:12px; padding:9px 18px; flex:none;
+  background:var(--chrome); border-bottom:1px solid var(--line-soft);
 }
 .brand-logo{height:28px; width:auto; max-width:160px; object-fit:contain; border-radius:4px}
 .brand-text{display:flex; flex-direction:column; line-height:1.2}
 .brand-name{font-family:var(--font-display); font-weight:600; font-size:14px; color:var(--text)}
 .brand-tagline{font-size:11px; color:var(--muted)}
-.brand-details{font-size:10px; color:var(--faint); max-width:720px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
-
-/* ── icon rail ─────────────────────────────────── */
-.rail{
-  width:64px; background:var(--bg1); border-right:1px solid var(--line-soft);
-  display:flex; flex-direction:column; align-items:center; padding:14px 0; gap:6px;
+.topbar-left{display:flex; align-items:center; gap:12px; min-width:0}
+.provider-pill{
+  display:inline-flex; align-items:center; gap:8px; padding:6px 12px; max-width:340px;
+  border:1px solid var(--line); border-radius:99px; background:var(--bg2);
+  color:var(--muted); font-size:12px; font-weight:600;
 }
+.provider-pill span{white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+
+/* ── sidebar (concept: labeled tabs, health pill, license line) ── */
+.rail{
+  width:208px; background:var(--chrome); border-right:1px solid var(--line-soft);
+  display:flex; flex-direction:column; align-items:stretch; padding:14px 10px 10px; gap:3px;
+}
+.rail-brand{display:flex; align-items:center; gap:10px; padding:0 6px 12px}
+.rail-wordmark{font-family:var(--font-display); font-weight:700; font-size:19px; color:var(--text)}
 .logo{
-  width:44px; height:44px; margin-bottom:14px; display:grid; place-items:center;
+  width:38px; height:38px; display:grid; place-items:center;
   filter:drop-shadow(0 7px 14px #05081488);
 }
-.orrery-mark{width:42px; height:42px; display:block}
+.orrery-mark{width:36px; height:36px; display:block}
 .tab{
-  width:44px;height:44px; border:none; background:transparent; border-radius:10px;
-  color:var(--muted); cursor:pointer; display:flex; align-items:center; justify-content:center;
-  position:relative;
+  display:flex; align-items:center; gap:11px; height:40px; padding:0 12px; position:relative;
+  border:1px solid transparent; background:transparent; border-radius:var(--radius-ui);
+  color:var(--muted); cursor:pointer; font:600 13px var(--font-ui); text-align:left;
 }
 .tab:hover{background:var(--bg2); color:var(--text)}
-.tab.active{background:var(--bg2); color:var(--amber)}
+.tab.active{background:var(--bg2); color:var(--text); border-color:var(--line)}
+.tab.active svg{color:var(--amber)}
 .tab.active::before{
   content:""; position:absolute; left:-10px; width:3px; height:20px;
   background:var(--amber); border-radius:0 3px 3px 0;
 }
-.tab svg{width:20px;height:20px}
+.tab svg{width:18px;height:18px; flex:none}
 .rail .spacer{flex:1}
-.db-status{display:flex; flex-direction:column; align-items:center; gap:5px; padding-bottom:4px}
-.db-status .pulse{width:8px;height:8px;border-radius:50%;background:var(--green); box-shadow:0 0 8px var(--green)}
-.db-status .pulse.amber{background:var(--amber); box-shadow:0 0 8px var(--amber)}
-.db-status .pulse.red{background:var(--red); box-shadow:0 0 8px var(--red)}
-.db-status span{font-family:var(--font-mono); font-size:8.5px; color:var(--faint); writing-mode:vertical-rl; letter-spacing:.08em}
+.rail-health{
+  display:flex; align-items:center; gap:10px; margin:8px 2px; padding:10px 12px;
+  border:1px solid #5BC48945; border-radius:var(--radius-ui); background:#5BC48912;
+}
+.rail-health.amber{border-color:#F2B14E45; background:#F2B14E12}
+.rail-health.red{border-color:#E36C6C45; background:#E36C6C12}
+.rail-health .pulse{flex:none; width:8px;height:8px;border-radius:50%;background:var(--green); box-shadow:0 0 8px var(--green)}
+.rail-health .pulse.amber{background:var(--amber); box-shadow:0 0 8px var(--amber)}
+.rail-health .pulse.red{background:var(--red); box-shadow:0 0 8px var(--red)}
+.rail-health-text b{display:block; font-size:11.5px; color:var(--text); font-weight:650}
+.rail-health-text span{display:block; margin-top:1px; font-size:10px; color:var(--muted)}
+.rail-meta{padding:0 8px 2px; color:var(--faint); font-size:10px}
 
 /* ── shared view bits ──────────────────────────── */
 .view{display:flex; flex:1; min-width:0; overflow:hidden}
@@ -1488,7 +1541,7 @@ button.attach-chip:hover{border-color:var(--amber); color:var(--text)}
   .defaults-grid{grid-template-columns:1fr}
   .branding-preview{padding:12px}
   .preset-row .key-input{min-width:0}
-  .brand-header{padding:7px 10px}
+  .topbar{padding:7px 10px}
   .brand-details{max-width:calc(100vw - 100px)}
 }
 

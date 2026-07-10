@@ -989,10 +989,10 @@ function SettingsPanelHeader({ title, description }) {
 // Four looks, one identity: each theme only re-tunes the CSS palette variables (styles.css),
 // so every view restyles instantly. Stored per machine; applied before first paint in main.jsx.
 const THEMES = [
-  { id: "simple", name: "Simple", desc: "The classic Orrery — deep indigo star map, amber accents.", chips: ["#0B1020", "#F2B14E", "#9DB9F0"] },
-  { id: "futuristic", name: "Futuristic", desc: "Near-black night with electric teal and violet.", chips: ["#05070E", "#4EE0D3", "#A78BFA"] },
-  { id: "winter", name: "Winter", desc: "Bright and frosty — with falling snow.", chips: ["#F4F7FC", "#E8A424", "#5E86D8"] },
-  { id: "summer", name: "Summer", desc: "Warm paper tones with sun-orange accents.", chips: ["#FDF6EC", "#E0862E", "#2E9E97"] },
+  { id: "simple", name: "Simple", desc: "The quiet star map — flat, minimal, compact corners.", chips: ["#0B1020", "#F2B14E", "#9DB9F0"] },
+  { id: "futuristic", name: "Futuristic", desc: "The concept look — deep navy, holo-grid, glowing amber and electric blue.", chips: ["#0A1428", "#F5A83C", "#3F8CFF"] },
+  { id: "winter", name: "Winter", desc: "Icy gradient sky, frosted-glass chrome, falling snow.", chips: ["#F0F5FB", "#E8A424", "#4C7FD6"] },
+  { id: "summer", name: "Summer", desc: "Golden-hour sun glow, warm paper, the roundest corners.", chips: ["#FBF3E4", "#E0862E", "#2E9E97"] },
 ];
 
 function ThemeSection() {
