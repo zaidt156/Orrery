@@ -1949,3 +1949,31 @@ the old crash from the new behavior so the rebuilt release can be verified the s
 Next: read this first run''s artifact (Actions tab), rebuild the macOS release with the Step-122 fix,
 and re-run the smoke test; then the rest of the backlog (4 selectable themes, dashboard connection
 persistence, new GPT models).
+
+
+## Step 126 — "nice" is praise, not a work order (July 10, 2026)
+
+You showed screenshots: after Orrery drew the clock SVG you asked for, replying "nice" made it
+draw a second, random SVG. Two stacked causes, both fixed and proven with tests plus a live run
+of your exact conversation:
+
+- **Praise no longer inherits intent.** Short follow-ups used to inherit the previous request''s
+  intent unless they were questions — so "nice" counted as "go again". Now a turn made purely of
+  appreciation words ("nice", "thanks", "love it", "great job") is recognized as a social reply
+  and routes to normal chat. A single action word ("make it blue", "again", "add a second hand")
+  still keeps the old behavior, so genuine confirmations aren''t broken.
+- **Follow-ups are no longer context-blind.** When a real confirmation ("do it") does inherit,
+  the image/file generator now receives the inherited ask alongside it — before, it literally got
+  just the two words and drew from nothing.
+
+Also discovered while verifying live: the Claude plan account has hit its **monthly spend limit**,
+so model calls themselves currently fail app-wide with an honest error note in chat (raise the
+limit at claude.ai/settings/usage, or use an API key / local model meanwhile). The routing fix is
+verified independently of that.
+
+The app was restarted with this fix and is running. macOS status: the shipped DMG''s bundle is
+verified intact on a real cloud Mac; the full launch check is in its final iteration (watch the
+repository''s Actions tab — anonymous API polling from this machine is rate-limited for a while).
+
+Next: read the macOS launch-run results and rebuild the release with the first-run fix; then the
+backlog (4 themes, dashboard connection persistence, new GPT models).
