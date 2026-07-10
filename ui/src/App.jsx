@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { getAdmin, getAppUpdate, getBranding, getDefaults, getHealth, getModels, getTeam } from "./lib/api.js";
 import { Logo } from "./components/icons.jsx";
+import ConnectionCheck from "./components/ConnectionCheck.jsx";
 
 // Concept top bar: workspace identity on the left (custom branding when set), the workspace's
 // real default model as a chip on the right. Purely informational — model/effort are changed in
@@ -180,13 +181,7 @@ export default function App() {
             </button>
           ))}
           <div className="spacer" />
-          <div className={`rail-health ${pulseClass || "ok"}`} title={dbTitle}>
-            <div className={`pulse ${pulseClass}`} />
-            <div className="rail-health-text">
-              <b>{db === "ok" ? "System healthy" : db === "down" ? "Backend unreachable" : "Database issue"}</b>
-              <span>{db === "ok" ? "Database connected" : "Check Settings → Database"}</span>
-            </div>
-          </div>
+          <ConnectionCheck db={db} />
           <div className="rail-meta">Open source · MIT License</div>
         </nav>
         <Suspense fallback={<section className="view"><div className="s-sub">Loading...</div></section>}>

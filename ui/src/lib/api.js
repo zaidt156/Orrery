@@ -399,6 +399,9 @@ export const streamMessage = (cid, content, attachments, collectionId, onEvent, 
 export const activateMessageVersion = (cid, mid) =>
   apiSend(`/api/conversations/${cid}/messages/${mid}/activate`, "POST");
 
+// live-probe the database + every configured model connection (sidebar Check connections button)
+export const checkConnections = () => apiSend("/api/system/check-connections", "POST");
+
 export const streamCodeImage = (cid, content, onEvent, signal) =>
   streamSSE(`/api/conversations/${cid}/code-image`, { body: { content, attachments: [] }, signal }, onEvent);
 
