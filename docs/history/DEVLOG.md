@@ -1827,3 +1827,35 @@ Verification:
 
 Next: triage the remaining backlog � landing-site redesign, 4 selectable themes, dashboard
 connection-persistence/reset-on-close bug, macOS build not launching, and new GPT model entries.
+
+
+## Step 120 — Message versioning wired end to end (July 10, 2026)
+
+The ‹ › in-place message versions from Step 119 now actually work, front to back:
+
+- **Regenerating keeps every answer.** Pressing regenerate no longer deletes the old reply — the new
+  one takes its place on screen and the old one stays one arrow-click away. Nothing is lost anymore.
+- **Resubmitting revises in place.** Resubmitting a prompt used to dump a duplicate question at the
+  bottom of the chat. Now it revises the original message where it sits: the new version (and its
+  answer) replaces it visually, and the arrows flip between prompt versions — each remembering its
+  own reply, like Claude and ChatGPT do it.
+- **Little ‹ 1/2 › arrows on the bubbles.** Any message with more than one version shows the switcher
+  next to its action buttons. Flipping a version reloads the thread down that branch, so the whole
+  follow-up conversation that belonged to that version comes back with it.
+- **Everything reads the same view.** The reply history the model sees, the loaded chat, per-message
+  evaluation, and file exports all follow the currently-selected versions — other branches can never
+  leak into the model's context or an export.
+- **Old chats repaired automatically.** Messages written in the short window before this change didn't
+  yet know their place in the version tree; a one-time cleanup threads them in at next start.
+- **Two chat glitches fixed along the way.** Re-attaching to a reply that kept generating in the
+  background crashed silently (a missing function); and the new post-turn refresh could briefly wipe
+  the live reasoning panel — it now keeps what's on screen until the saved copy catches up.
+
+All 284 backend tests pass and the UI builds clean. A planned multi-agent adversarial review of the
+change couldn't run (the account hit its monthly agent-spend limit), so the review was done by hand
+instead — that's how the two glitches above were found.
+
+Next: the landing-site pass you asked for — replace the "local-first" wording with plainer language
+("Local AI"), a correct screen demo, soften the white patch on the pages, and proper step-by-step
+copy — then the rest of the backlog (4 selectable themes, dashboard connection-persistence bug,
+macOS build not launching, new GPT models).
