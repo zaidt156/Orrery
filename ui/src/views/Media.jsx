@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { PlayIcon } from "../components/icons.jsx";
+import PageHero from "../components/PageHero.jsx";
 
 const TABS = ["Image", "Video", "Library"];
 
@@ -8,8 +9,12 @@ export default function Media() {
   return (
     <section className="view">
       <div className="media-wrap">
+        <PageHero
+          compact
+          title="Media Hub"
+          subtitle="Generate images and video on your own model keys — prompts saved to your database, files in your local media library."
+        />
         <div className="media-toolbar">
-          <span className="view-title">Media Hub</span>
           <div className="seg">
             {TABS.map((t) => (
               <button key={t} className={seg === t ? "on" : ""} onClick={() => setSeg(t)}>{t}</button>

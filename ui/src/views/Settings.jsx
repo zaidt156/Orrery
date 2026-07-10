@@ -17,6 +17,7 @@ import {
   WalletCards,
 } from "lucide-react";
 import Toggle from "../components/Toggle.jsx";
+import PageHero from "../components/PageHero.jsx";
 import {
   addCustomModel,
   clearProviderKey,
@@ -986,13 +987,14 @@ function SettingsPanelHeader({ title, description }) {
   );
 }
 
-// Four looks, one identity: each theme only re-tunes the CSS palette variables (styles.css),
+// Five looks, one identity: each theme only re-tunes the CSS palette variables (styles.css),
 // so every view restyles instantly. Stored per machine; applied before first paint in main.jsx.
 const THEMES = [
   { id: "simple", name: "Simple", desc: "The quiet star map — flat, minimal, compact corners.", chips: ["#0B1020", "#F2B14E", "#9DB9F0"] },
   { id: "futuristic", name: "Futuristic", desc: "The concept look — deep navy, holo-grid, glowing amber and electric blue.", chips: ["#0A1428", "#F5A83C", "#3F8CFF"] },
   { id: "winter", name: "Winter", desc: "Icy gradient sky, frosted-glass chrome, falling snow.", chips: ["#F0F5FB", "#E8A424", "#4C7FD6"] },
   { id: "summer", name: "Summer", desc: "Golden-hour sun glow, warm paper, the roundest corners.", chips: ["#FBF3E4", "#E0862E", "#2E9E97"] },
+  { id: "observatory", name: "Observatory", desc: "The Orrery website's look — warm charcoal, antique gold, parchment ink.", chips: ["#141311", "#E5A93F", "#52C8B2"] },
 ];
 
 function ThemeSection() {
@@ -1223,10 +1225,11 @@ export default function Settings() {
   return (
     <section className="view">
       <div className="settings-wrap">
-        <div className="settings-page-header">
-          <span className="view-title">Settings</span>
-          <span>Configure this Orrery installation.</span>
-        </div>
+        <PageHero
+          compact
+          title="Settings"
+          subtitle="Configure workspace defaults, provider routing, appearance, storage, and privacy controls."
+        />
         <div className="settings-layout">
           <nav className="settings-nav" aria-label="Settings sections">
             {SETTINGS_SECTIONS.map(({ id, label, Icon }) => (

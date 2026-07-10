@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import PageHero from "../components/PageHero.jsx";
 import {
   listDataConnections, addDataConnection, deleteDataConnection, listTables, browseTable,
   listCollections, createCollection, deleteCollection, uploadDocuments,
@@ -161,7 +162,11 @@ export default function Data() {
   return (
     <section className="view">
       <div className="data-wrap">
-        <span className="view-title">Data</span>
+        <PageHero
+          compact
+          title="Data"
+          subtitle="Connect databases read-only, import files as datasets, and build searchable document collections."
+        />
 
         <div className="section-label">Database connections · read-only</div>
         {err && <div className="chat-banner">{err}</div>}

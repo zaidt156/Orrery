@@ -37,7 +37,7 @@
 }
 
 /* ── Themes ─────────────────────────────────────────────────────────────────
-   Four COMPLETE looks, not four recolorings: each theme changes the palette,
+   Five COMPLETE looks, not recolorings: each theme changes the palette,
    the sky (page background scene), the corner geometry, and the surface
    treatment of the main chrome. Semantic colors (--green ok / --red error)
    stay identical everywhere so status meaning never shifts with the look.
@@ -149,6 +149,35 @@
 }
 :root[data-theme="summer"] .rail,
 :root[data-theme="summer"] .topbar{box-shadow:0 8px 24px #8a601812}
+
+/* OBSERVATORY — the Orrery website's look (docs/index.html): warm charcoal,
+   antique gold, parchment ink, teal highlights, a faint drafting grid over a
+   warm near-black sky, the sharpest corners (8px, same as the site). */
+:root[data-theme="observatory"]{
+  --bg0:#141311; --bg1:#1F211F; --bg2:#292721; --bg3:#33302A;
+  --line:#3D3A31; --line-soft:#2E2C26;
+  --text:#F7F0DF; --muted:#C8BFAE; --faint:#8F877B;
+  --amber:#E5A93F; --amber-dim:#E5A93F33;
+  --ice:#52C8B2; --ice-dim:#52C8B233;
+  --chrome:#171613;
+  --page:#0D0D0B;
+  --radius-ui:8px;
+  --stars:
+    linear-gradient(90deg, #FFFFFF06 1px, transparent 1px),
+    linear-gradient(180deg, #FFFFFF05 1px, transparent 1px),
+    radial-gradient(1px 1px at 22% 30%, #E5A93F44 50%, transparent 51%),
+    radial-gradient(1.5px 1.5px at 72% 18%, #52C8B233 50%, transparent 51%),
+    radial-gradient(1px 1px at 86% 70%, #F7F0DF33 50%, transparent 51%),
+    linear-gradient(135deg, #15130F, #161A19 46%, #11100F);
+}
+:root[data-theme="observatory"] body{background-size:64px 64px, 64px 64px, auto, auto, auto, auto}
+:root[data-theme="observatory"]{
+  --shadow-1:0 14px 40px #00000066;
+  --shadow-2:0 4px 16px #00000052;
+  --shadow-3:0 24px 56px #000000C8;
+}
+:root[data-theme="observatory"] .rail,
+:root[data-theme="observatory"] .topbar{background:linear-gradient(180deg,#171613,#12110F)}
 /* option lists render via the engine's own dark mode (color-scheme above); forcing a blue
    background on options made every row look pre-highlighted */
 .update-banner{display:flex;align-items:center;gap:10px;justify-content:center;background:linear-gradient(90deg,#1d2a52,#233462);border-bottom:1px solid var(--line);padding:7px 12px;font-size:12.5px}
@@ -1015,8 +1044,9 @@ button.attach-chip:hover{border-color:var(--amber); color:var(--text)}
 
 /* ── MEDIA HUB ─────────────────────────────────── */
 .media-wrap{flex:1;display:flex;flex-direction:column;min-width:0}
+/* media-wrap has no padding of its own (toolbar/body pad themselves), so inset the hero */
+.media-wrap > .page-hero{margin:14px 16px 6px}
 .media-toolbar{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line-soft)}
-.media-toolbar .view-title{font-size:15px}
 .media-toolbar .grow{flex:1}
 .seg{display:inline-flex;background:var(--chip);border:1px solid var(--chip-line);border-radius:calc(var(--radius-ui) - 3px);padding:2px}
 .seg button{font-family:var(--font-ui);font-size:11.5px;font-weight:600;color:var(--muted);background:transparent;border:none;border-radius:6px;padding:5px 12px;cursor:pointer}
@@ -1510,10 +1540,8 @@ button.attach-chip:hover{border-color:var(--amber); color:var(--text)}
 
 /* ── SETTINGS ──────────────────────────────────── */
 .settings-wrap{flex:1; overflow-y:auto; padding:24px clamp(18px,3vw,38px) 40px}
-.settings-page-header{
-  width:min(1180px,100%); margin:0 auto 18px; display:flex; align-items:baseline; gap:12px;
-}
-.settings-page-header>span:last-child{font-size:11.5px;color:var(--faint)}
+/* hero aligns with the centered settings layout below it */
+.settings-wrap > .page-hero{width:min(1180px,100%); margin-left:auto; margin-right:auto}
 .settings-layout{
   width:min(1180px,100%); margin:0 auto; display:grid;
   grid-template-columns:184px minmax(0,1fr); gap:30px; align-items:start;
@@ -1636,8 +1664,6 @@ button.attach-chip:hover{border-color:var(--amber); color:var(--text)}
 }
 @media (max-width:640px){
   .settings-wrap{padding:15px 12px 28px}
-  .settings-page-header{margin-bottom:8px;align-items:flex-start;flex-direction:column;gap:2px}
-  .settings-page-header>span:last-child{font-size:11px}
   .settings-nav{margin:0 -12px;padding:7px 12px}
   .settings-panel-header{padding-bottom:13px}
   .settings-panel-header h2{font-size:19px}
