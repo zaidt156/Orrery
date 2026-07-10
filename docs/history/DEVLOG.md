@@ -1859,3 +1859,39 @@ Next: the landing-site pass you asked for — replace the "local-first" wording 
 ("Local AI"), a correct screen demo, soften the white patch on the pages, and proper step-by-step
 copy — then the rest of the backlog (4 selectable themes, dashboard connection-persistence bug,
 macOS build not launching, new GPT models).
+
+
+## Step 121 — Landing-site pass: plain words, honest demo, softer paper, real steps (July 10, 2026)
+
+Four fixes you asked for on the website, all in the one-page site:
+
+- **Plainer language.** Every "local-first" became plain "Local AI" (page title, search/social
+  previews, the hero line, the footer).
+- **An honest app demo.** The hero screenshot-mockup previously showed an invented app (cryptic
+  sidebar letters, chart panels inside the chat). It now mirrors the real product: the icon rail
+  with the actual tabs and the database status light, a Chats list, and a true chat turn — the
+  activity summary line, Orrery's reply with a dashboard file card, the new ‹ 1/2 › message-version
+  arrows, and the message box.
+- **Softer pages.** The bright cream sections are toned down so the white patch no longer glares
+  against the dark theme; same palette, lower intensity.
+- **Real setup steps.** The Start section now has Windows / macOS / From source tabs (no scripts —
+  plain HTML), each with four accurate steps matching how setup actually behaves.
+
+## Step 122 — Docker installs itself; the database sets itself up (July 10, 2026)
+
+You asked that installing Orrery push the user through Docker setup instead of leaving them stuck.
+
+- **Fresh installs no longer dead-end.** The installed desktop app used to crash quietly on first
+  run: with no database chosen yet it tried to ask a question on a console that doesn't exist. Now,
+  when Docker is available, Orrery simply creates and starts its bundled PostgreSQL by itself
+  (locked to your own machine) and remembers the connection in the OS keychain — open the app,
+  get a working workspace.
+- **If Docker is missing or asleep, the app says so usefully.** Instead of a generic "startup
+  failed", a dialog offers the actual next step: a button to get Docker Desktop, or one to start it.
+- **The setup scripts now do the installing.** On Windows they can install Docker Desktop through
+  winget or the official installer; on macOS through Homebrew or the official disk image — then
+  start it and wait until it is ready, rather than telling you to come back later.
+
+Next: the ontology fix (chat cannot see inside ontology files — embedding/vector build + a
+300-file, multi-ontology stress test), the thinking-stream raw-thoughts view, and the macOS build
+verification in the cloud.
