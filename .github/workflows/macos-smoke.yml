@@ -1,0 +1,106 @@
+# Smoke-tests the RELEASED macOS build on a real cloud Mac (GitHub's Apple Silicon runner).
+# Diagnoses the "macOS build not launching" report: mounts the shipped DMG, checks bundle
+# integrity, then launches the app headlessly with no database configured and captures
+# everything (stdout, stderr, macOS crash reports) as a downloadable artifact.
+#
+# Runs when manually dispatched (Actions tab -> macOS build smoke test -> Run workflow),
+# and once automatically when this file itself changes.
+# Note: macOS runner minutes bill at 10x on private repos; a run takes ~5-10 minutes.
+
+name: macOS build smoke test
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag holding the build
+        default: v0.1.0-preview
+      asset:
+        description: DMG asset name to test
+        default: Orrery-0.2.0-mac-arm64.dmg
+  push:
+    paths: [".github/workflows/macos-smoke.yml"]
+
+jobs:
+  smoke:
+    runs-on: macos-14
+    timeout-minutes: 25
+    env:
+      TAG: ${{ inputs.tag || 'v0.1.0-preview' }}
+      ASSET: ${{ inputs.asset || 'Orrery-0.2.0-mac-arm64.dmg' }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Download the released DMG
+        run: |
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "$ASSET" --output Orrery.dmg
+          ls -la Orrery.dmg
+
+      - name: Mount the DMG and copy the app
+        run: |
+          hdiutil attach Orrery.dmg -nobrowse -mountpoint /tmp/orrery-dmg
+          ls -la /tmp/orrery-dmg
+          APP_PATH="$(find /tmp/orrery-dmg -maxdepth 1 -name '*.app' | head -1)"
+          test -n "$APP_PATH" || { echo '::error::No .app found inside the DMG'; exit 1; }
+          cp -R "$APP_PATH" /tmp/Orrery.app
+          hdiutil detach /tmp/orrery-dmg
+          xattr -rd com.apple.quarantine /tmp/Orrery.app || true
+
+      - name: Inspect the bundle layout
+        run: |
+          echo '--- top levels of the bundle ---'
+          find /tmp/Orrery.app -maxdepth 3 | sed 's|/tmp/Orrery.app|.|'
+          echo '--- executables ---'
+          ls -la /tmp/Orrery.app/Contents/MacOS/ || true
+          ls -la /tmp/Orrery.app/Contents/Resources/backend/ 2>/dev/null || true
+
+      - name: Backend packaging probe
+        run: |
+          mkdir -p logs
+          BACKEND="$(find /tmp/Orrery.app -type f -name 'OrreryBackend' | head -1)"
+          if [ -n "$BACKEND" ]; then
+            echo "probing: $BACKEND"
+            set +e
+            "$BACKEND" --packaging-probe --backend-only >logs/probe.log 2>&1
+            echo "probe exit: $?" | tee -a logs/probe.log
+            set -e
+          else
+            MAIN="$(find /tmp/Orrery.app/Contents/MacOS -type f | head -1)"
+            echo "no separate backend binary; probing main executable: $MAIN"
+            set +e
+            "$MAIN" --packaging-probe >logs/probe.log 2>&1
+            echo "probe exit: $?" | tee -a logs/probe.log
+            set -e
+          fi
+          tail -50 logs/probe.log
+
+      - name: Headless first-run launch (no database, no Docker)
+        run: |
+          MAIN="$(find /tmp/Orrery.app/Contents/MacOS -type f -perm +111 | head -1)"
+          echo "launching: $MAIN"
+          set +e
+          timeout 90 "$MAIN" >logs/launch.log 2>&1
+          echo "launch exit: $?" | tee -a logs/launch.log
+          set -e
+          echo '--- launch output (tail) ---'
+          tail -80 logs/launch.log
+          # Diagnosis guide, printed into the run log:
+          if grep -q "ORRERY_SETUP:" logs/launch.log; then
+            echo '::notice::New-style build: exited with an actionable setup marker (expected without Docker).'
+          elif grep -qi "EOFError\|EOF when reading a line" logs/launch.log; then
+            echo '::warning::Reproduced the first-run crash: the backend asked for a connection string on a console that does not exist (fixed by the Docker self-provisioning change; needs a rebuilt release).'
+          fi
+
+      - name: Collect crash reports
+        if: always()
+        run: |
+          mkdir -p logs/crashes
+          cp -R ~/Library/Logs/DiagnosticReports/* logs/crashes/ 2>/dev/null || true
+          ls -la logs/crashes || true
+
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-smoke-logs
+          path: logs/
+          if-no-files-found: warn
