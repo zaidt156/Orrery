@@ -101,9 +101,11 @@ jobs:
         if: always()
         run: |
           # Annotations are the one channel readable without a token, so the log tails go there.
+          # GitHub shows at most 10 annotations per step: 1 + <=4 + <=4 + 1 stays under the cap.
           emit() {  # emit <label> <file> <lines>
             [ -f "$2" ] || { echo "::notice::$1: (no file)"; return; }
-            tail -n "$3" "$2" | tr -d '\r' | tr '%' ' ' | awk 'BEGIN{ORS=" \\n "} {print}' | cut -c1-900 | while read -r chunk; do
+            text="$(tail -n "$3" "$2" | tr -d '\r' | tr '%' ' ' | paste -sd '|' -)"
+            printf '%s\n' "$text" | fold -w 900 | head -4 | while IFS= read -r chunk; do
               echo "::notice::$1: $chunk"
             done
           }
