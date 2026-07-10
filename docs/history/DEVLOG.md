@@ -1799,7 +1799,7 @@ Next: finish wiring message versioning, and triage the rest of the current backl
 redesign, 4 selectable themes, the dashboard connection-persistence bug, the macOS build not
 launching, and adding the new GPT models).
 
-## Step 120 � Message versioning finished and verified (July 9, 2026)
+## Step 120 � Message versioning finished and verified (July 9, 2026)
 
 Finished the Claude/GPT-style in-place message versioning that Step 119 started. The backend now
 keeps both edited user prompts and regenerated assistant replies as sibling versions in the message
@@ -1812,7 +1812,7 @@ active path, so switching versions restores that version's own branch of replies
   with its own follow-up reply, while the old prompt and old reply stay available.
 - **The API can switch versions.** `POST /api/conversations/{cid}/messages/{mid}/activate` flips the
   active sibling and returns the refreshed conversation.
-- **The UI shows `� n/m �` controls.** Chat bubbles with sibling versions now show previous/next
+- **The UI shows `� n/m �` controls.** Chat bubbles with sibling versions now show previous/next
   arrows, and switching reloads the active branch rather than duplicating messages.
 - **Added an end-to-end regression test.** The new DB-backed smoke test creates a disposable chat,
   sends a normal prompt, resubmits it as a user sibling, switches back to the older prompt, regenerates
@@ -1825,7 +1825,7 @@ Verification:
 - `python -m pytest -q` -> **285 passed**, 1 existing Starlette/httpx deprecation warning.
 - `cd ui && npm run build` -> passed; Vite still warns about large dashboard/chat chunks.
 
-Next: triage the remaining backlog � landing-site redesign, 4 selectable themes, dashboard
+Next: triage the remaining backlog � landing-site redesign, 4 selectable themes, dashboard
 connection-persistence/reset-on-close bug, macOS build not launching, and new GPT model entries.
 
 
@@ -2059,3 +2059,44 @@ The app is running with the new shell — flip the looks in Settings → Appeara
 Next: your visual feedback on the new shell (per-view polish to the concept — Chat''s context
 panel, Home-style hero cards — is a further step), then dashboard connection persistence, GPT
 model IDs, speed levers.
+
+
+## Step 131 — Concept polish everywhere, an Observatory theme, and a fresh release (July 10, 2026)
+
+This step finishes the concept pass that Step 130 started, adds the fifth theme you asked for
+(the same colors as the website), and ships everything as a rebuilt release.
+
+First, the work from earlier this morning that hadn''t been written up yet:
+
+- **Surfaces got real depth.** A five-layer elevation system (sky → panel → card → chip →
+  overlay) now drives every surface, so each theme can lift panels with its own shadows instead
+  of everything sitting flat.
+- **"Check connections" is a real button.** The sidebar''s passive health pill became an action:
+  press it and Orrery live-checks the database and every configured model, reporting exactly
+  what''s reachable.
+- **Home is a real landing page.** The Home tab now opens with a hero banner and live workspace
+  numbers (chats, collections, dashboards, automations) instead of placeholder copy.
+
+Then this session''s work:
+
+- **Every page-style view now opens like the concept.** The hero banner (title, subtitle, orbital
+  art) that Home introduced now heads Data, Settings, and the Media Hub in a compact form, so the
+  app reads as one designed product instead of one polished tab and plain siblings. Views built
+  as list-plus-detail (Chat, Dashboards, Automations, Agents, Projects) keep their toolbars — a
+  banner would only push their content down.
+- **A fifth theme: Observatory.** You asked for a theme with the same colors as the website, and
+  the download site''s palette is now a selectable look: warm charcoal sky with a faint drafting
+  grid, antique-gold accents, teal highlights, parchment-colored text, and the site''s sharp 8px
+  corners. Same rule as always: green-ok / red-error stay identical in every theme.
+- **Small cleanups.** The Settings hero lines up with the settings content width, and style rules
+  for headers that no longer exist were removed.
+
+Verified: the UI builds clean, all 3 UI tests pass, and the new theme''s variables land intact in
+the built stylesheet. A multi-agent adversarial review went over the whole diff before shipping.
+
+Released: pushed to main (which redeploys the website), and moved the `v0.1.0-preview` tag so the
+Windows installer and both macOS installers rebuild under the same public download links, with the
+cloud-Mac smoke test chained after the macOS build — the same proven release path as Step 128.
+
+Next: dashboard connection persistence, the new GPT model IDs (waiting on which ones), and the
+remaining speed levers (bound the per-turn history load, frontend streaming re-renders).
