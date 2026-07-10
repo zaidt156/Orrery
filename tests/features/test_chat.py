@@ -300,6 +300,88 @@ async def test_stream_reply_dispatches_image_route(monkeypatch):
 
 
 @pytest.mark.anyio
+async def test_praise_after_an_svg_turn_never_regenerates(monkeypatch):
+    """Regression: 'nice' after 'create an svg of a clock' inherited the image intent and drew a
+    random SVG. Praise is a chat turn — the image route must not fire."""
+    calls = []
+
+    async def fake_prepare_turn(*args, **kwargs):
+        turn = _fake_turn()
+        turn.messages = [
+            {"role": "user", "content": "create an svg of a clock"},
+            {"role": "assistant", "content": "Created a code-rendered SVG image from your prompt."},
+            {"role": "user", "content": "nice"},
+        ]
+        return turn
+
+    async def fake_trusted_context(project_id):
+        return None
+
+    async def fake_record_plan(*args, **kwargs):
+        return "route-1"
+
+    async def fake_route_image(*args, **kwargs):
+        calls.append("image")
+        yield {"status": "should-not-run"}
+
+    async def fake_route_model_reply(*args, **kwargs):
+        calls.append("model")
+        yield {"delta": "glad you like it"}
+        yield {"done": True}
+
+    monkeypatch.setattr(chat.router, "_prepare_turn", fake_prepare_turn)
+    monkeypatch.setattr(chat.project_store, "trusted_context", fake_trusted_context)
+    monkeypatch.setattr(chat.route_telemetry, "record_plan", fake_record_plan)
+    monkeypatch.setattr(chat.router, "_route_image", fake_route_image)
+    monkeypatch.setattr(chat.router, "_route_model_reply", fake_route_model_reply)
+
+    events = [
+        event
+        async for event in chat.stream_reply("00000000-0000-0000-0000-000000000001", "nice")
+    ]
+
+    assert calls == ["model"]
+    assert events[-1] == {"done": True}
+
+
+@pytest.mark.anyio
+async def test_proceed_after_an_svg_turn_inherits_intent_with_context(monkeypatch):
+    """'do it' after an image ask still regenerates — and the image route must receive the
+    inherited context (previous ask + follow-up), not the bare two-word confirmation."""
+    seen = {}
+
+    async def fake_prepare_turn(*args, **kwargs):
+        turn = _fake_turn()
+        turn.messages = [
+            {"role": "user", "content": "create an svg of a clock"},
+            {"role": "assistant", "content": "Want me to render it now?"},
+            {"role": "user", "content": "do it"},
+        ]
+        return turn
+
+    async def fake_trusted_context(project_id):
+        return None
+
+    async def fake_record_plan(*args, **kwargs):
+        return "route-1"
+
+    async def fake_route_image(cid, model, user_content, *args, **kwargs):
+        seen["image_prompt"] = user_content
+        yield {"done": True}
+
+    monkeypatch.setattr(chat.router, "_prepare_turn", fake_prepare_turn)
+    monkeypatch.setattr(chat.project_store, "trusted_context", fake_trusted_context)
+    monkeypatch.setattr(chat.route_telemetry, "record_plan", fake_record_plan)
+    monkeypatch.setattr(chat.router, "_route_image", fake_route_image)
+
+    async for _ in chat.stream_reply("00000000-0000-0000-0000-000000000001", "do it"):
+        pass
+
+    assert "create an svg of a clock" in seen.get("image_prompt", "")
+    assert "do it" in seen["image_prompt"]
+
+
+@pytest.mark.anyio
 async def test_stream_reply_file_route_can_fall_back_to_model_reply(monkeypatch):
     calls = []
 

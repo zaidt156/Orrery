@@ -857,7 +857,13 @@ async def stream_reply(
     # so it must not pick up "…generate a PDF…" from an earlier message. A vague turn that is itself a
     # question ("what do you see", "who is this?") is a fresh ask, not a "proceed" confirmation, so it
     # must not inherit either — otherwise a plain question after a file turn spawns another useless file.
-    if retrieval._vague_query(user_content) and not attachments and not retrieval._is_question(user_content):
+    # Pure praise ("nice", "thanks", "love it") is a social closer, not a proceed signal — inheriting
+    # there made Orrery draw a second, random SVG in reply to the word "nice".
+    if (
+        retrieval._vague_query(user_content) and not attachments
+        and not retrieval._is_question(user_content)
+        and not retrieval._is_acknowledgment(user_content)
+    ):
         prev = next(
             (m["content"] for m in reversed(messages[:-1])
              if m.get("role") == "user" and isinstance(m.get("content"), str) and m["content"].strip()),
@@ -951,7 +957,9 @@ async def stream_reply(
     planner_on = bool(flags.get("capability_agent", False))
 
     if plan.route == "image" and not attachments and not planner_on:
-        async for event in _route_image(cid, model, user_content, gen_system, effort, trace, route_event_id):
+        # plan_text, not user_content: a "do it" confirmation carries its inherited ask along,
+        # so the generator sees WHAT to draw instead of just the two-word go-signal.
+        async for event in _route_image(cid, model, plan_text, gen_system, effort, trace, route_event_id):
             yield event
         return
 
@@ -970,7 +978,7 @@ async def stream_reply(
     if plan.route == "file" and flags.get("file_gen", True) and not planner_on:
         route_state = _RouteResult()
         async for event in _route_file(
-            cid, model, user_content, gen_system, effort, rag_context, trusted_context,
+            cid, model, plan_text, gen_system, effort, rag_context, trusted_context,
             plan, trace, route_event_id, route_state,
         ):
             yield event

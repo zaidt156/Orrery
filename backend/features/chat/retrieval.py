@@ -115,3 +115,24 @@ def _is_question(text: str) -> bool:
     """True when a short turn reads as a fresh question (so it must NOT inherit a prior intent)."""
     stripped = (text or "").strip()
     return bool(stripped) and ("?" in stripped or bool(_QUESTION_LEAD.match(stripped)))
+
+
+# Praise/thanks-only turns ("nice", "wow, love it", "thanks!") are social closers, not
+# instructions — they must never inherit a prior generative intent. (Reported with screenshots:
+# "nice" after a clock SVG made Orrery draw a random new SVG.) A turn counts as an acknowledgment
+# only when EVERY word in it comes from the appreciation lexicon — one action word ("make",
+# "add", "again") disqualifies it, so real follow-ups keep their current behavior.
+_ACK_WORDS = {
+    "nice", "great", "perfect", "awesome", "cool", "amazing", "beautiful", "lovely", "wow",
+    "thanks", "thank", "thx", "ty", "love", "loved", "like", "liked", "good", "job", "well",
+    "done", "haha", "lol", "wonderful", "fantastic", "brilliant", "super", "sweet", "neat",
+    "excellent", "impressive", "cute", "clean", "crisp", "pretty", "art", "masterpiece",
+    "it", "its", "this", "that", "is", "was", "so", "very", "really", "much", "a", "an", "the",
+    "you", "one", "work", "looks", "looking", "man", "dude", "bro", "omg", "yay", "ah", "oh",
+}
+
+
+def _is_acknowledgment(text: str) -> bool:
+    """True when a short turn is pure appreciation/reaction with no action words."""
+    words = [w.strip("'").lower() for w in re.findall(r"[A-Za-z']+", text or "")]
+    return bool(words) and all(w in _ACK_WORDS for w in words)

@@ -38,7 +38,7 @@ from backend.features.chat.runs import (  # noqa: F401
 # generation / persistence / retrieval internals used by tests and siblings
 from backend.features.chat.generation import _generate  # noqa: F401
 from backend.features.chat.persistence import _html_artifact_from_reply, _persist_assistant  # noqa: F401
-from backend.features.chat.retrieval import _gather_rag, _rag_context, _vague_query  # noqa: F401
+from backend.features.chat.retrieval import _gather_rag, _is_acknowledgment, _rag_context, _vague_query  # noqa: F401
 
 # content/window helpers kept importable from the package (tests + api use them via chat.*)
 from backend.features.chat_context import (  # noqa: F401

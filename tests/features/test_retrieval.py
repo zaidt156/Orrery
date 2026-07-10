@@ -45,6 +45,20 @@ async def test_auto_collection_keeps_clearly_relevant_and_keyword_hits(monkeypat
     assert "close" in sources and "kwhit" in sources
 
 
+def test_acknowledgments_are_recognized():
+    """'nice' after a generated SVG must read as praise, not as 'generate another one' —
+    regression for the heart/sun SVG drawn in response to the word 'nice'."""
+    for text in ("nice", "nice!", "Nice one", "thanks", "thank you so much", "wow, love it",
+                 "perfect", "great job", "awesome!!", "beautiful", "haha cool", "well done"):
+        assert retrieval._is_acknowledgment(text), text
+
+
+def test_proceed_and_question_and_modification_turns_are_not_acknowledgments():
+    for text in ("do it", "yes go ahead", "ok", "proceed", "make it blue", "smaller please",
+                 "what do you see", "can you add a second hand", "now as a PDF"):
+        assert not retrieval._is_acknowledgment(text), text
+
+
 def test_strict_gate_drops_a_whole_off_topic_collection():
     """Off-topic questions bottom out around dist >= ~0.51: even though single chunks would pass a
     0.58 per-chunk bar, the collection's BEST hit fails the on-topic bar so nothing rides along."""
