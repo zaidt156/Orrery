@@ -5,6 +5,7 @@ import {
   Database,
   FolderKanban,
   HardDriveDownload,
+  House,
   Images,
   LayoutDashboard,
   MessageSquare,
@@ -63,6 +64,7 @@ function TopBar() {
   );
 }
 
+const Home = lazy(() => import("./views/Home.jsx"));
 const Chat = lazy(() => import("./views/Chat.jsx"));
 const Data = lazy(() => import("./views/Data.jsx"));
 const Dashboards = lazy(() => import("./views/Dashboards.jsx"));
@@ -79,6 +81,7 @@ const Lock = lazy(() => import("./views/Lock.jsx"));
 
 // `feature` ties a tab to an admin flag — when that feature is turned off, the tab is hidden.
 const TABS = [
+  { key: "home", label: "Home", Icon: House, View: Home },
   { key: "chat", label: "Chat", Icon: MessageSquare, View: Chat },
   { key: "projects", label: "Projects", Icon: FolderKanban, View: Projects },
   { key: "data", label: "Data", Icon: Database, View: Data },
@@ -97,7 +100,7 @@ const INITIAL_TAB = new URLSearchParams(window.location.search).get("tab");
 
 export default function App() {
   const [active, setActive] = useState(
-    TABS.some((t) => t.key === INITIAL_TAB) ? INITIAL_TAB : "chat"
+    TABS.some((t) => t.key === INITIAL_TAB) ? INITIAL_TAB : "home"
   );
   const [db, setDb] = useState("checking"); // checking | ok | error | down
   const [features, setFeatures] = useState(null); // null until loaded → show all tabs
