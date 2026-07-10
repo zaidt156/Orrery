@@ -18,7 +18,27 @@ async def _rag_context(model: str, collection_id: str, query: str) -> tuple[str 
 # Strict mode: the turn has its own attachments (the user is clearly talking about THOSE), or the
 # text is too short/vague to judge similarity reliably ("Do it") — old files must clear a much
 # higher bar to be pulled in, instead of tagging along on every message.
-_STRICT_MAX_DIST = 0.45
+#
+# The strict gate is anchored on the collection's BEST vector hit, not on each chunk alone:
+# measured on real prose, on-topic questions put their best hit at <= ~0.40 while off-topic
+# questions bottom out at >= ~0.51 — but a *wrong document's* chunks for an on-topic question
+# live in the same 0.45-0.58 band as an off-topic question's best hits, so a per-chunk absolute
+# threshold cannot separate the two. Collection off-topic => nothing rides along; on-topic =>
+# only the best hit's neighborhood does. Keyword matches always pass (the words literally match).
+_STRICT_MAX_DIST = 0.45      # a collection is on-topic only if its best hit clears this
+_STRICT_NEIGHBOR_MARGIN = 0.10  # ...and then only chunks within this of the best are kept
+
+
+def _gate_strict(results: list[dict]) -> list[dict]:
+    """Collection-level strict relevance gate (pure; see the calibration note above)."""
+    kw = [r for r in results if r.get("kw")]
+    vec = [r for r in results if not r.get("kw") and "dist" in r]
+    if not vec:
+        return kw
+    best = min(r["dist"] for r in vec)
+    if best > _STRICT_MAX_DIST:
+        return kw
+    return kw + [r for r in vec if r["dist"] <= best + _STRICT_NEIGHBOR_MARGIN]
 
 
 async def _gather_rag(
@@ -58,10 +78,9 @@ async def _gather_rag(
             results = await rag.search(collection_id, query, k=settings.rag_top_k, query_vector=query_vector)
         except Exception:  # noqa: BLE001 — a retrieval failure on one collection shouldn't break the chat
             continue
-        gate_strict = strict or collection_id in auto
+        if strict or collection_id in auto:
+            results = _gate_strict(results)
         for r in results:
-            if gate_strict and not r.get("kw") and r.get("dist", 1.0) > _STRICT_MAX_DIST:
-                continue  # not clearly about this message — leave the old file out
             key = (r["source"], r["content"][:120])
             if key in seen:
                 continue

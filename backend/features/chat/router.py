@@ -899,9 +899,11 @@ async def stream_reply(
             rag_collections.append(project_collection)
     if turn.collection_id:  # this chat's own uploaded attachments (durable file memory)
         rag_collections.append(turn.collection_id)
+    ontology_ids: list[str] = []
     if flags.get("ontology", True):
         try:
-            rag_collections.extend(await rag.connected_collection_ids())  # connected ontologies = standing knowledge
+            ontology_ids = await rag.connected_collection_ids()  # connected ontologies = standing knowledge
+            rag_collections.extend(ontology_ids)
         except Exception:  # noqa: BLE001 — ontology lookup is best-effort; never break the chat
             pass
     rag_context = None                 # retrieved docs — passed separately as UNTRUSTED context
@@ -917,10 +919,11 @@ async def stream_reply(
             )
         else:
             strict = bool(attachments) or retrieval._vague_query(user_content)
-            # This chat's own uploaded files ride along automatically, so hold them to the strict
-            # relevance bar on every turn — an earlier upload shouldn't leak into a later, unrelated
-            # question. Explicitly chosen collections ("use my data", the project) keep the normal bar.
-            auto_cids = {turn.collection_id} if turn.collection_id else set()
+            # This chat's own uploaded files AND connected ontologies ride along automatically, so
+            # hold them to the strict relevance bar on every turn — standing knowledge must serve
+            # on-topic questions without leaking into unrelated ones. Explicitly chosen collections
+            # ("use my data", the project) keep the normal bar.
+            auto_cids = ({turn.collection_id} if turn.collection_id else set()) | set(ontology_ids)
             block, sources = await retrieval._gather_rag(
                 model, rag_collections, user_content, strict=strict, auto_collection_ids=auto_cids
             )

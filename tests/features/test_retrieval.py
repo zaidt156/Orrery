@@ -45,6 +45,35 @@ async def test_auto_collection_keeps_clearly_relevant_and_keyword_hits(monkeypat
     assert "close" in sources and "kwhit" in sources
 
 
+def test_strict_gate_drops_a_whole_off_topic_collection():
+    """Off-topic questions bottom out around dist >= ~0.51: even though single chunks would pass a
+    0.58 per-chunk bar, the collection's BEST hit fails the on-topic bar so nothing rides along."""
+    results = [
+        {"source": "a", "content": "filler", "dist": 0.52},
+        {"source": "b", "content": "filler", "dist": 0.55},
+    ]
+    assert retrieval._gate_strict(results) == []
+
+
+def test_strict_gate_keeps_only_the_best_hits_neighborhood():
+    results = [
+        {"source": "hit", "content": "the answer", "dist": 0.29},
+        {"source": "near", "content": "adjacent detail", "dist": 0.36},
+        {"source": "far", "content": "other doc in same ontology", "dist": 0.50},  # outside best+margin
+    ]
+    kept = [r["source"] for r in retrieval._gate_strict(results)]
+    assert kept == ["hit", "near"]
+
+
+def test_strict_gate_always_passes_keyword_matches():
+    results = [
+        {"source": "kw", "content": "literal word match", "kw": True, "dist": 0.9},
+        {"source": "vec", "content": "far vector hit", "dist": 0.70},
+    ]
+    kept = [r["source"] for r in retrieval._gate_strict(results)]
+    assert kept == ["kw"]
+
+
 @pytest.mark.anyio
 async def test_query_is_embedded_once_across_many_collections(monkeypatch):
     """The query is embedded a single time per turn and the vector is reused for every collection,
