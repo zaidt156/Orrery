@@ -166,6 +166,11 @@ def _load_reasoning(raw: str | None) -> dict | None:
         return None
 
 
+def _dump_reasoning(reasoning: dict) -> str:
+    """Serialize the complete panel snapshot without cutting JSON or rewriting raw thought text."""
+    return json.dumps(reasoning, ensure_ascii=False, separators=(",", ":"))
+
+
 async def attachment_text(conv_id: str, source: str) -> str | None:
     """Extracted text of an uploaded attachment (from the chat's index) for the preview panel."""
     owner = await team.current_owner_id()
@@ -181,7 +186,7 @@ async def attachment_text(conv_id: str, source: str) -> str | None:
 async def save_reasoning(conv_id: str, message_id: str, reasoning: dict) -> bool:
     """Persist the reasoning-panel snapshot for one assistant message so it survives reloads."""
     try:
-        payload = json.dumps(reasoning)[:200_000]  # bounded; this is UI metadata, not the answer
+        payload = _dump_reasoning(reasoning)
     except (TypeError, ValueError):
         return False
     owner = await team.current_owner_id()

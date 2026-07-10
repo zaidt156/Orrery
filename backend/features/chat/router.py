@@ -845,9 +845,9 @@ async def stream_reply(
             yield event
         return
 
-    # Plan first so the UI can show the collapsed outer reasoning card immediately. Every visible
-    # line below is backend-authored: route chosen → context loaded → tool run → validated → done.
-    # Raw/condensed model chain-of-thought is never surfaced here (see reasoning_trace safety rule).
+    # Plan first so the UI can show the outer reasoning card immediately. Every trace line below is
+    # backend-authored: route chosen → context loaded → tool run → validated → done. Provider raw
+    # thinking is streamed separately by ThinkStream so it cannot be confused with this narration.
     # Vague follow-ups ("Do it", "yes go ahead") inherit the previous ask's intent, so a request for
     # an HTML dashboard doesn't lose its file route just because the confirmation was three words.
     has_image_attachment = any((a or {}).get("kind") == "image" for a in attachments)

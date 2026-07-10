@@ -1977,3 +1977,15 @@ repository''s Actions tab — anonymous API polling from this machine is rate-li
 
 Next: read the macOS launch-run results and rebuild the release with the first-run fix; then the
 backlog (4 themes, dashboard connection persistence, new GPT models).
+
+## Step 127 - Same-tag release rebuild and mobile GitHub Pages update (July 10, 2026)
+
+The release pass continues from Step 126 with two constraints: keep the public release tag stable, and make the GitHub Pages download site work cleanly on phones.
+
+- The GitHub Pages site now treats mobile as a first-class layout: centered page gutters, a visible icon-sized download CTA in the sticky header, a bottom-anchored hero mockup that no longer relies on fixed top offsets, single-column setup tabs, and tighter footer/download wrapping for 320px-wide screens.
+- The macOS download card now points at both expected DMG assets: Apple Silicon (`Orrery-0.2.0-mac-arm64.dmg`) and Intel (`Orrery-0.2.0-mac-x64.dmg`), while keeping the portable zip link.
+- The Intel build now uses GitHub's supported `macos-15-intel` runner instead of the retired `macos-13` label, and the release badge plus both portable zip links are pinned to `v0.1.0-preview` instead of the moving `latest` alias.
+- The macOS smoke test now starts automatically after a successful `Build macOS Release` run, so the rebuilt arm64 DMG is checked on a real cloud Mac before this step is considered done.
+- The release rebuild should reuse `v0.1.0-preview` exactly as requested, moving that existing tag to the current `main` commit so the Windows and macOS release workflows rebuild artifacts under the same public release URLs.
+
+Next: push this site/workflow/devlog commit, force-update `v0.1.0-preview` to the commit, then watch the Windows/macOS release workflows and macOS smoke workflow in GitHub Actions.

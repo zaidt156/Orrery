@@ -62,17 +62,6 @@ export function specFormats(content) {
   return EXPORT_FORMATS.filter((f) => f.id === want);
 }
 
-// Some local models (deepseek-r1, qwen3…) emit reasoning inline as <think>…</think> in the
-// answer text. Pull it out so it shows in the collapsible "Thought process", not as the reply.
-export function splitThink(content) {
-  if (!content || content.toLowerCase().indexOf("<think") === -1) return { think: "", body: content };
-  const closed = /^([\s\S]*?)<think>([\s\S]*?)<\/think>([\s\S]*)$/i.exec(content);
-  if (closed) return { think: closed[2].trim(), body: (closed[1] + closed[3]).trim() };
-  const open = /^([\s\S]*?)<think>([\s\S]*)$/i.exec(content); // still streaming, no close yet
-  if (open) return { think: open[2].trim(), body: open[1].trim() };
-  return { think: "", body: content };
-}
-
 // pull <svg>…</svg> images out of a reply so we render them instead of dumping the markup as code
 export function extractSvgs(content) {
   if (!content || !/<svg[\s>]/i.test(content)) return { svgs: [], cleaned: content };

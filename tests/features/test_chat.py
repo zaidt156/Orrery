@@ -149,11 +149,38 @@ async def test_generate_adds_markdown_format_instructions(monkeypatch):
     assert "Project: Acme rollout" in seen["system_prompt"]
     assert "TRUSTED CONTEXT" in seen["system_prompt"]
     assert seen["effort"] == "high"
-    # the answer streams as deltas; raw model reasoning is never streamed verbatim (only condensed
-    # reasoning_event steps are allowed, and this fake stream emits none)
+    # This fake emits answer text only, so the stream has no provider reasoning event.
     assert {"delta": "ok"} in events
     assert not any("reasoning" in e and "reasoning_event" not in e and "reasoning_summary" not in e for e in events)
     assert events[-1] == {"done": True}
+
+
+@pytest.mark.anyio
+async def test_generate_streams_provider_reasoning_verbatim(monkeypatch):
+    raw = "  first raw line\nsecond <tag> & punctuation  "
+
+    async def fake_stream_chat(*args, **kwargs):
+        yield chat.ai.ReasoningDelta(raw)
+        yield "visible answer"
+
+    async def fake_persist_assistant(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(chat.ai, "stream_chat", fake_stream_chat)
+    monkeypatch.setattr(chat.persistence, "_persist_assistant", fake_persist_assistant)
+
+    events = [
+        event
+        async for event in chat._generate(
+            uuid.UUID("00000000-0000-0000-0000-000000000001"),
+            "openai/test",
+            None,
+            [{"role": "user", "content": "think carefully"}],
+        )
+    ]
+
+    assert {"reasoning_delta": raw} in events
+    assert "".join(event.get("delta", "") for event in events) == "visible answer"
 
 
 @pytest.mark.anyio

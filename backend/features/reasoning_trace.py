@@ -250,7 +250,7 @@ class ReasoningTrace:
 
 @dataclass
 class HiddenReasoningStats:
-    """Operational stats only. Never store or display raw reasoning text."""
+    """Operational counters only; this object never stores the raw reasoning text itself."""
 
     chunks: int = 0
     chars: int = 0
@@ -283,7 +283,7 @@ class ThinkStream:
         return buffer.lower().find(tag)
 
     def feed_reasoning(self, text: str) -> list[dict]:
-        """Count provider reasoning deltas; emit only when an explicit debug caller opts in."""
+        """Count provider reasoning deltas and emit them verbatim when raw streaming is enabled."""
         if not text:
             return []
         self.stats.chunks += 1

@@ -3,8 +3,8 @@
 # integrity, then launches the app headlessly with no database configured and captures
 # everything (stdout, stderr, macOS crash reports) as a downloadable artifact.
 #
-# Runs when manually dispatched (Actions tab -> macOS build smoke test -> Run workflow),
-# and once automatically when this file itself changes.
+# Runs when manually dispatched (Actions tab -> macOS build smoke test -> Run workflow)
+# and automatically after a successful macOS release build.
 # Note: macOS runner minutes bill at 10x on private repos; a run takes ~5-10 minutes.
 
 name: macOS build smoke test
@@ -18,11 +18,13 @@ on:
       asset:
         description: DMG asset name to test
         default: Orrery-0.2.0-mac-arm64.dmg
-  push:
-    paths: [".github/workflows/macos-smoke.yml"]
+  workflow_run:
+    workflows: ["Build macOS Release"]
+    types: [completed]
 
 jobs:
   smoke:
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: macos-14
     timeout-minutes: 25
     env:

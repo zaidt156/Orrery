@@ -30,12 +30,19 @@ import {
 } from "../lib/api.js";
 import {
   EXPORT_FORMATS, requestedFileFormats, precedingUserText, isFileFailureNote,
-  extractHtml, stripDocSpec, specFormats, extractSvgs, splitThink,
+  extractHtml, stripDocSpec, specFormats, extractSvgs,
 } from "./chatHelpers.jsx";
 import {
   ReplyFiles, InlineSvg, CodeImageArtifact, GeneratedFileCard, ThinkingPulse, ReasoningPanel, TaskBrainPanel,
   EvaluatePanel, LazyAttachmentImg,
 } from "./chatWidgets.jsx";
+import {
+  appendRawThinking,
+  applyReasoningEvent,
+  createReasoningSnapshot,
+  hasReasoning,
+  splitInlineThinking,
+} from "./reasoningState.js";
 
 // Reasoning depth modes shown to the user; the stored value is the underlying effort (see backend
 // reasoning.py for the canonical mapping). Standard = "" (the provider's own default depth).
@@ -419,15 +426,11 @@ export default function Chat() {
       });
     };
     let savedMsgId = null;
-    const reasoningAcc = { thinking: "", trace: [], outer: null, summary: null, sources: null };
+    let reasoningAcc = createReasoningSnapshot();
     const handleEvent = (ev) => {
-        // capture the reasoning so it can be persisted after the turn (non-exclusive with UI updates)
-        if (ev.reasoning_delta) reasoningAcc.thinking += ev.reasoning_delta;
-        if (ev.reasoning_step) reasoningAcc.trace.push(ev.reasoning_step);
-        if (ev.reasoning_event) reasoningAcc.trace.push(ev.reasoning_event);
-        if (ev.reasoning_outer) reasoningAcc.outer = ev.reasoning_outer;
-        if (ev.reasoning_summary) reasoningAcc.summary = ev.reasoning_summary;
-        if (ev.sources) reasoningAcc.sources = ev.sources;
+        // Keep the persisted snapshot on the same exact path as the live panel. In particular,
+        // reasoning_delta text is appended verbatim and compatibility events are stored once.
+        reasoningAcc = applyReasoningEvent(reasoningAcc, ev);
         if (ev.message_id) savedMsgId = ev.message_id;
 
         if (ev.project) {
@@ -490,8 +493,11 @@ export default function Chat() {
     } finally {
       setSending(false);
       abortRef.current = null;
-      if (savedMsgId && (reasoningAcc.thinking || reasoningAcc.trace.length || reasoningAcc.outer || reasoningAcc.sources)) {
-        saveReasoning(cid, savedMsgId, reasoningAcc).catch(() => {});  // persist so it survives reloads
+      if (savedMsgId && hasReasoning(reasoningAcc)) {
+        try {
+          // Wait for the snapshot before submitPrompt/syncThread reloads the saved conversation.
+          await saveReasoning(cid, savedMsgId, reasoningAcc);
+        } catch { /* keep the complete local panel if persistence is temporarily unavailable */ }
       }
     }
   }
@@ -914,14 +920,15 @@ export default function Chat() {
                   {tokenLabel(m) && <span className="token-chip" title="Exact for API models; estimated otherwise">{tokenLabel(m)}</span>}
                 </div>
                 {(() => {
-                  const { body } = splitThink(stripDocSpec(m.content)); // strip raw <think>, never shown
+                  const { thinking: inlineThinking, body } = splitInlineThinking(stripDocSpec(m.content));
+                  const rawThinking = m.thinking || inlineThinking;
                   const { svgs, cleaned } = m.streaming ? { svgs: [], cleaned: body } : extractSvgs(body);
                   const svgTitle = convos.find((c) => c.id === activeId)?.title;
                   return (
                     <>
                       {m.streaming && !body && <ThinkingPulse />}
-                      {(m.trace?.length || m.summary || m.outer || m.sources?.length || m.thinking) && (
-                        <ReasoningPanel outer={m.outer} trace={m.trace} thinking={m.thinking} summary={m.summary} sources={m.sources} streaming={m.streaming} />
+                      {(m.trace?.length || m.summary || m.outer || m.sources?.length || rawThinking) && (
+                        <ReasoningPanel outer={m.outer} trace={m.trace} thinking={rawThinking} summary={m.summary} sources={m.sources} streaming={m.streaming} />
                       )}
                       <div className="ai-text">
                         {cleaned ? <Markdown>{cleaned}</Markdown> : null}
@@ -1222,16 +1229,9 @@ function appendThinking(setMessages, text) {
   setMessages((p) => {
     const a = ensureStreamingAssistant(p);
     const last = a[a.length - 1];
-    // Nest raw thinking under the step that's active RIGHT NOW, so the hierarchy shows what the
-    // model was actually reasoning at each level; before any step exists it goes to the top block.
-    if (last.trace?.length) {
-      const trace = [...last.trace];
-      const idx = trace.length - 1;
-      trace[idx] = { ...trace[idx], think: (trace[idx].think || "") + text };
-      a[a.length - 1] = { ...last, trace };
-    } else {
-      a[a.length - 1] = { ...last, thinking: (last.thinking || "") + text };
-    }
+    // Keep one provider-authored stream separate from Orrery's backend-authored trace steps.
+    // This is the same shape that is persisted, so completion cannot move or rewrite the text.
+    a[a.length - 1] = appendRawThinking(last, text);
     return a;
   });
 }

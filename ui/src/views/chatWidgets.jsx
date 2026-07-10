@@ -373,9 +373,11 @@ function SourceLinks({ urls }) {
 //   • collapsed = a one-line activity headline;
 //   • expanded = clean public progress + a trace line of what Orrery actually did
 //     (searched the web, ran Python, produced files) and the sources it used.
-// Auto-opens while streaming; collapses — but stays — once the answer is done.
+// Auto-opens while streaming and stays open when that answer finishes; historical panels load collapsed.
 export function ReasoningPanel({ outer, trace, thinking, summary, sources, streaming }) {
-  const [open, setOpen] = useState(false);
+  // A panel that appeared during this response stays open when streaming ends. Historical panels
+  // still load collapsed, and the user can collapse either kind explicitly.
+  const [open, setOpen] = useState(Boolean(streaming));
   const steps = trace || [];
   if (!steps.length && !summary && !outer && !sources?.length && !thinking) return null;
   const show = open || streaming;
@@ -384,7 +386,7 @@ export function ReasoningPanel({ outer, trace, thinking, summary, sources, strea
     : (outer?.title || summary?.title || "Reasoning");
   return (
     <div className={`think-block${streaming ? " live" : ""}`}>
-      <button className="think-head" onClick={() => setOpen((v) => !v)}>
+      <button type="button" className="think-head" aria-expanded={show} onClick={() => setOpen((v) => !v)}>
         <span className="think-headings">
           <span className="think-title">{title}</span>
           {outer?.summary ? <span className="think-sub">{outer.summary}</span> : null}
@@ -397,7 +399,18 @@ export function ReasoningPanel({ outer, trace, thinking, summary, sources, strea
             <div className="trace-step trace-think">
               <span className="trace-icon" aria-hidden="true"><Brain /></span>
               <span className="trace-text">
+                <span className="trace-stage">Raw model thinking</span>
                 <span className="trace-think-body">{thinking}{streaming ? <span className="caret" /> : null}</span>
+              </span>
+            </div>
+          ) : !streaming ? (
+            <div className="trace-step trace-info">
+              <span className="trace-icon" aria-hidden="true"><Brain /></span>
+              <span className="trace-text">
+                <span className="trace-stage">Raw model thinking unavailable</span>
+                <span className="trace-detail">
+                  This model connection did not expose a raw-thinking stream. The activity below is Orrery&apos;s execution trace, not rewritten model thoughts.
+                </span>
               </span>
             </div>
           ) : null}

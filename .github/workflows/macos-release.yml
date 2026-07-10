@@ -53,14 +53,14 @@ jobs:
 
   macos-installer:
     name: Build macOS installer (DMG) · ${{ matrix.arch }}
-    # Build on BOTH architectures so Intel Macs work too: macos-13 is an Intel (x64) runner and
-    # macos-14/latest is Apple Silicon (arm64). Each runner produces its own-arch PyInstaller backend
+    # Build on BOTH architectures so Intel Macs work too: macos-15-intel is an Intel (x64) runner
+    # and macos-14/latest is Apple Silicon (arm64). Each runner produces its own-arch PyInstaller backend
     # + DMG; without this the DMG was arm64-only and simply would not launch on an Intel Mac.
     strategy:
       fail-fast: false
       matrix:
         include:
-          - runner: macos-13
+          - runner: macos-15-intel
             arch: x64
           - runner: macos-14
             arch: arm64
