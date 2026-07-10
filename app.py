@@ -79,9 +79,26 @@ _js_api = JsApi()
 
 
 def ensure_connection() -> str:
-    """Resolve the DB connection string, prompting once on first run."""
+    """Resolve the DB connection string on first run.
+
+    With a console (dev run / setup script): ask interactively, as before. Without one
+    (the installed desktop build pipes stdin to nowhere — input() would crash the backend):
+    auto-provision the bundled Docker PostgreSQL when Docker is available, else exit with a
+    setup marker the desktop shell turns into an actionable dialog."""
+    from backend.core import dockerboot
+
     url = database.resolve_database_url()
+    has_console = bool(sys.stdin) and sys.stdin.isatty()
+    if dockerboot.should_autoprovision(url, stdin_isatty=has_console):
+        url = dockerboot.provision()
+        if url:
+            database.save_database_url(url)
     if not url:
+        if not has_console:
+            raise SystemExit(
+                "No database is configured and no console is available to ask on. "
+                "Install/start Docker Desktop for the bundled database, or set a connection string in Settings."
+            )
         print("\nOrrery first run — no database configured.")
         print("Enter your PostgreSQL connection string, for example:")
         print("  postgresql+psycopg://orrery:orrery_dev_password@127.0.0.1:5432/orrery")

@@ -135,8 +135,13 @@ echo.
 echo   You can still continue: choosing "your own PostgreSQL database" ^(option 2^) does not need Docker.
 echo.
 if "%DOCKER_OK%"=="0" (
-  set /p "OPEN_DOCKER=Open the Docker Desktop download page now? [y/N]: "
-  if /i "!OPEN_DOCKER!"=="y" start "" "%DOCKER_URL%"
+  set /p "INSTALL_DOCKER=Install Docker Desktop automatically now? [y/N]: "
+  if /i "!INSTALL_DOCKER!"=="y" (
+    call :install_docker && call :start_docker_desktop
+  )
+) else if "%DOCKER_RUNNING%"=="0" (
+  set /p "START_DOCKER=Start Docker Desktop now? [Y/n]: "
+  if /i not "!START_DOCKER!"=="n" call :start_docker_desktop
 )
 echo.
 pause
@@ -166,22 +171,66 @@ where docker >nul 2>nul
 if errorlevel 1 (
   echo.
   echo Docker was not found in PATH.
-  echo Install Docker Desktop, or go back and choose option 2 to use your own PostgreSQL server.
-  echo Download: %DOCKER_URL%
-  set /p "OPEN_DOCKER=Open the Docker download page now? [y/N]: "
-  if /i "!OPEN_DOCKER!"=="y" start "" "%DOCKER_URL%"
-  pause
-  exit /b 1
+  echo Orrery can install Docker Desktop for you ^(or choose option 2 to use your own PostgreSQL^).
+  set /p "INSTALL_DOCKER=Install Docker Desktop automatically now? [Y/n]: "
+  if /i "!INSTALL_DOCKER!"=="n" (
+    echo Download it yourself at: %DOCKER_URL%
+    pause
+    exit /b 1
+  )
+  call :install_docker
+  if errorlevel 1 (
+    echo.
+    echo Automatic install did not finish. Download Docker Desktop here: %DOCKER_URL%
+    set /p "OPEN_DOCKER=Open the Docker download page now? [y/N]: "
+    if /i "!OPEN_DOCKER!"=="y" start "" "%DOCKER_URL%"
+    pause
+    exit /b 1
+  )
 )
 docker info >nul 2>nul
 if errorlevel 1 (
   echo.
-  echo Docker Desktop is installed but not running.
-  echo Start Docker Desktop and run setup-orrery.bat again.
-  pause
-  exit /b 1
+  echo Docker Desktop is not running - starting it now...
+  call :start_docker_desktop
+  if errorlevel 1 (
+    echo Docker Desktop did not become ready. Open it once from the Start Menu
+    echo ^(first launch may ask you to accept its terms^), then run setup-orrery.bat again.
+    pause
+    exit /b 1
+  )
 )
 exit /b 0
+
+:install_docker
+rem Prefer winget (ships with Windows 10/11); fall back to downloading the official installer.
+where winget >nul 2>nul
+if not errorlevel 1 (
+  echo.
+  echo Installing Docker Desktop with winget - a Windows admin prompt may appear...
+  winget install -e --id Docker.DockerDesktop --accept-source-agreements --accept-package-agreements
+  if not errorlevel 1 goto docker_installed
+)
+echo.
+echo Downloading the Docker Desktop installer ^(a few hundred MB^)...
+curl.exe -L -o "%TEMP%\DockerDesktopInstaller.exe" "https://desktop.docker.com/win/main/amd64/Docker%%20Desktop%%20Installer.exe"
+if errorlevel 1 exit /b 1
+echo Running the Docker Desktop installer...
+"%TEMP%\DockerDesktopInstaller.exe" install --quiet --accept-license
+if errorlevel 1 exit /b 1
+:docker_installed
+rem The fresh install isn't in this session's PATH yet - add the CLI location directly.
+if exist "%ProgramFiles%\Docker\Docker\resources\bin" set "PATH=%ProgramFiles%\Docker\Docker\resources\bin;%PATH%"
+exit /b 0
+
+:start_docker_desktop
+if exist "%ProgramFiles%\Docker\Docker\Docker Desktop.exe" start "" "%ProgramFiles%\Docker\Docker\Docker Desktop.exe"
+echo Waiting for Docker to be ready ^(first start can take a few minutes^)...
+for /l %%i in (1,1,100) do (
+  docker info >nul 2>nul && exit /b 0
+  timeout /t 3 /nobreak >nul
+)
+exit /b 1
 
 :start_postgres
 echo.

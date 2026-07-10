@@ -61,30 +61,81 @@ check_prerequisites() {
   echo "  You can still continue: choosing \"your own PostgreSQL database\" (option 2) does not need Docker."
   echo
   if ! command -v docker >/dev/null 2>&1; then
-    read -r -p "Open the Docker Desktop download page now? [y/N]: " open_docker
-    case "$open_docker" in y|Y) open "$DOCKER_URL" ;; esac
+    read -r -p "Install Docker Desktop automatically now? [y/N]: " install_now
+    case "$install_now" in y|Y) install_docker && start_docker_desktop ;; esac
+  elif ! docker info >/dev/null 2>&1; then
+    read -r -p "Start Docker Desktop now? [Y/n]: " start_now
+    case "$start_now" in n|N) ;; *) start_docker_desktop ;; esac
   fi
   echo
   read -r -p "Press return to continue..."
+}
+
+install_docker() {
+  # Prefer Homebrew when it's there; otherwise download the official DMG for this chip.
+  if command -v brew >/dev/null 2>&1; then
+    echo
+    echo "Installing Docker Desktop with Homebrew..."
+    brew install --cask docker-desktop 2>/dev/null || brew install --cask docker || return 1
+  else
+    local arch dmg="/tmp/OrreryDocker.dmg"
+    case "$(uname -m)" in arm64) arch="arm64" ;; *) arch="amd64" ;; esac
+    echo
+    echo "Downloading Docker Desktop (a few hundred MB)..."
+    curl -L -o "$dmg" "https://desktop.docker.com/mac/main/${arch}/Docker.dmg" || return 1
+    echo "Installing Docker Desktop into /Applications (you may be asked for your password)..."
+    hdiutil attach "$dmg" -nobrowse -quiet || return 1
+    cp -R "/Volumes/Docker/Docker.app" /Applications/ 2>/dev/null || sudo cp -R "/Volumes/Docker/Docker.app" /Applications/ || { hdiutil detach "/Volumes/Docker" -quiet; return 1; }
+    hdiutil detach "/Volumes/Docker" -quiet || true
+    rm -f "$dmg"
+  fi
+  # The fresh install isn't in this shell's PATH yet - add the bundled CLI directly.
+  export PATH="/Applications/Docker.app/Contents/Resources/bin:$PATH"
+}
+
+start_docker_desktop() {
+  open -a Docker 2>/dev/null || open -a "Docker Desktop" 2>/dev/null || true
+  echo "Waiting for Docker to be ready (first start can take a few minutes)..."
+  for _ in $(seq 1 100); do
+    if docker info >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 3
+  done
+  return 1
 }
 
 require_docker() {
   if ! command -v docker >/dev/null 2>&1; then
     echo
     echo "Docker was not found."
-    echo "Install Docker Desktop, or go back and choose option 2 to use your own PostgreSQL server."
-    echo "Download: $DOCKER_URL"
-    read -r -p "Open the Docker download page now? [y/N]: " open_docker
-    case "$open_docker" in y|Y) open "$DOCKER_URL" ;; esac
-    read -r -p "Press return to continue..."
-    return 1
+    echo "Orrery can install Docker Desktop for you (or go back and choose option 2 for your own PostgreSQL)."
+    read -r -p "Install Docker Desktop automatically now? [Y/n]: " install_answer
+    case "$install_answer" in
+      n|N)
+        echo "Download it yourself at: $DOCKER_URL"
+        read -r -p "Press return to continue..."
+        return 1
+        ;;
+    esac
+    if ! install_docker; then
+      echo
+      echo "Automatic install did not finish. Download Docker Desktop here: $DOCKER_URL"
+      read -r -p "Open the Docker download page now? [y/N]: " open_docker
+      case "$open_docker" in y|Y) open "$DOCKER_URL" ;; esac
+      read -r -p "Press return to continue..."
+      return 1
+    fi
   fi
   if ! docker info >/dev/null 2>&1; then
     echo
-    echo "Docker Desktop is installed but not running."
-    echo "Start Docker Desktop and run setup-orrery.command again."
-    read -r -p "Press return to continue..."
-    return 1
+    echo "Docker Desktop is not running - starting it now..."
+    if ! start_docker_desktop; then
+      echo "Docker Desktop did not become ready. Open it once from Applications"
+      echo "(first launch may ask you to accept its terms), then run setup-orrery.command again."
+      read -r -p "Press return to continue..."
+      return 1
+    fi
   fi
 }
 

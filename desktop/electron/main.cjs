@@ -66,6 +66,11 @@ function startBackend() {
 
   backendProcess.stdout.pipe(logStream);
   backendProcess.stderr.pipe(logStream);
+  backendProcess.on("error", (error) => {
+    backendProcess = null;
+    logStream.write(`\n[orrery-electron] backend failed to launch: ${error.message}\n`);
+    logStream.end();
+  });
   backendProcess.on("exit", (code, signal) => {
     backendProcess = null;
     logStream.write(`\n[orrery-electron] backend exited code=${code} signal=${signal}\n`);
@@ -73,10 +78,17 @@ function startBackend() {
   });
 }
 
-async function waitForBackend(timeoutMs = 60000) {
+async function waitForBackend(timeoutMs = 600000) {
+  // Generous by design: a truly fresh install may be pulling the bundled database image.
+  // Real failures exit the backend process, which stops the health probe well before this.
   const deadline = Date.now() + timeoutMs;
   const url = `http://${API_HOST}:${API_PORT}/api/health`;
   while (Date.now() < deadline) {
+    if (!backendProcess) {
+      // give the log pipes a beat to flush so the setup markers are readable
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      throw new Error("The Orrery backend exited during startup (see logs).");
+    }
     try {
       const response = await fetch(url, { headers: { "X-Orrery-Token": SESSION_TOKEN } });
       if (response.ok) return;
@@ -96,6 +108,70 @@ function stopBackend() {
   } else {
     backendProcess.kill("SIGTERM");
   }
+}
+
+const DOCKER_URL = "https://www.docker.com/products/docker-desktop/";
+
+function backendLogTail() {
+  try {
+    const p = path.join(logDir(), "electron-backend.log");
+    const size = fs.statSync(p).size;
+    const len = Math.min(size, 8192);
+    const buf = Buffer.alloc(len);
+    const fd = fs.openSync(p, "r");
+    fs.readSync(fd, buf, 0, len, size - len);
+    fs.closeSync(fd);
+    return buf.toString("utf8");
+  } catch {
+    return "";
+  }
+}
+
+function openDockerDesktop() {
+  if (process.platform === "win32") {
+    const exe = path.join(process.env.ProgramFiles || "C:\\Program Files", "Docker", "Docker", "Docker Desktop.exe");
+    if (fs.existsSync(exe)) {
+      spawn(exe, [], { detached: true, stdio: "ignore" }).unref();
+      return;
+    }
+  } else if (process.platform === "darwin") {
+    spawn("open", ["-a", "Docker"], { stdio: "ignore" }).unref();
+    return;
+  }
+  shell.openExternal(DOCKER_URL);
+}
+
+// First-run setup help: the backend prints ORRERY_SETUP:* markers to its log when it can't
+// start a database on its own; turn those into a dialog with the actual next step.
+async function showSetupDialog() {
+  const tail = backendLogTail();
+  if (tail.includes("ORRERY_SETUP:DOCKER_MISSING")) {
+    const r = await dialog.showMessageBox({
+      type: "info",
+      title: "Orrery needs a database",
+      message: "Install Docker Desktop and Orrery sets up its database automatically",
+      detail: "Orrery could not find Docker Desktop. Install it, then reopen Orrery - the bundled PostgreSQL database is created for you. Already run your own PostgreSQL? Start Orrery once from a terminal to enter its connection string.",
+      buttons: ["Get Docker Desktop", "Close"],
+      defaultId: 0,
+      cancelId: 1,
+    });
+    if (r.response === 0) shell.openExternal(DOCKER_URL);
+    return true;
+  }
+  if (tail.includes("ORRERY_SETUP:DOCKER_STOPPED") || tail.includes("ORRERY_SETUP:PROVISION_FAILED")) {
+    const r = await dialog.showMessageBox({
+      type: "info",
+      title: "Start Docker Desktop",
+      message: "Docker Desktop is installed but not running",
+      detail: "Start Docker Desktop, then reopen Orrery - the bundled database starts automatically.",
+      buttons: ["Open Docker Desktop", "Close"],
+      defaultId: 0,
+      cancelId: 1,
+    });
+    if (r.response === 0) openDockerDesktop();
+    return true;
+  }
+  return false;
 }
 
 function createWindow() {
@@ -168,11 +244,16 @@ ipcMain.handle("orrery:check-native-updates", async () => {
   }
 });
 
+async function reportStartupFailure(error) {
+  const handled = await showSetupDialog();
+  if (!handled) dialog.showErrorBox("Orrery startup failed", error.message || String(error));
+}
+
 app.whenReady().then(async () => {
   try {
     await startAndCreateWindow();
   } catch (error) {
-    dialog.showErrorBox("Orrery startup failed", error.message || String(error));
+    await reportStartupFailure(error);
     app.quit();
   }
 });
@@ -182,7 +263,7 @@ app.on("activate", async () => {
     try {
       await startAndCreateWindow();
     } catch (error) {
-      dialog.showErrorBox("Orrery startup failed", error.message || String(error));
+      await reportStartupFailure(error);
     }
   }
 });
