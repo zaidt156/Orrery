@@ -1989,3 +1989,26 @@ The release pass continues from Step 126 with two constraints: keep the public r
 - The release rebuild should reuse `v0.1.0-preview` exactly as requested, moving that existing tag to the current `main` commit so the Windows and macOS release workflows rebuild artifacts under the same public release URLs.
 
 Next: push this site/workflow/devlog commit, force-update `v0.1.0-preview` to the commit, then watch the Windows/macOS release workflows and macOS smoke workflow in GitHub Actions.
+
+
+## Step 128 — The release shipped and the new macOS build survives first run (July 10, 2026)
+
+Executed the plan from Step 127 (continuing the Codex session''s work, which was reviewed, tested —
+299 backend + 3 UI tests — and committed):
+
+- **Raw thinking now truly streams live.** The model''s raw thoughts appear in their own "Raw model
+  thinking" block inside the activity panel while the model is still thinking (the panel opens
+  itself during streaming), are saved without corruption, and survive reloads. Connections that
+  don''t expose a raw stream say so honestly instead of showing Orrery''s narration as if it were
+  the model''s thoughts.
+- **The v0.1.0-preview release was rebuilt in place.** The tag moved to the current code, the
+  Windows and both macOS installers rebuilt under the same public download links — now carrying
+  the first-run Docker self-provisioning fix, message versioning, the ontology gate, and the
+  context-mixing fix.
+- **Proof on a real Mac:** the chained cloud smoke test pulled the freshly rebuilt DMG, launched it
+  on a machine with no Docker and no database — the exact situation that killed the old build
+  instantly — and the app was still alive and healthy 90 seconds later with zero crash reports.
+  Windows and macOS release builds, the smoke test, and the site deployment are all green.
+
+Next: the remaining backlog — 4 selectable themes, dashboard connection persistence, new GPT
+models — and raising the Claude plan spend limit so model calls work again.
