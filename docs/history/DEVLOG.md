@@ -2012,3 +2012,25 @@ Executed the plan from Step 127 (continuing the Codex session''s work, which was
 
 Next: the remaining backlog — 4 selectable themes, dashboard connection persistence, new GPT
 models — and raising the Claude plan spend limit so model calls work again.
+
+
+## Step 129 — Four selectable themes (July 10, 2026)
+
+Orrery now has an Appearance page in Settings with four looks, applied instantly and remembered on
+this computer:
+
+- **Simple** — the classic deep-indigo star map (unchanged, still the default).
+- **Futuristic** — near-black night sky with electric teal and violet accents.
+- **Winter** — a bright, frosty light theme with gently falling snow (the snow is pure styling, no
+  scripts, and switches off automatically for people who prefer reduced motion).
+- **Summer** — warm paper tones with sun-orange accents.
+
+Because the entire interface was already driven by a small set of color variables, each theme is
+just a different tuning of those variables — every tab restyles at once, nothing was rebuilt per
+screen. Status colors (green = ok, red = error) are deliberately identical in all four so meaning
+never changes with the look. The choice applies before the first paint on startup, so there is no
+flash of the wrong theme.
+
+Next: dashboard connection persistence (retest on the rebuilt release first — the database now
+starts itself, which may have been the real cause), then the new GPT model IDs (waiting on which
+ones), the speed levers, and the site redesign around the concept art.
