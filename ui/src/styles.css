@@ -18,6 +18,16 @@
   --chrome:#111831;            /* sidebar + top bar surface */
   --blue:#3F8CFF; --blue-dim:#3F8CFF33;
   --radius-ui:10px;            /* corner personality — themes reshape it */
+  /* Elevation layers (concept: sky → panel → card → chip → overlay). L0 is the body sky
+     (--page/--stars, .app transparent). These are ALIASES onto the approved ramp — themes
+     re-tune only shadows/borders, never the palette. */
+  --panel:var(--bg1);  --panel-line:var(--line-soft);   /* L1 floating page panel + side panes */
+  --card:var(--bg2);   --card-line:var(--line);          /* L2 cards on the panel */
+  --chip:var(--bg3);   --chip-line:var(--line);          /* L3 chips, icon-chips, controls */
+  --shadow-1:none;                                       /* panel lift (simple = flat) */
+  --shadow-2:none;                                       /* card lift */
+  --shadow-3:0 16px 40px #00000088;                      /* L4 overlays/popovers */
+  --hero-grad:linear-gradient(120deg, var(--bg1), var(--bg2));
   --font-display:"Bricolage Grotesque Variable","Bricolage Grotesque",sans-serif;
   --font-ui:"IBM Plex Sans",system-ui,sans-serif;
   --font-mono:"IBM Plex Mono",monospace;
@@ -59,6 +69,11 @@
     radial-gradient(1px 1px at 8% 88%, #ffffff33 50%, transparent 51%);
 }
 :root[data-theme="futuristic"] body{background-size:56px 56px, 56px 56px, auto, auto, auto, auto, auto, auto}
+:root[data-theme="futuristic"]{
+  --shadow-1:0 14px 44px #04081880;
+  --shadow-2:0 4px 18px #05102c66;
+  --shadow-3:0 24px 60px #020614cc, 0 0 22px #3F8CFF14;
+}
 :root[data-theme="futuristic"] .tab.active{box-shadow:0 0 18px #3F8CFF22, inset 0 0 12px #3F8CFF14}
 :root[data-theme="futuristic"] .tab.active svg{filter:drop-shadow(0 0 6px #F5A83C88)}
 :root[data-theme="futuristic"] .provider-pill{border-color:#3F8CFF55; box-shadow:0 0 14px #3F8CFF1E}
@@ -84,6 +99,11 @@
     radial-gradient(1.5px 1.5px at 32% 78%, #ffffffEE 50%, transparent 51%),
     linear-gradient(180deg, #E4EDF9, #D5E2F2);
   color-scheme:light;
+}
+:root[data-theme="winter"]{
+  --shadow-1:0 14px 34px #9EB4D62b;
+  --shadow-2:0 6px 18px #9EB4D622;
+  --shadow-3:0 20px 48px #7C93BC44;
 }
 :root[data-theme="winter"] .rail,
 :root[data-theme="winter"] .topbar{backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px)}
@@ -122,10 +142,13 @@
     linear-gradient(180deg, #F8EDD6, #F0E1C2);
   color-scheme:light;
 }
+:root[data-theme="summer"]{
+  --shadow-1:0 16px 36px #8a601816;
+  --shadow-2:0 6px 18px #8a601814;
+  --shadow-3:0 20px 44px #8a601833;
+}
 :root[data-theme="summer"] .rail,
 :root[data-theme="summer"] .topbar{box-shadow:0 8px 24px #8a601812}
-:root[data-theme="summer"] .provider-block,
-:root[data-theme="summer"] .provider-pill{box-shadow:0 6px 18px #8a601814}
 /* option lists render via the engine's own dark mode (color-scheme above); forcing a blue
    background on options made every row look pre-highlighted */
 .update-banner{display:flex;align-items:center;gap:10px;justify-content:center;background:linear-gradient(90deg,#1d2a52,#233462);border-bottom:1px solid var(--line);padding:7px 12px;font-size:12.5px}
@@ -200,18 +223,29 @@ body{
 .rail-meta{padding:0 8px 2px; color:var(--faint); font-size:10px}
 
 /* ── shared view bits ──────────────────────────── */
-.view{display:flex; flex:1; min-width:0; overflow:hidden}
+/* L1: every view floats as a rounded panel on the sky — the concept's core composition. */
+.view{
+  display:flex; flex:1; min-width:0; overflow:hidden;
+  background:var(--panel); border:1px solid var(--panel-line);
+  border-radius:calc(var(--radius-ui) + 4px); margin:10px 14px 14px 6px;
+  box-shadow:var(--shadow-1);
+}
+/* Surface utilities for NEW markup (heroes, stat cards, icon chips). Existing classes are
+   re-pointed at the same tokens below/in place. */
+.surface-1{background:var(--panel); border:1px solid var(--panel-line); border-radius:calc(var(--radius-ui) + 4px); box-shadow:var(--shadow-1)}
+.surface-2{background:var(--card); border:1px solid var(--card-line); border-radius:var(--radius-ui); box-shadow:var(--shadow-2)}
+.surface-3{background:var(--chip); border:1px solid var(--chip-line); border-radius:calc(var(--radius-ui) - 3px)}
 .view-title{font-family:var(--font-display); font-weight:600; font-size:19px; letter-spacing:-.01em}
 .pill{
   display:inline-flex; align-items:center; gap:6px; padding:4px 10px; border-radius:99px;
-  font-size:11.5px; border:1px solid var(--line); background:var(--bg2); color:var(--muted);
+  font-size:11.5px; border:1px solid var(--chip-line); background:var(--chip); color:var(--muted);
 }
 .pill .sdot{width:6px;height:6px;border-radius:50%}
 .badge-on{color:var(--green)} .badge-off{color:var(--faint)}
 .btn{
   font-family:var(--font-ui); font-size:12.5px; font-weight:600; cursor:pointer;
-  border-radius:8px; padding:7px 13px; border:1px solid var(--line);
-  background:var(--bg2); color:var(--text);
+  border-radius:calc(var(--radius-ui) - 3px); padding:7px 13px; border:1px solid var(--chip-line);
+  background:var(--chip); color:var(--text);
   display:inline-flex; align-items:center; justify-content:center; gap:6px; white-space:nowrap;
 }
 .btn svg{width:14px; height:14px; flex:none}
@@ -338,8 +372,8 @@ body{
 .pickwrap{position:relative}
 .model-menu{
   position:absolute; top:calc(100% + 6px); right:0; z-index:20; min-width:200px;
-  background:var(--bg1); border:1px solid var(--line); border-radius:10px; padding:5px;
-  box-shadow:0 16px 40px #00000088;
+  background:var(--card); border:1px solid var(--card-line); border-radius:var(--radius-ui); padding:5px;
+  box-shadow:var(--shadow-3);
 }
 .model-opt{
   font-family:var(--font-mono); font-size:11.5px; color:var(--muted);
@@ -719,7 +753,7 @@ button.attach-chip:hover{border-color:var(--amber); color:var(--text)}
 .section-label:first-of-type{margin-top:16px}
 
 /* Database connection panel */
-.db-current{display:flex; align-items:center; gap:10px; background:var(--bg1); border:1px solid var(--line); border-radius:10px; padding:12px 14px; margin-bottom:16px}
+.db-current{display:flex; align-items:center; gap:10px; background:var(--card); border:1px solid var(--card-line); border-radius:var(--radius-ui); box-shadow:var(--shadow-2); padding:12px 14px; margin-bottom:16px}
 .db-dot{width:9px; height:9px; border-radius:50%; flex:none; background:var(--red); box-shadow:0 0 8px var(--red)}
 .db-dot[data-ok="true"]{background:var(--green); box-shadow:0 0 8px var(--green)}
 .db-url{font-size:12.5px; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
@@ -732,7 +766,7 @@ button.attach-chip:hover{border-color:var(--amber); color:var(--text)}
 .db-msg.ok{color:var(--green); background:rgba(91,196,137,.12); border:1px solid #5BC48955}
 .db-msg.err{color:var(--red); background:rgba(227,108,108,.12); border:1px solid #E36C6C55; word-break:break-word}
 .card-row{display:grid; grid-template-columns:repeat(3,1fr); gap:12px}
-.card{background:var(--bg1); border:1px solid var(--line); border-radius:11px; padding:14px 15px}
+.card{background:var(--card); border:1px solid var(--card-line); border-radius:var(--radius-ui); box-shadow:var(--shadow-2); padding:14px 15px}
 .card.add{
   border-style:dashed; color:var(--faint); display:flex; align-items:center; justify-content:center;
   font-size:12.5px; cursor:pointer; min-height:96px;
@@ -746,7 +780,7 @@ button.attach-chip:hover{border-color:var(--amber); color:var(--text)}
   background:var(--ice-dim); color:var(--ice); border:1px solid #9DB9F033;
 }
 .tag.warm{background:var(--amber-dim); color:var(--amber); border-color:#F2B14E33}
-.table-shell{background:var(--bg1); border:1px solid var(--line); border-radius:11px; overflow:hidden}
+.table-shell{background:var(--card); border:1px solid var(--card-line); border-radius:var(--radius-ui); box-shadow:var(--shadow-2); overflow:hidden}
 .table-bar{display:flex; align-items:center; gap:10px; padding:11px 14px; border-bottom:1px solid var(--line-soft)}
 .table-bar .pill{cursor:pointer}
 .dtable{width:100%; border-collapse:collapse; font-size:12px}
@@ -794,8 +828,8 @@ button.attach-chip:hover{border-color:var(--amber); color:var(--text)}
 }
 @keyframes flow{to{stroke-dashoffset:-660}}
 .node{
-  position:absolute; width:170px; background:var(--bg1); border:1px solid var(--line);
-  border-radius:10px; padding:9px 12px 10px; cursor:pointer; user-select:none;
+  position:absolute; width:170px; background:var(--card); border:1px solid var(--card-line);
+  border-radius:var(--radius-ui); box-shadow:var(--shadow-2); padding:9px 12px 10px; cursor:pointer; user-select:none;
 }
 .node:hover{border-color:var(--ice)}
 .node.selected{border-color:var(--amber); box-shadow:0 0 0 1px var(--amber), 0 0 22px #F2B14E2b}
@@ -860,7 +894,7 @@ button.attach-chip:hover{border-color:var(--amber); color:var(--text)}
 .dash-wrap{flex:1; overflow-y:auto; padding:16px 22px}
 .dash-grid{display:grid; grid-template-columns:repeat(4,1fr); gap:12px}
 .span2{grid-column:span 2}
-.widget{background:var(--bg1); border:1px solid var(--line); border-radius:11px; padding:13px 15px 12px; display:flex; flex-direction:column}
+.widget{background:var(--card); border:1px solid var(--card-line); border-radius:var(--radius-ui); box-shadow:var(--shadow-2); padding:13px 15px 12px; display:flex; flex-direction:column}
 .widget .w-label{
   font-family:var(--font-mono); font-size:9.5px; letter-spacing:.1em; color:var(--faint);
   text-transform:uppercase; margin-bottom:9px; display:flex; justify-content:space-between; gap:8px; align-items:baseline;
@@ -894,7 +928,7 @@ button.attach-chip:hover{border-color:var(--amber); color:var(--text)}
 .scope-line b{color:#7FD4C0;font-weight:500}
 .scope-line .no{color:var(--red)}
 .works-with{display:flex;flex-wrap:wrap;gap:7px;align-items:center}
-.feed{background:var(--bg1);border:1px solid var(--line);border-radius:11px;overflow:hidden}
+.feed{background:var(--card);border:1px solid var(--card-line);border-radius:var(--radius-ui);box-shadow:var(--shadow-2);overflow:hidden}
 .feed-head{padding:10px 15px;font-family:var(--font-mono);font-size:10px;letter-spacing:.1em;color:var(--faint);text-transform:uppercase;border-bottom:1px solid var(--line-soft);display:flex;gap:9px;align-items:center}
 .fitem{display:flex;gap:12px;padding:10px 15px;border-top:1px solid var(--line-soft);font-size:12px}
 .fitem .f-it{font-family:var(--font-mono);font-size:9.5px;color:var(--faint);min-width:62px;padding-top:2px}
@@ -910,7 +944,7 @@ button.attach-chip:hover{border-color:var(--amber); color:var(--text)}
 .media-toolbar{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line-soft)}
 .media-toolbar .view-title{font-size:15px}
 .media-toolbar .grow{flex:1}
-.seg{display:inline-flex;background:var(--bg2);border:1px solid var(--line);border-radius:8px;padding:2px}
+.seg{display:inline-flex;background:var(--chip);border:1px solid var(--chip-line);border-radius:calc(var(--radius-ui) - 3px);padding:2px}
 .seg button{font-family:var(--font-ui);font-size:11.5px;font-weight:600;color:var(--muted);background:transparent;border:none;border-radius:6px;padding:5px 12px;cursor:pointer}
 .seg button.on{background:var(--bg0);color:var(--amber)}
 .media-body{flex:1;display:grid;grid-template-columns:268px 1fr;min-height:0;overflow:hidden}
@@ -937,7 +971,7 @@ button.attach-chip:hover{border-color:var(--amber); color:var(--text)}
 .media-foot{padding:10px 18px;border-top:1px solid var(--line-soft);font-family:var(--font-mono);font-size:9.5px;color:var(--faint)}
 
 /* Projects */
-.projects-view{background:var(--bg0)}
+.projects-view{background:transparent}  /* inherits the .view L1 panel */
 .project-side{
   width:268px;flex:none;border-right:1px solid var(--line-soft);background:var(--bg1);
   padding:14px 10px;display:flex;flex-direction:column;gap:12px;min-width:0;
@@ -1428,7 +1462,7 @@ button.attach-chip:hover{border-color:var(--amber); color:var(--text)}
 .settings-panel-header p{font-size:12px;color:var(--muted);margin-top:4px;line-height:1.5}
 .settings-loading{padding:8px 2px 16px}
 .settings-content .custom-form .key-input{max-width:620px}
-.provider-block{background:var(--bg1); border:1px solid var(--line); border-radius:8px; margin-bottom:11px; overflow:hidden}
+.provider-block{background:var(--card); border:1px solid var(--card-line); border-radius:var(--radius-ui); box-shadow:var(--shadow-2); margin-bottom:11px; overflow:hidden}
 /* Appearance: the four theme cards */
 .theme-grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:10px; padding:12px 15px 4px}
 .theme-card{
@@ -1444,7 +1478,7 @@ button.attach-chip:hover{border-color:var(--amber); color:var(--text)}
 .theme-chips i{width:16px; height:16px; border-radius:5px; border:1px solid #00000033}
 .provider-head{display:flex; align-items:center; gap:13px; padding:13px 15px; border-bottom:1px solid var(--line-soft)}
 .provider-head .s-icon{
-  width:34px;height:34px;border-radius:8px;background:var(--bg2);display:flex;align-items:center;justify-content:center;
+  width:34px;height:34px;border-radius:calc(var(--radius-ui) - 3px);background:var(--chip);border:1px solid var(--chip-line);display:flex;align-items:center;justify-content:center;
   font-family:var(--font-display); font-weight:700; font-size:13px; color:var(--ice); flex:none;
 }
 .mode-row{display:flex; align-items:center; gap:12px; padding:12px 15px; border-top:1px solid var(--line-soft)}
@@ -1457,11 +1491,11 @@ button.attach-chip:hover{border-color:var(--amber); color:var(--text)}
 .mode-off{color:var(--faint)}
 .mode-actions{display:flex; align-items:center; justify-content:flex-end; flex-wrap:wrap; gap:7px; flex:none; max-width:290px}
 .srow{
-  display:flex; align-items:center; gap:13px; background:var(--bg1);
-  border:1px solid var(--line); border-radius:8px; padding:13px 15px; margin-bottom:9px;
+  display:flex; align-items:center; gap:13px; background:var(--card);
+  border:1px solid var(--card-line); border-radius:var(--radius-ui); box-shadow:var(--shadow-2); padding:13px 15px; margin-bottom:9px;
 }
 .srow .s-icon{
-  width:34px;height:34px;border-radius:8px;background:var(--bg2);display:flex;align-items:center;justify-content:center;
+  width:34px;height:34px;border-radius:calc(var(--radius-ui) - 3px);background:var(--chip);border:1px solid var(--chip-line);display:flex;align-items:center;justify-content:center;
   font-family:var(--font-display); font-weight:700; font-size:13px; color:var(--ice); flex:none;
 }
 .srow .s-body{flex:1; min-width:0}
