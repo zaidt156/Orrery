@@ -2034,3 +2034,28 @@ flash of the wrong theme.
 Next: dashboard connection persistence (retest on the rebuilt release first — the database now
 starts itself, which may have been the real cause), then the new GPT model IDs (waiting on which
 ones), the speed levers, and the site redesign around the concept art.
+
+
+## Step 130 — Concept shell + four complete themes (July 10, 2026)
+
+You asked for the tabs and overall appearance to follow your concept art, and for the four themes
+to be genuinely different looks, not recolors. Both shipped:
+
+- **The sidebar now matches the concept.** The narrow icon strip became the concept''s labeled
+  sidebar: the Orrery mark and wordmark at the top, icon-plus-name rows for every tab with a soft
+  pill highlight (amber icon on the active one), a live "System healthy / Database connected" pill
+  at the bottom that turns amber or red on real problems, and the open-source license line.
+- **A concept top bar across the app.** Workspace identity on the left (your custom branding when
+  it''s on), and the workspace''s default model shown as a live chip on the right.
+- **Four complete looks.** Each theme now changes the sky behind the app, the corner geometry, and
+  the surface treatment — not just colors. Simple stays the quiet flat star map; Futuristic is the
+  concept: deep navy, a faint holo-grid over the starfield, glowing amber and electric-blue
+  accents; Winter is an icy gradient sky with frosted-glass chrome and falling snow; Summer is a
+  golden-hour glow over warm paper with the roundest corners. Green/red status colors stay
+  identical everywhere.
+
+The app is running with the new shell — flip the looks in Settings → Appearance.
+
+Next: your visual feedback on the new shell (per-view polish to the concept — Chat''s context
+panel, Home-style hero cards — is a further step), then dashboard connection persistence, GPT
+model IDs, speed levers.
