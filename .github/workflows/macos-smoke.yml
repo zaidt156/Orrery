@@ -81,8 +81,16 @@ jobs:
           "$MAIN" >logs/launch.log 2>&1 &   # macOS has no GNU timeout; background + kill instead
           APP_PID=$!
           sleep 90
-          kill "$APP_PID" 2>/dev/null && echo "still running after 90s (killed)" >>logs/launch.log
-          wait "$APP_PID"
+          # Kill the WHOLE app tree: the Electron shell spawns a backend child that would
+          # otherwise outlive the parent and hang this step until the job timeout.
+          if kill -0 "$APP_PID" 2>/dev/null; then
+            echo "still running after 90s (killing the app tree)" >>logs/launch.log
+            pkill -TERM -P "$APP_PID" 2>/dev/null || true
+            kill "$APP_PID" 2>/dev/null || true
+            sleep 3
+            pkill -KILL -f 'Orrery' 2>/dev/null || true
+          fi
+          wait "$APP_PID" 2>/dev/null
           echo "launch exit: $?" | tee -a logs/launch.log
           # The Electron shell pipes the backend's output to its own log — that's where a
           # first-run failure actually lands, not stdout.
