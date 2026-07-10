@@ -8,6 +8,7 @@ import {
   KeyRound,
   LogIn,
   MessageSquareText,
+  Palette,
   Plug,
   RefreshCw,
   Save,
@@ -70,6 +71,7 @@ const PROVIDER_LABEL = {
 
 const SETTINGS_SECTIONS = [
   { id: "general", label: "General", Icon: SlidersHorizontal },
+  { id: "appearance", label: "Appearance", Icon: Palette },
   { id: "accounts", label: "Accounts", Icon: KeyRound },
   { id: "database", label: "Database", Icon: Database },
   { id: "models", label: "Models", Icon: Cpu },
@@ -984,6 +986,58 @@ function SettingsPanelHeader({ title, description }) {
   );
 }
 
+// Four looks, one identity: each theme only re-tunes the CSS palette variables (styles.css),
+// so every view restyles instantly. Stored per machine; applied before first paint in main.jsx.
+const THEMES = [
+  { id: "simple", name: "Simple", desc: "The classic Orrery — deep indigo star map, amber accents.", chips: ["#0B1020", "#F2B14E", "#9DB9F0"] },
+  { id: "futuristic", name: "Futuristic", desc: "Near-black night with electric teal and violet.", chips: ["#05070E", "#4EE0D3", "#A78BFA"] },
+  { id: "winter", name: "Winter", desc: "Bright and frosty — with falling snow.", chips: ["#F4F7FC", "#E8A424", "#5E86D8"] },
+  { id: "summer", name: "Summer", desc: "Warm paper tones with sun-orange accents.", chips: ["#FDF6EC", "#E0862E", "#2E9E97"] },
+];
+
+function ThemeSection() {
+  const [theme, setTheme] = useState(localStorage.getItem("orrery-theme") || "simple");
+
+  function apply(id) {
+    setTheme(id);
+    if (id === "simple") {
+      delete document.documentElement.dataset.theme;
+      localStorage.removeItem("orrery-theme");
+    } else {
+      document.documentElement.dataset.theme = id;
+      localStorage.setItem("orrery-theme", id);
+    }
+  }
+
+  return (
+    <>
+      <div className="section-label">Theme — how Orrery looks on this computer</div>
+      <div className="provider-block">
+        <div className="theme-grid">
+          {THEMES.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              className={`theme-card${theme === t.id ? " active" : ""}`}
+              aria-pressed={theme === t.id}
+              onClick={() => apply(t.id)}
+            >
+              <span className="theme-chips">
+                {t.chips.map((c) => <i key={c} style={{ background: c }} />)}
+              </span>
+              <b>{t.name}</b>
+              <span className="theme-desc">{t.desc}</span>
+            </button>
+          ))}
+        </div>
+        <div className="mode-sub" style={{ marginTop: 8 }}>
+          Applies instantly and is remembered on this computer. Status colors (green ok / red error) stay the same in every theme.
+        </div>
+      </div>
+    </>
+  );
+}
+
 const EFFORT_DEFAULTS = [["", "Standard"], ["low", "Quick"], ["high", "Deep"], ["xhigh", "Max"]];
 
 function DefaultsSection({ canManage }) {
@@ -1106,6 +1160,12 @@ export default function Settings() {
           <div><PrivacySection canManage={canManage} /></div>
           <div><DefaultsSection canManage={canManage} /></div>
         </div>
+      </>
+    ),
+    appearance: (
+      <>
+        <SettingsPanelHeader title="Appearance" description="Pick one of four looks for the whole app." />
+        <ThemeSection />
       </>
     ),
     accounts: (

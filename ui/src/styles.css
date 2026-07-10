@@ -7,12 +7,89 @@
   --amber:#F2B14E; --amber-dim:#F2B14E33;
   --ice:#9DB9F0; --ice-dim:#9DB9F033;
   --green:#5BC489; --red:#E36C6C;
+  --page:#070B16;
+  --stars:
+    radial-gradient(1px 1px at 12% 22%, #ffffff55 50%, transparent 51%),
+    radial-gradient(1px 1px at 78% 12%, #ffffff44 50%, transparent 51%),
+    radial-gradient(1.5px 1.5px at 32% 78%, #9DB9F055 50%, transparent 51%),
+    radial-gradient(1px 1px at 88% 64%, #ffffff33 50%, transparent 51%),
+    radial-gradient(1px 1px at 54% 40%, #F2B14E44 50%, transparent 51%),
+    radial-gradient(1.5px 1.5px at 8% 88%, #ffffff33 50%, transparent 51%);
   --font-display:"Bricolage Grotesque Variable","Bricolage Grotesque",sans-serif;
   --font-ui:"IBM Plex Sans",system-ui,sans-serif;
   --font-mono:"IBM Plex Mono",monospace;
   /* tell the engine this is a dark app: native widgets (select popups, scrollbars, date pickers)
      render dark instead of flashing white/unreadable lists inside the webview */
   color-scheme:dark;
+}
+
+/* ── Themes ─────────────────────────────────────────────────────────────────
+   Simple (the base :root above) is the default. Each theme only re-tunes the
+   palette variables; semantic colors (--green ok / --red error) stay identical
+   everywhere so status meaning never shifts with the look. The attribute is
+   set on <html> before first paint (main.jsx) and by the Settings picker. */
+:root[data-theme="futuristic"]{
+  --bg0:#05070E; --bg1:#090E1C; --bg2:#0E1630; --bg3:#141F42;
+  --line:#1D2A50; --line-soft:#141E3C;
+  --text:#E6F1FF; --muted:#7C8DB5; --faint:#48547A;
+  --amber:#4EE0D3; --amber-dim:#4EE0D333;
+  --ice:#A78BFA; --ice-dim:#A78BFA33;
+  --page:#020409;
+  --stars:
+    radial-gradient(1px 1px at 12% 22%, #4EE0D366 50%, transparent 51%),
+    radial-gradient(1px 1px at 78% 12%, #ffffff44 50%, transparent 51%),
+    radial-gradient(1.5px 1.5px at 32% 78%, #A78BFA55 50%, transparent 51%),
+    radial-gradient(1px 1px at 88% 64%, #4EE0D344 50%, transparent 51%),
+    radial-gradient(1px 1px at 54% 40%, #ffffff33 50%, transparent 51%),
+    radial-gradient(1.5px 1.5px at 8% 88%, #A78BFA44 50%, transparent 51%);
+}
+:root[data-theme="winter"]{
+  --bg0:#F4F7FC; --bg1:#FFFFFF; --bg2:#EAF0F9; --bg3:#DEE7F5;
+  --line:#C9D6EA; --line-soft:#D8E2F1;
+  --text:#1C2540; --muted:#5A6890; --faint:#8C99BC;
+  --amber:#E8A424; --amber-dim:#E8A42433;
+  --ice:#5E86D8; --ice-dim:#5E86D833;
+  --page:#E9EFF8;
+  --stars:
+    radial-gradient(1.5px 1.5px at 12% 22%, #ffffffEE 50%, transparent 51%),
+    radial-gradient(1px 1px at 78% 12%, #ffffffCC 50%, transparent 51%),
+    radial-gradient(1.5px 1.5px at 32% 78%, #ffffffEE 50%, transparent 51%),
+    radial-gradient(1px 1px at 88% 64%, #ffffffCC 50%, transparent 51%),
+    radial-gradient(1px 1px at 54% 40%, #ffffffAA 50%, transparent 51%),
+    radial-gradient(1.5px 1.5px at 8% 88%, #ffffffCC 50%, transparent 51%);
+  color-scheme:light;
+}
+:root[data-theme="summer"]{
+  --bg0:#FDF6EC; --bg1:#FFFDF7; --bg2:#F8EEDC; --bg3:#F1E3C9;
+  --line:#E0D0AF; --line-soft:#EADDBF;
+  --text:#2E2617; --muted:#79684A; --faint:#A59472;
+  --amber:#E0862E; --amber-dim:#E0862E33;
+  --ice:#2E9E97; --ice-dim:#2E9E9733;
+  --page:#F7EDDA;
+  --stars:
+    radial-gradient(1.5px 1.5px at 12% 22%, #E0862E33 50%, transparent 51%),
+    radial-gradient(1px 1px at 78% 12%, #E8A42433 50%, transparent 51%),
+    radial-gradient(1.5px 1.5px at 32% 78%, #2E9E9733 50%, transparent 51%),
+    radial-gradient(1px 1px at 88% 64%, #E0862E22 50%, transparent 51%),
+    radial-gradient(1px 1px at 54% 40%, #E8A42433 50%, transparent 51%),
+    radial-gradient(1.5px 1.5px at 8% 88%, #2E9E9722 50%, transparent 51%);
+  color-scheme:light;
+}
+/* Winter's falling snow: pure CSS, three drifting flake layers, clicks pass through. */
+:root[data-theme="winter"] body::after{
+  content:""; position:fixed; inset:0; z-index:2147483647; pointer-events:none; opacity:.55;
+  background-image:
+    radial-gradient(2.4px 2.4px at 22% 18%, #ffffff 50%, transparent 55%),
+    radial-gradient(1.8px 1.8px at 68% 42%, #ffffff 50%, transparent 55%),
+    radial-gradient(1.4px 1.4px at 44% 74%, #ffffff 50%, transparent 55%);
+  background-size:260px 380px, 340px 480px, 300px 560px;
+  animation:orrery-snow 16s linear infinite;
+}
+@keyframes orrery-snow{
+  to{background-position:70px 380px, -90px 480px, 40px 560px}
+}
+@media (prefers-reduced-motion: reduce){
+  :root[data-theme="winter"] body::after{animation:none}
 }
 /* option lists render via the engine's own dark mode (color-scheme above); forcing a blue
    background on options made every row look pre-highlighted */
@@ -23,15 +100,9 @@
 *{margin:0;padding:0;box-sizing:border-box}
 html,body,#root{height:100%}
 body{
-  font-family:var(--font-ui); color:var(--text); background:#070B16;
+  font-family:var(--font-ui); color:var(--text); background:var(--page);
   overflow:hidden;
-  background-image:
-    radial-gradient(1px 1px at 12% 22%, #ffffff55 50%, transparent 51%),
-    radial-gradient(1px 1px at 78% 12%, #ffffff44 50%, transparent 51%),
-    radial-gradient(1.5px 1.5px at 32% 78%, #9DB9F055 50%, transparent 51%),
-    radial-gradient(1px 1px at 88% 64%, #ffffff33 50%, transparent 51%),
-    radial-gradient(1px 1px at 54% 40%, #F2B14E44 50%, transparent 51%),
-    radial-gradient(1.5px 1.5px at 8% 88%, #ffffff33 50%, transparent 51%);
+  background-image:var(--stars);
 }
 
 .app{display:flex; flex-direction:column; height:100vh; background:var(--bg0); overflow:hidden}
@@ -1305,6 +1376,19 @@ button.attach-chip:hover{border-color:var(--amber); color:var(--text)}
 .settings-loading{padding:8px 2px 16px}
 .settings-content .custom-form .key-input{max-width:620px}
 .provider-block{background:var(--bg1); border:1px solid var(--line); border-radius:8px; margin-bottom:11px; overflow:hidden}
+/* Appearance: the four theme cards */
+.theme-grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:10px; padding:12px 15px 4px}
+.theme-card{
+  display:grid; gap:7px; justify-items:start; text-align:left; padding:12px 13px; cursor:pointer;
+  background:var(--bg2); border:1px solid var(--line); border-radius:8px; color:var(--text);
+  transition:border-color .16s, transform .16s;
+}
+.theme-card:hover{border-color:var(--ice); transform:translateY(-1px)}
+.theme-card.active{border-color:var(--amber); box-shadow:0 0 0 1px var(--amber-dim) inset}
+.theme-card b{font-size:13px}
+.theme-card .theme-desc{color:var(--muted); font-size:11.5px; line-height:1.4}
+.theme-chips{display:inline-flex; gap:5px}
+.theme-chips i{width:16px; height:16px; border-radius:5px; border:1px solid #00000033}
 .provider-head{display:flex; align-items:center; gap:13px; padding:13px 15px; border-bottom:1px solid var(--line-soft)}
 .provider-head .s-icon{
   width:34px;height:34px;border-radius:8px;background:var(--bg2);display:flex;align-items:center;justify-content:center;

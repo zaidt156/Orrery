@@ -14,6 +14,11 @@ import "highlight.js/styles/github-dark.css";  // syntax highlighting theme for 
 import App from "./App.jsx";
 import "./styles.css";
 
+// Apply the saved theme BEFORE first paint so there is no flash of the default palette.
+// "simple" is the base :root palette and needs no attribute.
+const savedTheme = localStorage.getItem("orrery-theme");
+if (savedTheme && savedTheme !== "simple") document.documentElement.dataset.theme = savedTheme;
+
 createRoot(document.getElementById("root")).render(
   <React.StrictMode>
     <App />
