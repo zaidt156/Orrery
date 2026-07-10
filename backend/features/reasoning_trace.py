@@ -4,17 +4,16 @@ The UI shows two layers, like a high-end AI workspace:
 1. An outer/collapsed reasoning card ("Architected the document path …").
 2. An inner/expanded step timeline (route → context → tool → validation → done).
 
-This module NEVER exposes raw model chain-of-thought, provider reasoning deltas, hidden prompts, or
-inline <think>…</think> content. Every visible line is backend-authored public narration of what
-Orrery actually did: route choice, context loading, tool actions, sandbox runs, validation, status.
-That is what makes the trace identical across every model and connection — API, CLI, or local — since
-it describes Orrery's work, not the model's private deliberation.
+The trace (outer card + steps) is backend-authored public narration of what Orrery actually did:
+route choice, context loading, tool actions, sandbox runs, validation, status — identical across
+every model and connection. Raw model thoughts are additionally streamed to the user's own local
+panel via ThinkStream (click-to-expand); they never enter the visible answer, prompts, or logs.
 
 Compatibility:
 - reasoning_event(...) still exists for older call sites and now emits BOTH the legacy
   `reasoning_event` key and the new `type: reasoning_step` / `reasoning_step` payload.
-- ThinkStream strips inline <think>…</think> and counts hidden reasoning for diagnostics only; it
-  returns no visible events (the old condenser behaviour is intentionally gone — see the safety rule).
+- ThinkStream strips inline <think>…</think> from the answer and streams it (plus provider
+  reasoning deltas) to the panel; pass emit_raw=False to suppress for non-chat calls.
 """
 
 from __future__ import annotations
@@ -263,14 +262,17 @@ class HiddenReasoningStats:
 
 
 class ThinkStream:
-    """Remove inline <think>…</think> from a streaming answer; count hidden reasoning for diagnostics.
+    """Remove inline <think>…</think> from a streaming ANSWER and stream the raw thoughts to the
+    local reasoning panel as reasoning_delta events (click-to-expand in the UI).
 
-    Provider reasoning deltas and inline thinking are counted only — never condensed, emitted,
-    displayed, or stored. Visible reasoning is produced by ReasoningTrace / reasoning_event(...) from
-    backend-authored route/tool/validation steps. (`max_steps` is accepted for back-compat and ignored.)
+    Raw thoughts belong to the user: they stream only to their own local panel and reasoning
+    snapshot — never into the visible answer, never back into prompts, never into logs. The
+    backend-authored ReasoningTrace steps remain the structured narration; the raw deltas are the
+    model's own words. Pass emit_raw=False to suppress them (e.g. judge/evaluation calls).
+    (`max_steps` is accepted for back-compat and ignored.)
     """
 
-    def __init__(self, max_steps: int | None = None, *, emit_raw: bool = False):
+    def __init__(self, max_steps: int | None = None, *, emit_raw: bool = True):
         self._buf = ""
         self._in_think = False
         self.stats = HiddenReasoningStats()

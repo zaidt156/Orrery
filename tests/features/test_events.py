@@ -27,19 +27,31 @@ def test_message_usage_and_missing_key_events_are_centralized():
     assert events.missing_key("openai") == {"error": "No API key for openai. Add it in Settings."}
 
 
-def test_think_stream_strips_hidden_reasoning_by_default():
+def test_think_stream_streams_raw_thoughts_to_the_panel_by_default():
+    """Raw model thoughts are the user's to see: inline <think> content leaves the ANSWER but
+    streams to the local reasoning panel as reasoning_delta (click-to-expand in the UI)."""
     stream = ThinkStream()
 
     answer, emitted = stream.feed("<think>private scratchpad</think>Hello")
     tail, tail_events = stream.finish()
 
-    assert emitted == []
-    assert tail_events == []
-    assert answer + tail == "Hello"
+    assert answer + tail == "Hello"  # the visible answer never contains the thinking
+    deltas = "".join(e["reasoning_delta"] for e in emitted + tail_events if "reasoning_delta" in e)
+    assert deltas == "private scratchpad"
     assert stream.stats.seen
 
 
-def test_think_stream_raw_reasoning_requires_explicit_debug_opt_in():
-    stream = ThinkStream(emit_raw=True)
+def test_think_stream_provider_reasoning_streams_by_default():
+    stream = ThinkStream()
 
-    assert stream.feed_reasoning("debug") == [{"reasoning_delta": "debug"}]
+    assert stream.feed_reasoning("model thought") == [{"reasoning_delta": "model thought"}]
+
+
+def test_think_stream_can_still_suppress_raw_reasoning():
+    stream = ThinkStream(emit_raw=False)
+
+    answer, emitted = stream.feed("<think>hidden</think>Hi")
+    tail, tail_events = stream.finish()
+    assert emitted == [] and tail_events == []
+    assert stream.feed_reasoning("x") == []
+    assert answer + tail == "Hi"
