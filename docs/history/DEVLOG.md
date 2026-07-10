@@ -1929,3 +1929,23 @@ fed back into prompts, and are never written to logs.
 
 Next: verify and fix the macOS build in the cloud (GitHub Actions macOS runner), then the rest of
 the backlog (4 selectable themes, dashboard connection persistence, new GPT models).
+
+
+## Step 125 — The macOS build gets tested on a real cloud Mac (July 10, 2026)
+
+You asked to verify the released macOS build on an online Mac service. Instead of a paid rental
+(MacinCloud needs an account and card), the repo now has a GitHub Actions workflow that runs on
+GitHub''s own Apple Silicon macOS machines: it downloads the released .dmg, checks the app bundle''s
+integrity, launches it headlessly with no database configured, and uploads all output plus macOS
+crash reports as a downloadable artifact. It ran automatically on this push and can be re-run any
+time from the repository''s Actions tab.
+
+Strong lead on the "macOS build not launching" bug: the released build crashes on first run because,
+with no database chosen yet, it tried to ask a question on a console that doesn''t exist in a
+double-clicked app. That exact failure was just fixed by the Docker self-provisioning change
+(Step 122) — the fix ships with the next release build. The workflow''s log annotations distinguish
+the old crash from the new behavior so the rebuilt release can be verified the same way.
+
+Next: read this first run''s artifact (Actions tab), rebuild the macOS release with the Step-122 fix,
+and re-run the smoke test; then the rest of the backlog (4 selectable themes, dashboard connection
+persistence, new GPT models).
