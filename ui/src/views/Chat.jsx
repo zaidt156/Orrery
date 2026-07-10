@@ -420,8 +420,7 @@ export default function Chat() {
     };
     let savedMsgId = null;
     const reasoningAcc = { thinking: "", trace: [], outer: null, summary: null, sources: null };
-    try {
-      const streamResult = await start((ev) => {
+    const handleEvent = (ev) => {
         // capture the reasoning so it can be persisted after the turn (non-exclusive with UI updates)
         if (ev.reasoning_delta) reasoningAcc.thinking += ev.reasoning_delta;
         if (ev.reasoning_step) reasoningAcc.trace.push(ev.reasoning_step);
@@ -466,7 +465,9 @@ export default function Chat() {
         else if (ev.resumed) appendStep(setMessages, "Resuming background generation…");
         else if (ev.error) setLast({ content: ev.error, error: true, streaming: false });
         else if (ev.done) setLast({ streaming: false });
-      }, ctrl.signal);
+    };
+    try {
+      const streamResult = await start(handleEvent, ctrl.signal);
       if (streamResult?.done === false && isActive()) {
         try {
           const full = await getConversation(cid);
@@ -496,11 +497,29 @@ export default function Chat() {
   }
 
   // Reload the saved thread (ids + ‹ › version metadata land only via a fetch — the stream
-  // doesn't carry them). Keeps whatever streamed if the fetch fails.
+  // doesn't carry them). Keeps whatever streamed if the fetch fails. Fields that only exist
+  // locally right after a stream (reasoning being saved fire-and-forget, data-URL attachment
+  // thumbnails, live token counts) are carried over so the refresh never blanks them.
   async function syncThread(cid) {
     try {
       const full = await getConversation(cid);
-      if (cid === activeIdRef.current) setMessages(full.messages.map(hydrateReasoning));
+      if (cid !== activeIdRef.current) return;
+      setMessages((prev) => {
+        const local = new Map(prev.filter((x) => x.id).map((x) => [x.id, x]));
+        return full.messages.map((m) => {
+          const base = hydrateReasoning(m);
+          const mine = local.get(m.id);
+          if (!mine) return base;
+          const out = { ...base };
+          if (!m.reasoning && (mine.trace?.length || mine.thinking || mine.outer || mine.summary || mine.sources)) {
+            out.thinking = mine.thinking; out.trace = mine.trace; out.outer = mine.outer;
+            out.summary = mine.summary; out.sources = mine.sources;
+          }
+          if (mine.attachments?.length && !base.attachments?.length) out.attachments = mine.attachments;
+          if (mine.tokens && !base.tokens) out.tokens = mine.tokens;
+          return out;
+        });
+      });
     } catch { /* keep what streamed */ }
   }
 
