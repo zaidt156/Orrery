@@ -116,7 +116,7 @@ export default function Home({ onNavigate }) {
             {tasks != null && tasks.length === 0 && (
               <div className="home-empty">Task runs, file builds, and agent work will show up here.</div>
             )}
-            {(tasks || []).slice(0, 8).map((t) => (
+            {(tasks || []).slice(0, 40).map((t) => (
               <div key={t.id} className="activity-row" title={t.detail || ""}>
                 <span className="icon-chip surface-3"><Workflow /></span>
                 <span className="activity-text">

@@ -68,22 +68,23 @@
     radial-gradient(1px 1px at 54% 40%,var(--amber-dim) 50%,transparent 51%);
 }
 
+/* Concept sky per the reference art: NO grid — a calm dark sky with one soft glow and sparse
+   stars. The old 56px holo-grid read as "giant empty boxes" behind every page. */
 :root[data-interface="concept"]{
-  --radius-ui:12px;
+  --radius-ui:14px;
   --shadow-1:0 14px 40px #00000044;
   --shadow-2:0 4px 16px #00000035;
   --shadow-3:0 24px 56px #00000088;
   --stars:
-    linear-gradient(90deg,var(--ice-dim) 1px,transparent 1px),
-    linear-gradient(180deg,var(--ice-dim) 1px,transparent 1px),
+    radial-gradient(1100px 640px at 88% -12%, var(--ice-dim), transparent 62%),
     radial-gradient(1px 1px at 12% 22%,var(--faint) 50%,transparent 51%),
     radial-gradient(1.5px 1.5px at 78% 12%,var(--ice) 50%,transparent 51%),
-    radial-gradient(2px 2px at 32% 78%,var(--amber) 50%,transparent 51%),
+    radial-gradient(1px 1px at 32% 78%,var(--amber-dim) 50%,transparent 51%),
     radial-gradient(1px 1px at 88% 64%,var(--muted) 50%,transparent 51%);
 }
 
-:root[data-interface="classic"] body{background-size:auto}
-:root[data-interface="concept"] body{background-size:56px 56px,56px 56px,auto,auto,auto,auto}
+:root[data-interface="classic"] body,
+:root[data-interface="concept"] body{background-size:auto}
 
 :root[data-interface="concept"] .tab.active{
   box-shadow:0 0 18px var(--ice-dim),inset 0 0 12px var(--ice-dim);
@@ -132,17 +133,30 @@
 
 .interface-theme-grid{grid-template-columns:repeat(2,minmax(180px,1fr))}
 .interface-theme-card{min-height:132px}
-.interface-preview{
-  display:grid;grid-template-columns:22px 1fr;grid-template-rows:12px 1fr;width:100%;height:54px;
-  border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--bg0);
+
+/* Structure wireframes for the interface picker — painted from the live palette. */
+.iface-svg{width:100%;height:58px;border-radius:8px}
+.iface-svg .pv-sky{fill:var(--page);stroke:var(--line);stroke-width:1}
+.iface-svg .pv-rail{fill:var(--bg1)}
+.iface-svg .pv-panel{fill:var(--bg2);stroke:var(--line-soft);stroke-width:0.75}
+.iface-svg .pv-chip{fill:var(--bg3);stroke:var(--line-soft);stroke-width:0.75}
+.iface-svg .pv-text{fill:var(--text);opacity:.85}
+.iface-svg .pv-soft{fill:var(--muted);opacity:.55}
+.iface-svg .pv-dot{fill:var(--muted)}
+.iface-svg .pv-amber{fill:var(--amber)}
+.iface-svg .pv-green{fill:var(--green)}
+
+/* Palette thumbnails for the color picker — each painted in its OWN theme colors. */
+.theme-thumb{
+  position:relative;display:block;width:100%;height:58px;border-radius:8px;overflow:hidden;
+  border:1px solid var(--line);
 }
-.interface-preview i{display:block;border-color:var(--line-soft);background:var(--bg2)}
-.interface-preview i:first-child{grid-row:1/3;border-right:1px solid var(--line-soft)}
-.interface-preview i:nth-child(2){border-bottom:1px solid var(--line-soft)}
-.interface-preview.classic{grid-template-columns:11px 1fr;grid-template-rows:1fr}
-.interface-preview.classic i:nth-child(2){border:0;background:var(--bg1)}
-.interface-preview.classic i:nth-child(3){display:none}
-.interface-preview.concept i:nth-child(3){margin:6px;border:1px solid var(--line);border-radius:5px}
+.theme-thumb i{display:block;position:absolute}
+.theme-thumb .tt-panel{left:10px;right:34px;top:11px;bottom:11px;border-radius:6px}
+.theme-thumb .tt-line{left:9px;top:10px;width:52%;height:4px;border-radius:2px}
+.theme-thumb .tt-line.short{top:20px;width:34%}
+.theme-thumb .tt-dot{right:13px;top:13px;width:13px;height:13px;border-radius:50%}
+.theme-thumb .tt-dot.d2{right:16px;top:34px;width:8px;height:8px;box-shadow:none}
 
 @media (max-width:640px){
   .interface-theme-grid{grid-template-columns:1fr}

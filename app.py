@@ -31,6 +31,35 @@ log = logging.getLogger("orrery")
 SESSION_TOKEN = os.environ.get("ORRERY_SESSION_TOKEN") or pysecrets.token_urlsafe(32)
 WEBVIEW_DATA_DIR = user_data_dir() / "tmp" / "webview2"
 
+API_HOST = os.environ.get("ORRERY_API_HOST", "").strip() or settings.api_host
+_api_port: int | None = None
+
+
+def _resolve_api_port() -> int:
+    """Electron's explicit port always wins (it owns the window URL). Otherwise prefer the
+    configured port but fall back to a free one, so a second Orrery (an installed copy launched
+    beside a dev run) never dies on bind (Errno 10048)."""
+    global _api_port
+    if _api_port is not None:
+        return _api_port
+    explicit = os.environ.get("ORRERY_API_PORT", "").strip()
+    if explicit:
+        _api_port = int(explicit)
+        return _api_port
+    import socket
+
+    try:
+        with socket.socket() as probe:
+            probe.bind((API_HOST, settings.api_port))
+        _api_port = settings.api_port
+    except OSError:
+        with socket.socket() as probe:
+            probe.bind((API_HOST, 0))
+            _api_port = probe.getsockname()[1]
+        log.info("Port %s is busy (another Orrery running?) - using %s instead",
+                 settings.api_port, _api_port)
+    return _api_port
+
 _ready = threading.Event()
 _boot_error: list[BaseException] = []
 
@@ -137,7 +166,7 @@ async def _boot_and_serve() -> None:
 
     api = create_app(SESSION_TOKEN)
     config = uvicorn.Config(
-        api, host=settings.api_host, port=settings.api_port, log_level="info", access_log=False
+        api, host=API_HOST, port=_resolve_api_port(), log_level="info", access_log=False
     )
     server = uvicorn.Server(config)
 
@@ -152,7 +181,7 @@ async def _boot_and_serve() -> None:
         serve = asyncio.create_task(server.serve())
         while not server.started:
             await asyncio.sleep(0.05)
-        log.info("API ready on http://%s:%s", settings.api_host, settings.api_port)
+        log.info("API ready on http://%s:%s", API_HOST, _resolve_api_port())
         _ready.set()
         try:
             await serve
@@ -175,7 +204,7 @@ def _window_url() -> str:
     base = (
         settings.vite_url
         if settings.orrery_dev
-        else f"http://{settings.api_host}:{settings.api_port}"
+        else f"http://{API_HOST}:{_resolve_api_port()}"
     )
     return f"{base}/?token={SESSION_TOKEN}"
 

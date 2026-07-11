@@ -2181,3 +2181,87 @@ Next up: the bounded agent run loop (execute within budgets, per-step trace, app
 then the scoped external per-agent API and Slack/Gmail connectors; after that the frontend
 streaming re-renders, the dashboard-connection persistence retest, and the new GPT model IDs
 (still waiting on which ones).
+
+
+## Step 134 - July 11 issue batch logged before fixing (July 11, 2026)
+
+The user filed a batch of issues (screenshots in the local Issues/ folder, 12:20-12:26) covering
+the installed app, both layouts, and several Settings areas. Logged here first so every fix that
+follows is traceable to a report. The list, in the user's priority order:
+
+1. **Installed app fails to start** - "Orrery startup failed: the backend exited during startup".
+   Likely cause on this machine: the development instance was already holding the app's local port
+   when the installed copy was launched; needs the packaged log to confirm, and a friendlier
+   port-in-use message either way. Both release rebuilds of this morning's commit also FAILED in
+   CI (Windows and macOS) - diagnosed separately.
+2. **Release hygiene** - once the fixed build is published under v0.1.0-preview, the older releases
+   (v0.2.0, v0.1.3, v0.1.2, v0.1.1) should be removed from the Releases page.
+3. **Classic layout: the bottom-left status dot cannot be closed** - clicking opens the
+   connection-check details; clicking again does not collapse them.
+4. **Life.md should be the app's soul, not a form** - start BLANK on first run, ask the user a few
+   onboarding questions and store the answers; then keep learning automatically from chats
+   (through the existing propose-diff-approve pipeline), instead of expecting manual edits. The
+   current page also shows the internal template text and a mojibake heading ("Â€""), both wrong.
+5. **Theme picker has no visual identity** - the interface cards are empty boxes; each theme/mode
+   needs a real visual preview so they can be told apart at a glance.
+6. **"Add a custom model" belongs with the API accounts** - move it from Models to the accounts/API
+   area under an "Add other API" title; adding any OpenAI-compatible model must keep working.
+7. **Concept Settings hero shows a wrong logo** - the oversized amber disc on the right of the
+   Settings banner is not the Orrery mark.
+8. **The Concept layout reads as "weird blocks"** - the background grid is too large and too loud,
+   making every page look like empty wireframe boxes (clearest on Dashboards and Home). Bring the
+   look to the user's concept art: subtler grid, real panel depth, futuristic accents.
+9. **Skills tab structure** - "MCP servers / + Add server" sits at the very bottom; split the view
+   into side sub-tabs (skills list, create skill, MCP servers) and add a create-MCP option.
+10. **Home scrolls as a whole page** in both layouts - the hero and stat cards should stay fixed;
+    only the bottom panels (Recent activity, System) should scroll internally.
+
+Next: diagnose the CI release failures, then work the list top to bottom, logging each fix.
+
+
+## Step 135 - The July 11 issue batch fixed (July 11, 2026)
+
+Worked Step 134's list top to bottom. What changed, in the same order:
+
+1. **Both CI release builds were failing for one reason:** Step 132 made the packaging probe
+   require a bundled LIFE.md template, but none of the four build scripts copied it into the
+   package. All four now bundle it. Separately, the installed app's "backend exited during
+   startup" turned out to be a PORT COLLISION - the dev copy was already holding the app's local
+   port, and the packaged log proved the installed backend was otherwise healthy. Two-sided fix:
+   the desktop shell now picks a free port at startup instead of assuming 8765 (it also actually
+   passes it - the backend never read the shell's port before, the two only agreed by luck), and
+   a source run falls back to a free port with a clear log line when the preferred one is busy.
+   Two Orrerys can now run side by side.
+2. **Release hygiene** is queued: once the rebuilt installers publish, the old releases come down.
+3. **The bottom-left status dot now closes.** Clicking it while the connection details are open
+   collapses them; before, every click re-probed and re-opened the panel.
+4. **LIFE.md is now the soul, not a form.** A fresh install starts with an (almost) blank memory
+   file instead of the internal charter text. On first run, Orrery asks a few questions - what to
+   call you, what you do, what Orrery is for, what it should always remember - and your answers
+   become the first LIFE.md through the normal exact-diff approval path. From then on, chats can
+   TEACH it: a message that carries something durable ("call me...", "I prefer...", "from now
+   on...") triggers a small extraction pass, and anything worth keeping lands as a PENDING
+   proposal in Settings > Life Memory - the owner still approves the exact diff, cooldowns keep
+   the queue quiet, and a failure can never break a chat turn. Also fixed the garbled heading on
+   that Settings page.
+5. **The theme picker shows real previews now:** the two interface cards render live mini-mockups
+   of each layout (painted from the active palette), and every color theme shows a thumbnail in
+   its OWN sky/panel/accent colors instead of three bare dots.
+6. **"Add a custom model" moved to Accounts as "Add other API"** - same OpenAI-compatible form,
+   same keychain storage; its models still appear under Models for on/off control.
+7. **The Settings hero art no longer shows a wrong-looking giant amber disc** - per the concept
+   art it is now a small sun with a tight glow inside thin orbit rings.
+8. **The "weird blocks" are gone.** The Concept sky's loud 56px holo-grid (the thing that made
+   every page look like empty wireframe boxes) is removed entirely - the reference art has no
+   grid. The sky is now a calm dark field with one soft glow and sparse stars, and Concept
+   corners rounded up to the reference's 14px.
+9. **Skills is split into side sections.** MCP servers moved off the bottom of Overview into
+   their own sidebar entry with a summary row and a prominent "Create MCP server" action.
+10. **Home no longer scrolls as a whole page** (desktop): the hero, quick actions, and stat cards
+    stay put; Recent activity and System scroll inside their own panels.
+
+Verified with the full backend suite, the UI unit tests, and a production build; released by
+moving the v0.1.0-preview tag again (same public URLs).
+
+Next: watch the rebuilt installers + macOS smoke test go green, remove the old releases, then
+continue the Concept parity pass (top-bar search, per-view composition) and the Agents run loop.

@@ -180,6 +180,26 @@ def _document(path: Path) -> LifeDocument:
     return LifeDocument(path=path, content=content, revision=content_hash(content))
 
 
+# A fresh LIFE.md starts (almost) blank on purpose: the first-run questions and approved
+# chat learnings fill it in. The bundled repo LIFE.md stays as the product's identity charter.
+SEED_CONTENT = (
+    "# Orrery Life\n\n"
+    "This file is Orrery's living memory of you. It starts empty on purpose: answer the\n"
+    "first-run questions, write here directly, or approve what Orrery learns from your\n"
+    "conversations. Nothing becomes durable without your approval.\n"
+)
+
+
+def is_fresh(content: str) -> bool:
+    """True while LIFE.md still holds only seed/template text (nothing personal yet)."""
+    if content == SEED_CONTENT:
+        return True
+    try:  # installs bootstrapped before the blank-start change carry the full charter text
+        return content == _decode_file(resource_path("LIFE.md"))
+    except Exception:  # noqa: BLE001 — missing bundled template just means "not fresh"
+        return False
+
+
 def bootstrap(
     *,
     owner_id: str | None = None,
@@ -193,8 +213,10 @@ def bootstrap(
     with _lock_for(path):
         _assert_safe_target(path)
         if not path.exists():
-            source = Path(template_path) if template_path is not None else resource_path("LIFE.md")
-            content = _validate_content(_decode_file(source))
+            if template_path is not None:
+                content = _validate_content(_decode_file(Path(template_path)))
+            else:
+                content = _validate_content(SEED_CONTENT)
             _atomic_write_unlocked(path, content)
         document = _document(path)
         _snapshot_unlocked(document.content, owner_id=owner_id, data_root=data_root)
@@ -302,6 +324,7 @@ async def document_for_current_user() -> dict:
         "content": document.content,
         "revision": document.revision,
         "location": str(document.path),
+        "fresh": is_fresh(document.content),  # drives the first-run questions in the UI
     }
 
 
@@ -378,11 +401,16 @@ async def _scoped_proposal(session, proposal_id: str, owner_id: str | None, *, l
 
 
 async def list_proposals_for_current_user(*, status: str | None = None) -> list[dict]:
-    from backend.core.database import get_sessionmaker
-    from backend.core.models import LifeProposal
     from backend.features import team
 
-    owner_id = await team.current_owner_id()
+    return await list_proposals_for_owner(await team.current_owner_id(), status=status)
+
+
+async def list_proposals_for_owner(owner_id: str | None, *, status: str | None = None) -> list[dict]:
+    """Owner passed explicitly — for background workers that must not use ambient identity."""
+    from backend.core.database import get_sessionmaker
+    from backend.core.models import LifeProposal
+
     statement = select(LifeProposal).where(_owner_filter(LifeProposal, owner_id))
     if status:
         if status not in {"pending", "applying", "applied", "rejected", "expired", "apply_failed"}:

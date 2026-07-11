@@ -18,7 +18,7 @@ from backend.core.config import settings
 from backend.core.database import get_sessionmaker
 from backend.core.observability import log_event
 from backend.core.models import Conversation, Message, Project
-from backend.features import admin, capabilities, code_images, code_interpreter, docgen, events as stream_events, filegen, mcp, rag, reasoning, research, route_telemetry, sandbox, skills, taskbrain, taskrouter, team
+from backend.features import admin, capabilities, code_images, code_interpreter, docgen, events as stream_events, filegen, life_learn, mcp, rag, reasoning, research, route_telemetry, sandbox, skills, taskbrain, taskrouter, team
 from backend.features import projects as project_store
 from backend.features import files as file_library
 from backend.features.prompting import CODE_INTERPRETER_PROMPT, FORMAT_INSTRUCTIONS, build_system_prompt, strip_think as _strip_think
@@ -400,6 +400,10 @@ async def _prepare_turn(
             await rag.add_documents(conv_collection, indexable)
         except Exception:  # noqa: BLE001 — attachment indexing is best-effort
             pass
+
+    # Life memory: consider this turn for durable learning. Proposal-only (owner approves the
+    # exact diff in Settings › Life Memory) and fire-and-forget — it never blocks or breaks a turn.
+    asyncio.create_task(life_learn.consider_turn(owner_id=owner, user_text=user_content or "", model=model))
 
     return _TurnContext(model, system_prompt, effort, project_id, context_window, messages, title, conv_collection)
 

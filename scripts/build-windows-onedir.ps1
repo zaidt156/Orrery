@@ -1,4 +1,4 @@
-$ErrorActionPreference = "Stop"
+﻿$ErrorActionPreference = "Stop"
 
 $ScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $RepoRoot = Resolve-Path (Join-Path $ScriptRoot "..")
@@ -135,6 +135,7 @@ Invoke-Checked ".venv\Scripts\pyinstaller.exe" `
     "--add-data" "skills;skills" `
     "--add-data" "sandbox;sandbox" `
     "--add-data" "backend\providers\model_manifest.json;backend\providers" `
+    "--add-data" "LIFE.md;." `
     "--collect-all" "litellm" `
     "--collect-all" "tiktoken" `
     "--collect-submodules" "tiktoken_ext" `
@@ -225,3 +226,4 @@ Assert-Exists "release\Orrery-Windows.zip" "Release zip was not created"
 Write-Host ""
 Write-Host "Built release\Orrery-Windows.zip"
 Write-Host "Publish this zip as the Windows release asset. Do not publish dist\Orrery\Orrery.exe by itself."
+

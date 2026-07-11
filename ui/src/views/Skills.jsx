@@ -202,7 +202,13 @@ export default function Skills() {
           <div className={`project-node${!activeId ? " active" : ""}`}>
             <button className="project-item" onClick={() => { setActiveId(""); setDraft(emptyDraft); }}>
               <LayoutGrid />
-              <span><b>Overview</b><small>built-in skills &amp; MCP</small></span>
+              <span><b>Overview</b><small>built-in &amp; pending skills</small></span>
+            </button>
+          </div>
+          <div className={`project-node${activeId === "__mcp" ? " active" : ""}`}>
+            <button className="project-item" onClick={() => { setActiveId("__mcp"); setErr(""); setMsg(""); }}>
+              <Server />
+              <span><b>MCP servers</b><small>{mcp.length ? `${mcpEnabled} of ${mcp.length} enabled` : "connect tools"}</small></span>
             </button>
           </div>
           {filtered.length === 0 && <div className="convo-empty">{items.length ? "No matches" : "No skills yet"}</div>}
@@ -277,12 +283,22 @@ export default function Skills() {
               </div>
             </section>
 
+            {err && <div className="chat-banner">{err}</div>}
+            {msg && <div className="admin-ok">{msg}</div>}
+          </div>
+        ) : activeId === "__mcp" ? (
+          <div className="skill-overview">
+            <div className="workspace-summary skill-summary">
+              <span><b>{mcp.length}</b><small>MCP servers</small></span>
+              <span><b>{mcpEnabled}</b><small>Enabled</small></span>
+              <span><b>{mcp.reduce((n, s) => n + (s.tools?.length || 0), 0)}</b><small>Tools discovered</small></span>
+            </div>
             <section className="ov-section">
               <div className="section-label">
                 <span>MCP servers</span>
-                <button className="btn ghost sm" onClick={() => setMcpOpen((o) => !o)}><Plus /> Add server</button>
+                <button className="btn primary sm" onClick={() => setMcpOpen((o) => !o)}><Plus /> Create MCP server</button>
               </div>
-              <p className="ov-sub">Connect Model Context Protocol servers as tools/context. Saved now; turning one on opts it in. Live tool execution is the next step.</p>
+              <p className="ov-sub">Connect Model Context Protocol servers as tools/context. Saved now; turning one on opts it in.</p>
               {mcpOpen && (
                 <div className="mcp-form">
                   <input placeholder="Name" value={mcpForm.name} onChange={(e) => setMcpForm((f) => ({ ...f, name: e.target.value }))} />
@@ -308,7 +324,7 @@ export default function Skills() {
                 </div>
               )}
               <div className="ov-list">
-                {mcp.length === 0 && <div className="project-muted">No MCP servers yet.</div>}
+                {mcp.length === 0 && <div className="project-muted">No MCP servers yet — create one above.</div>}
                 {mcp.map((s) => (
                   <div key={s.id} className="ov-row">
                     <Server />

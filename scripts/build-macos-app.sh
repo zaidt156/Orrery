@@ -119,6 +119,7 @@ PYINSTALLER_ARGS=(
   --add-data "skills:skills"
   --add-data "sandbox:sandbox"
   --add-data "backend/providers/model_manifest.json:backend/providers"
+  --add-data "LIFE.md:."
   --collect-all litellm
   --collect-all tiktoken
   --collect-submodules tiktoken_ext

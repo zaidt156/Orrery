@@ -11,6 +11,14 @@ export default function ConnectionCheck({ db }) {
   const alive = useRef(true);
   useEffect(() => () => { alive.current = false; }, []);
 
+  function onPillClick() {
+    if (open) {  // second click collapses the breakdown instead of re-probing
+      setOpen(false);
+      return;
+    }
+    run();
+  }
+
   async function run() {
     if (phase === "running") return;
     setPhase("running");
@@ -58,8 +66,9 @@ export default function ConnectionCheck({ db }) {
         type="button"
         className={`rail-health ${tone}`}
         disabled={phase === "running"}
-        onClick={run}
-        title="Live-check the database and every configured model connection"
+        onClick={onPillClick}
+        aria-expanded={open}
+        title={open ? "Hide the connection details" : "Live-check the database and every configured model connection"}
       >
         <div className={`pulse ${phase === "running" ? "amber" : tone}`} />
         <div className="rail-health-text">

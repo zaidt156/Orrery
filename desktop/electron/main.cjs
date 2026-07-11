@@ -3,13 +3,30 @@ const { autoUpdater } = require("electron-updater");
 const { spawn } = require("child_process");
 const crypto = require("crypto");
 const fs = require("fs");
+const net = require("net");
 const path = require("path");
 
 const SOURCE_ROOT = path.resolve(__dirname, "..", "..");
 const API_HOST = process.env.ORRERY_API_HOST || "127.0.0.1";
-const API_PORT = Number(process.env.ORRERY_API_PORT || "8765");
+// 0 = pick a free ephemeral port at startup, so an installed Orrery never dies on a port
+// already held by another instance (e.g. a source checkout running python app.py on 8765).
+let API_PORT = Number(process.env.ORRERY_API_PORT || "0");
 const SESSION_TOKEN = process.env.ORRERY_SESSION_TOKEN || crypto.randomBytes(32).toString("base64url");
-const START_URL = `http://${API_HOST}:${API_PORT}/?token=${encodeURIComponent(SESSION_TOKEN)}`;
+
+function startUrl() {
+  return `http://${API_HOST}:${API_PORT}/?token=${encodeURIComponent(SESSION_TOKEN)}`;
+}
+
+function pickFreePort() {
+  return new Promise((resolve, reject) => {
+    const probe = net.createServer();
+    probe.once("error", reject);
+    probe.listen(0, API_HOST, () => {
+      const port = probe.address().port;
+      probe.close(() => resolve(port));
+    });
+  });
+}
 
 let mainWindow = null;
 let backendProcess = null;
@@ -202,10 +219,11 @@ function createWindow() {
     return { action: "deny" };
   });
 
-  mainWindow.loadURL(START_URL);
+  mainWindow.loadURL(startUrl());
 }
 
 async function startAndCreateWindow() {
+  if (!API_PORT) API_PORT = await pickFreePort();
   startBackend();
   await waitForBackend();
   createWindow();

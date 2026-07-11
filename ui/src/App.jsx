@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { getAdmin, getAppUpdate, getBranding, getDefaults, getHealth, getModels, getTeam } from "./lib/api.js";
 import { Logo } from "./components/icons.jsx";
+import FirstRunSetup from "./components/FirstRunSetup.jsx";
 import ConnectionCheck from "./components/ConnectionCheck.jsx";
 import { useAppearance } from "./components/AppearanceProvider.jsx";
 
@@ -179,6 +180,7 @@ export default function App() {
         </div>
       )}
       <TopBar interfaceMode={interfaceMode} />
+      <FirstRunSetup />
       <div className="app-body">
         <nav className="rail" aria-label="Main navigation">
           <div className="rail-brand">

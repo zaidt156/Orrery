@@ -1,4 +1,4 @@
-$ErrorActionPreference = "Stop"
+﻿$ErrorActionPreference = "Stop"
 
 # Builds the installable Windows app: a PyInstaller backend-only bundle (OrreryBackend) wrapped by
 # the Electron shell, packaged with electron-builder into an NSIS installer (Start Menu + Desktop
@@ -69,6 +69,7 @@ Invoke-Checked ".venv\Scripts\pyinstaller.exe" `
     "--add-data" "skills;skills" `
     "--add-data" "sandbox;sandbox" `
     "--add-data" "backend\providers\model_manifest.json;backend\providers" `
+    "--add-data" "LIFE.md;." `
     "--collect-all" "litellm" `
     "--collect-all" "tiktoken" `
     "--collect-submodules" "tiktoken_ext" `
@@ -127,3 +128,4 @@ if (-not $Installer) {
 Write-Host ""
 Write-Host "Built installer: $($Installer.FullName)"
 Write-Host "Users double-click it once; Orrery installs per-user with Start Menu and Desktop shortcuts."
+

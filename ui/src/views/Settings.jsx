@@ -424,12 +424,12 @@ function AddCustomModel({ onAdded, canManage }) {
     return (
       <div className="mode-row">
         <div className="mode-main">
-          <div className="mode-name">+ Add a custom model</div>
-          <div className="mode-sub">Any OpenAI-compatible endpoint — Qwen, Kimi, GLM, OpenRouter, Together, local…</div>
+          <div className="mode-name">+ Add other API</div>
+          <div className="mode-sub">Any OpenAI-compatible API — Qwen, Kimi, GLM, OpenRouter, Together, a local server — and its models.</div>
         </div>
         <div className="mode-actions">
           <button className="btn primary" disabled={!canManage} onClick={() => setOpen(true)}>
-            {canManage ? "Add model" : "Managed by admin"}
+            {canManage ? "Add API" : "Managed by admin"}
           </button>
         </div>
       </div>
@@ -440,8 +440,8 @@ function AddCustomModel({ onAdded, canManage }) {
     <div className="provider-block">
       <div className="provider-head">
         <div className="s-icon">+</div>
-        <div><div className="s-name">Add a custom model</div>
-          <div className="s-sub">OpenAI-compatible API · key stored in your keychain, never in files</div></div>
+        <div><div className="s-name">Add other API</div>
+          <div className="s-sub">OpenAI-compatible API · key stored in your keychain, never in files · its models appear under Models</div></div>
       </div>
       <div className="preset-row">
         {CUSTOM_PRESETS.map((p) => (
@@ -493,7 +493,7 @@ function ModelsSection({ canManage }) {
       {catalog === null && <div className="s-sub" style={{ padding: "4px 2px" }}>Loading…</div>}
       {catalog && catalog.length === 0 && (
         <div className="s-sub" style={{ padding: "4px 2px" }}>
-          No models yet — add an API key above, connect Claude plan, or add a custom model below.
+          No models yet — add an API key or connect a plan under Accounts, or use Accounts → Add other API for any OpenAI-compatible service.
         </div>
       )}
       {order.filter((p) => groups[p]).map((p) => (
@@ -519,7 +519,6 @@ function ModelsSection({ canManage }) {
           ))}
         </div>
       ))}
-      <AddCustomModel onAdded={load} canManage={canManage} />
     </>
   );
 }
@@ -1005,12 +1004,55 @@ const INTERFACES = [
 ];
 
 const COLOR_THEMES = [
-  { id: "simple", name: "Simple", desc: "Deep indigo, amber, and quiet ice-blue contrast.", chips: ["#0B1020", "#F2B14E", "#9DB9F0"] },
-  { id: "futuristic", name: "Futuristic", desc: "Deep navy with amber and electric-blue accents.", chips: ["#0A1428", "#F5A83C", "#3F8CFF"] },
-  { id: "winter", name: "Winter", desc: "Bright frost surfaces with blue and warm-gold accents.", chips: ["#F0F5FB", "#E8A424", "#4C7FD6"] },
-  { id: "summer", name: "Summer", desc: "Warm paper, terracotta, and sea-teal accents.", chips: ["#FBF3E4", "#E0862E", "#2E9E97"] },
-  { id: "observatory", name: "Observatory", desc: "Warm charcoal, antique gold, parchment, and teal.", chips: ["#141311", "#E5A93F", "#52C8B2"] },
+  { id: "simple", name: "Simple", desc: "Deep indigo, amber, and quiet ice-blue contrast.",
+    sky: "#070B16", panel: "#111831", text: "#E8ECF8", accents: ["#F2B14E", "#9DB9F0"] },
+  { id: "futuristic", name: "Futuristic", desc: "Deep navy with amber and electric-blue accents.",
+    sky: "#060D1D", panel: "#0D1B33", text: "#E8EFFA", accents: ["#F5A83C", "#3F8CFF"] },
+  { id: "winter", name: "Winter", desc: "Bright frost surfaces with blue and warm-gold accents.",
+    sky: "#DDE8F5", panel: "#FFFFFF", text: "#1C2540", accents: ["#E8A424", "#4C7FD6"] },
+  { id: "summer", name: "Summer", desc: "Warm paper, terracotta, and sea-teal accents.",
+    sky: "#F3E6CD", panel: "#FFFCF4", text: "#31281A", accents: ["#E0862E", "#2E9E97"] },
+  { id: "observatory", name: "Observatory", desc: "Warm charcoal, antique gold, parchment, and teal.",
+    sky: "#0D0D0B", panel: "#1F211F", text: "#F7F0DF", accents: ["#E5A93F", "#52C8B2"] },
 ];
+
+// Miniature of each structure, painted from the LIVE palette variables so the wireframes always
+// match whatever color theme is active.
+function InterfacePreview({ kind }) {
+  if (kind === "classic") {
+    return (
+      <svg className="iface-svg" viewBox="0 0 120 56" aria-hidden="true">
+        <rect x="1" y="1" width="118" height="54" rx="5" className="pv-sky" />
+        <rect x="1" y="1" width="14" height="54" className="pv-rail" />
+        <circle cx="8" cy="10" r="2.4" className="pv-amber" />
+        <circle cx="8" cy="20" r="2.4" className="pv-dot" />
+        <circle cx="8" cy="30" r="2.4" className="pv-dot" />
+        <circle cx="8" cy="48" r="2.4" className="pv-green" />
+        <rect x="22" y="8" width="60" height="5" rx="2.5" className="pv-text" />
+        <rect x="22" y="19" width="90" height="4" rx="2" className="pv-soft" />
+        <rect x="22" y="27" width="82" height="4" rx="2" className="pv-soft" />
+        <rect x="22" y="42" width="92" height="7" rx="3.5" className="pv-chip" />
+      </svg>
+    );
+  }
+  return (
+    <svg className="iface-svg" viewBox="0 0 120 56" aria-hidden="true">
+      <rect x="1" y="1" width="118" height="54" rx="5" className="pv-sky" />
+      <rect x="1" y="1" width="30" height="54" className="pv-rail" />
+      <rect x="5" y="8" width="22" height="4" rx="2" className="pv-amber" />
+      <rect x="5" y="16" width="22" height="4" rx="2" className="pv-soft" />
+      <rect x="5" y="24" width="22" height="4" rx="2" className="pv-soft" />
+      <rect x="5" y="46" width="22" height="5" rx="2.5" className="pv-green" opacity="0.55" />
+      <rect x="34" y="4" width="83" height="6" rx="3" className="pv-rail" />
+      <rect x="36" y="14" width="79" height="17" rx="4" className="pv-panel" />
+      <rect x="41" y="19" width="30" height="3.5" rx="1.75" className="pv-text" />
+      <rect x="41" y="25" width="42" height="2.5" rx="1.25" className="pv-soft" />
+      <circle cx="103" cy="22.5" r="4.5" className="pv-amber" />
+      <rect x="36" y="35" width="38" height="16" rx="4" className="pv-panel" />
+      <rect x="77" y="35" width="38" height="16" rx="4" className="pv-panel" />
+    </svg>
+  );
+}
 
 function ThemeSection() {
   const { interfaceMode, colorTheme, setInterfaceMode, setColorTheme } = useAppearance();
@@ -1028,7 +1070,7 @@ function ThemeSection() {
               aria-pressed={interfaceMode === item.id}
               onClick={() => setInterfaceMode(item.id)}
             >
-              <span className={`interface-preview ${item.id}`} aria-hidden="true"><i /><i /><i /></span>
+              <InterfacePreview kind={item.id} />
               <b>{item.name}</b>
               <span className="theme-desc">{item.desc}</span>
             </button>
@@ -1050,8 +1092,13 @@ function ThemeSection() {
               aria-pressed={colorTheme === t.id}
               onClick={() => setColorTheme(t.id)}
             >
-              <span className="theme-chips">
-                {t.chips.map((c) => <i key={c} style={{ background: c }} />)}
+              <span className="theme-thumb" style={{ background: t.sky }} aria-hidden="true">
+                <i className="tt-panel" style={{ background: t.panel }}>
+                  <i className="tt-line" style={{ background: t.text }} />
+                  <i className="tt-line short" style={{ background: t.text, opacity: 0.45 }} />
+                </i>
+                <i className="tt-dot" style={{ background: t.accents[0], boxShadow: `0 0 8px ${t.accents[0]}` }} />
+                <i className="tt-dot d2" style={{ background: t.accents[1] }} />
               </span>
               <b>{t.name}</b>
               <span className="theme-desc">{t.desc}</span>
@@ -1113,7 +1160,7 @@ function LifeSection() {
 
   return (
     <>
-      <div className="section-label">Canonical memory â€” private, local, versioned, and user-controlled</div>
+      <div className="section-label">Canonical memory - private, local, versioned, and user-controlled</div>
       <div className="provider-block life-memory-block">
         <div className="life-memory-intro">
           <div>
@@ -1362,6 +1409,8 @@ export default function Settings() {
         {entries.map(([name, info]) => (
           <ProviderBlock key={name} name={name} info={info} onSaved={load} canManage={canManage} />
         ))}
+        <div className="section-label">Add other API</div>
+        <AddCustomModel onAdded={load} canManage={canManage} />
       </>
     ),
     database: (
