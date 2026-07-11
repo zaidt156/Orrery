@@ -12,15 +12,19 @@ import "@fontsource/ibm-plex-mono/500.css";
 import "highlight.js/styles/github-dark.css";  // syntax highlighting theme for code blocks
 
 import App from "./App.jsx";
+import { AppearanceProvider } from "./components/AppearanceProvider.jsx";
+import { initializeAppearance } from "./lib/appearance.js";
 import "./styles.css";
+import "./appearance.css";
 
-// Apply the saved theme BEFORE first paint so there is no flash of the default palette.
-// "simple" is the base :root palette and needs no attribute.
-const savedTheme = localStorage.getItem("orrery-theme");
-if (savedTheme && savedTheme !== "simple") document.documentElement.dataset.theme = savedTheme;
+// Apply both appearance axes before first paint. Interface geometry and color palette are stored
+// independently, so changing Futuristic can never switch the user's Classic/Concept layout.
+initializeAppearance();
 
 createRoot(document.getElementById("root")).render(
   <React.StrictMode>
-    <App />
+    <AppearanceProvider>
+      <App />
+    </AppearanceProvider>
   </React.StrictMode>
 );

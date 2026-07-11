@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import Toggle from "../components/Toggle.jsx";
 import PageHero from "../components/PageHero.jsx";
+import { useAppearance } from "../components/AppearanceProvider.jsx";
 import {
   addCustomModel,
   clearProviderKey,
@@ -989,40 +990,56 @@ function SettingsPanelHeader({ title, description }) {
 
 // Five looks, one identity: each theme only re-tunes the CSS palette variables (styles.css),
 // so every view restyles instantly. Stored per machine; applied before first paint in main.jsx.
-const THEMES = [
-  { id: "simple", name: "Simple", desc: "The quiet star map — flat, minimal, compact corners.", chips: ["#0B1020", "#F2B14E", "#9DB9F0"] },
-  { id: "futuristic", name: "Futuristic", desc: "The concept look — deep navy, holo-grid, glowing amber and electric blue.", chips: ["#0A1428", "#F5A83C", "#3F8CFF"] },
-  { id: "winter", name: "Winter", desc: "Icy gradient sky, frosted-glass chrome, falling snow.", chips: ["#F0F5FB", "#E8A424", "#4C7FD6"] },
-  { id: "summer", name: "Summer", desc: "Golden-hour sun glow, warm paper, the roundest corners.", chips: ["#FBF3E4", "#E0862E", "#2E9E97"] },
-  { id: "observatory", name: "Observatory", desc: "The Orrery website's look — warm charcoal, antique gold, parchment ink.", chips: ["#141311", "#E5A93F", "#52C8B2"] },
+const INTERFACES = [
+  { id: "classic", name: "Classic", desc: "Compact icon rail and the original workspace-first layout." },
+  { id: "concept", name: "Concept", desc: "The complete reference-driven dashboard and multi-pane workspace." },
+];
+
+const COLOR_THEMES = [
+  { id: "simple", name: "Simple", desc: "Deep indigo, amber, and quiet ice-blue contrast.", chips: ["#0B1020", "#F2B14E", "#9DB9F0"] },
+  { id: "futuristic", name: "Futuristic", desc: "Deep navy with amber and electric-blue accents.", chips: ["#0A1428", "#F5A83C", "#3F8CFF"] },
+  { id: "winter", name: "Winter", desc: "Bright frost surfaces with blue and warm-gold accents.", chips: ["#F0F5FB", "#E8A424", "#4C7FD6"] },
+  { id: "summer", name: "Summer", desc: "Warm paper, terracotta, and sea-teal accents.", chips: ["#FBF3E4", "#E0862E", "#2E9E97"] },
+  { id: "observatory", name: "Observatory", desc: "Warm charcoal, antique gold, parchment, and teal.", chips: ["#141311", "#E5A93F", "#52C8B2"] },
 ];
 
 function ThemeSection() {
-  const [theme, setTheme] = useState(localStorage.getItem("orrery-theme") || "simple");
-
-  function apply(id) {
-    setTheme(id);
-    if (id === "simple") {
-      delete document.documentElement.dataset.theme;
-      localStorage.removeItem("orrery-theme");
-    } else {
-      document.documentElement.dataset.theme = id;
-      localStorage.setItem("orrery-theme", id);
-    }
-  }
+  const { interfaceMode, colorTheme, setInterfaceMode, setColorTheme } = useAppearance();
 
   return (
     <>
-      <div className="section-label">Theme — how Orrery looks on this computer</div>
+      <div className="section-label">Interface — structure and workspace layout</div>
+      <div className="provider-block">
+        <div className="theme-grid interface-theme-grid">
+          {INTERFACES.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              className={`theme-card interface-theme-card${interfaceMode === item.id ? " active" : ""}`}
+              aria-pressed={interfaceMode === item.id}
+              onClick={() => setInterfaceMode(item.id)}
+            >
+              <span className={`interface-preview ${item.id}`} aria-hidden="true"><i /><i /><i /></span>
+              <b>{item.name}</b>
+              <span className="theme-desc">{item.desc}</span>
+            </button>
+          ))}
+        </div>
+        <div className="mode-sub" style={{ marginTop: 8 }}>
+          Classic preserves the compact workflow. Concept enables Home and the reference layout.
+        </div>
+      </div>
+
+      <div className="section-label">Color theme — palette only</div>
       <div className="provider-block">
         <div className="theme-grid">
-          {THEMES.map((t) => (
+          {COLOR_THEMES.map((t) => (
             <button
               key={t.id}
               type="button"
-              className={`theme-card${theme === t.id ? " active" : ""}`}
-              aria-pressed={theme === t.id}
-              onClick={() => apply(t.id)}
+              className={`theme-card${colorTheme === t.id ? " active" : ""}`}
+              aria-pressed={colorTheme === t.id}
+              onClick={() => setColorTheme(t.id)}
             >
               <span className="theme-chips">
                 {t.chips.map((c) => <i key={c} style={{ background: c }} />)}
@@ -1033,7 +1050,7 @@ function ThemeSection() {
           ))}
         </div>
         <div className="mode-sub" style={{ marginTop: 8 }}>
-          Applies instantly and is remembered on this computer. Status colors (green ok / red error) stay the same in every theme.
+          Applies instantly without moving or resizing the interface. Status colors stay consistent.
         </div>
       </div>
     </>

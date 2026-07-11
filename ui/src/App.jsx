@@ -17,11 +17,12 @@ import {
 import { getAdmin, getAppUpdate, getBranding, getDefaults, getHealth, getModels, getTeam } from "./lib/api.js";
 import { Logo } from "./components/icons.jsx";
 import ConnectionCheck from "./components/ConnectionCheck.jsx";
+import { useAppearance } from "./components/AppearanceProvider.jsx";
 
 // Concept top bar: workspace identity on the left (custom branding when set), the workspace's
 // real default model as a chip on the right. Purely informational — model/effort are changed in
 // Chat and Settings, so nothing here pretends to be a control.
-function TopBar() {
+function TopBar({ interfaceMode }) {
   const [b, setB] = useState(null);
   const [modelLabel, setModelLabel] = useState("");
   useEffect(() => {
@@ -45,8 +46,9 @@ function TopBar() {
     };
   }, []);
   const branded = b?.enabled && (b.name || b.logo);
+  if (interfaceMode === "classic" && !branded) return null;
   return (
-    <header className="topbar">
+    <header className={`topbar${interfaceMode === "classic" ? " classic-brand" : ""}`}>
       <div className="topbar-left">
         {branded && b.logo && <img className="brand-logo" src={b.logo} alt={b.name || "logo"} />}
         <div className="brand-text">
@@ -54,7 +56,7 @@ function TopBar() {
           {branded && b.tagline ? <div className="brand-tagline">{b.tagline}</div> : null}
         </div>
       </div>
-      {modelLabel && (
+      {interfaceMode === "concept" && modelLabel && (
         <div className="provider-pill" title="Workspace default model — change it in Settings or per chat">
           <i className="pulse-dot" />
           <span>{modelLabel}</span>
@@ -99,9 +101,12 @@ const TABS = [
 const INITIAL_TAB = new URLSearchParams(window.location.search).get("tab");
 
 export default function App() {
-  const [active, setActive] = useState(
-    TABS.some((t) => t.key === INITIAL_TAB) ? INITIAL_TAB : "home"
-  );
+  const { interfaceMode } = useAppearance();
+  const [active, setActive] = useState(() => {
+    const requested = TABS.some((t) => t.key === INITIAL_TAB) ? INITIAL_TAB : null;
+    if (interfaceMode === "classic") return requested && requested !== "home" ? requested : "chat";
+    return requested || "home";
+  });
   const [db, setDb] = useState("checking"); // checking | ok | error | down
   const [features, setFeatures] = useState(null); // null until loaded → show all tabs
   const [teamState, setTeamState] = useState(null); // null until loaded; {team_mode, locked, user}
@@ -140,12 +145,19 @@ export default function App() {
     };
   }, []);
 
+  useEffect(() => {
+    if (interfaceMode === "classic" && active === "home") setActive("chat");
+  }, [active, interfaceMode]);
+
   // Joined to a team database without a valid key → hold everything behind the lock screen.
   if (teamState?.team_mode && teamState?.locked) {
     return <Suspense fallback={null}><Lock onUnlocked={() => window.dispatchEvent(new CustomEvent("orrery-team-changed"))} /></Suspense>;
   }
 
-  const visibleTabs = TABS.filter((t) => !t.feature || !features || features[t.feature] !== false);
+  const visibleTabs = TABS.filter((t) =>
+    (interfaceMode === "concept" || t.key !== "home")
+    && (!t.feature || !features || features[t.feature] !== false)
+  );
   const ActiveView = (visibleTabs.find((t) => t.key === active) || visibleTabs[0]).View;
   const pulseClass = db === "ok" ? "" : db === "error" ? "amber" : db === "down" ? "red" : "amber";
   const dbTitle =
@@ -166,7 +178,7 @@ export default function App() {
           >×</button>
         </div>
       )}
-      <TopBar />
+      <TopBar interfaceMode={interfaceMode} />
       <div className="app-body">
         <nav className="rail" aria-label="Main navigation">
           <div className="rail-brand">
@@ -177,6 +189,7 @@ export default function App() {
             <button
               key={key}
               className={`tab${key === active ? " active" : ""}`}
+              aria-label={label}
               onClick={() => setActive(key)}
             >
               <Icon />
