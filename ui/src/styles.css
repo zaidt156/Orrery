@@ -1685,7 +1685,9 @@ button.attach-chip:hover{border-color:var(--amber); color:var(--text)}
 .agent-check input{position:absolute;inset:0;width:100%;height:100%;opacity:0;pointer-events:none}
 .agent-check>span{display:grid;place-items:center;width:16px;height:16px;flex:none;
   border:1px solid var(--line);border-radius:5px;background:var(--bg0);transition:all .12s}
-.agent-check>span svg{width:11px;color:#141311}
+/* explicit height + block: the icon keeps a 24px attribute height and a text baseline
+   otherwise, which sank the tick toward the bottom of the box */
+.agent-check>span svg{display:block;width:11px;height:11px;color:#141311}
 .agent-check b{font-weight:500}
 /* checked = React-driven class (never :has) so the state can't silently fail to paint */
 .agent-check.checked{border-color:color-mix(in srgb,var(--amber) 55%,var(--line));
