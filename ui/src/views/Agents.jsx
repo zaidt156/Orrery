@@ -23,6 +23,7 @@ import {
   decideAgentApproval,
   getAgentCatalog,
   getAgentRun,
+  getModels,
   listAgentApprovals,
   listAgentRuns,
   listAgents,
@@ -196,7 +197,7 @@ function ToolGrantEditor({ catalog, grants, onChange }) {
   );
 }
 
-function AgentEditor({ initial, catalog, saving, error, onCancel, onSave }) {
+function AgentEditor({ initial, catalog, catalogReady = true, modelsReady = true, saving, error, onCancel, onSave }) {
   const [config, setConfig] = useState(() => cloneConfig(initial, catalog));
   const [guidelines, setGuidelines] = useState(() => (initial?.guidelines || []).join("\n"));
   const skills = useMemo(() => [
@@ -239,7 +240,7 @@ function AgentEditor({ initial, catalog, saving, error, onCancel, onSave }) {
         <h3><Bot /> Identity &amp; purpose</h3>
         <div className="agent-form-grid two">
           <label><span>Name</span><input required maxLength={160} value={config.name} onChange={(e) => patch("name", e.target.value)} placeholder="Weekly research brief" /></label>
-          <label><span>Model</span><select required value={config.model} onChange={(e) => patch("model", e.target.value)}><option value="">Choose a connected model</option>{(catalog.models || []).map((model) => <option key={model.id} value={model.id}>{model.label || model.id}</option>)}</select></label>
+          <label><span>Model</span><select required value={config.model} onChange={(e) => patch("model", e.target.value)}><option value="">{modelsReady ? "Choose a connected model" : "Loading models…"}</option>{(catalog.models || []).map((model) => <option key={model.id} value={model.id}>{model.label || model.id}</option>)}</select></label>
         </div>
         <label><span>Description</span><input maxLength={1000} value={config.description} onChange={(e) => patch("description", e.target.value)} placeholder="What this agent is for" /></label>
         <label><span>Goal</span><textarea required rows={5} maxLength={8000} value={config.goal} onChange={(e) => patch("goal", e.target.value)} placeholder="Describe the outcome, success criteria, and when to ask you instead of guessing." /></label>
@@ -249,14 +250,18 @@ function AgentEditor({ initial, catalog, saving, error, onCancel, onSave }) {
       <div className="agent-form-section">
         <h3><Database /> Orrery context</h3>
         <div className="agent-picker-columns">
-          <ResourcePicker title="Skills" items={skills} selected={config.skills} onChange={(value) => patch("skills", value)} empty="Create a skill to attach reusable guidance." />
-          <ResourcePicker title="Projects" items={catalog.projects || []} selected={config.projects} onChange={(value) => patch("projects", value)} empty="No projects yet." />
-          <ResourcePicker title="Datasets" items={catalog.datasets || []} selected={config.datasets} onChange={(value) => patch("datasets", value)} empty="No datasets yet." />
-          <ResourcePicker title="Ontologies" items={catalog.ontologies || []} selected={config.ontologies} onChange={(value) => patch("ontologies", value)} empty="No ontologies yet." />
+          <ResourcePicker title="Skills" items={skills} selected={config.skills} onChange={(value) => patch("skills", value)} empty={catalogReady ? "Create a skill to attach reusable guidance." : "Loading…"} />
+          <ResourcePicker title="Projects" items={catalog.projects || []} selected={config.projects} onChange={(value) => patch("projects", value)} empty={catalogReady ? "No projects yet." : "Loading…"} />
+          <ResourcePicker title="Datasets" items={catalog.datasets || []} selected={config.datasets} onChange={(value) => patch("datasets", value)} empty={catalogReady ? "No datasets yet." : "Loading…"} />
+          <ResourcePicker title="Ontologies" items={catalog.ontologies || []} selected={config.ontologies} onChange={(value) => patch("ontologies", value)} empty={catalogReady ? "No ontologies yet." : "Loading…"} />
         </div>
       </div>
 
-      <div className="agent-form-section"><h3><Wrench /> Capabilities</h3><ToolGrantEditor catalog={catalog} grants={config.tool_grants} onChange={(value) => patch("tool_grants", value)} /></div>
+      <div className="agent-form-section"><h3><Wrench /> Capabilities</h3>
+        {catalogReady && (catalog.tools || []).length > 0
+          ? <ToolGrantEditor catalog={catalog} grants={config.tool_grants} onChange={(value) => patch("tool_grants", value)} />
+          : <div className="agent-resource-empty">{catalogReady ? "No tools are available on this install." : "Loading the capability catalog…"}</div>}
+      </div>
 
       <div className="agent-form-section">
         <h3><CalendarClock /> Triggers &amp; schedule</h3>
@@ -483,6 +488,8 @@ function AgentDetail({ agent, onEdit, onStatus, onArchive }) {
 export default function Agents() {
   const [agents, setAgents] = useState([]);
   const [catalog, setCatalog] = useState(EMPTY_CATALOG);
+  const [catalogReady, setCatalogReady] = useState(false);
+  const [modelsReady, setModelsReady] = useState(false);
   const [selectedId, setSelectedId] = useState(null);
   const [editing, setEditing] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -493,15 +500,29 @@ export default function Agents() {
   const selected = agents.find((agent) => agent.id === selectedId) || agents[0] || null;
 
   async function load(preferredId) {
-    const [agentData, catalogData] = await Promise.all([listAgents(), getAgentCatalog()]);
+    const agentData = await listAgents();
     const nextAgents = agentData.agents || [];
     setAgents(nextAgents);
-    setCatalog({ ...EMPTY_CATALOG, ...catalogData });
     setSelectedId(preferredId || selectedId || nextAgents[0]?.id || null);
+  }
+
+  // The agent list must never wait on the builder catalog, and the catalog must never wait on
+  // model discovery (cold provider probes take seconds) — each arrives as soon as it's ready.
+  async function loadCatalog() {
+    setCatalogReady(false);
+    setModelsReady(false);
+    getModels()
+      .then((m) => setCatalog((c) => ({ ...c, models: m.models || [] })))
+      .catch(() => {})
+      .finally(() => setModelsReady(true));
+    const catalogData = await getAgentCatalog().catch(() => ({}));
+    setCatalog((c) => ({ ...EMPTY_CATALOG, ...catalogData, models: c.models || [] }));
+    setCatalogReady(true);
   }
 
   useEffect(() => {
     load().catch((e) => setError(String(e.message || e))).finally(() => setLoading(false));
+    loadCatalog();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function save(config) {
@@ -548,7 +569,7 @@ export default function Agents() {
       </aside>
 
       {editing ? (
-        <main className="agents-main agent-editor-main"><AgentEditor initial={creating ? null : selected?.config} catalog={catalog} saving={saving} error={error} onCancel={() => { setEditing(false); setCreating(false); setError(""); }} onSave={save} /></main>
+        <main className="agents-main agent-editor-main"><AgentEditor initial={creating ? null : selected?.config} catalog={catalog} catalogReady={catalogReady} modelsReady={modelsReady} saving={saving} error={error} onCancel={() => { setEditing(false); setCreating(false); setError(""); }} onSave={save} /></main>
       ) : selected ? (
         <AgentDetail agent={selected} onEdit={() => setEditing(true)} onStatus={changeStatus} onArchive={archive} />
       ) : (

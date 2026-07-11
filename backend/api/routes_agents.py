@@ -35,12 +35,12 @@ async def agent_list(
 
 @router.get("/agents/catalog")
 async def agent_catalog() -> dict:
+    """Builder resources. Deliberately NO live model discovery here — that can probe provider
+    CLIs for seconds and used to leave the whole builder empty; the UI reads /models instead."""
     from backend import tools
     from backend.features import dashboards, data, datasets, mcp, projects, rag, skills
-    from backend.providers import ai
 
     return {
-        "models": await ai.list_available_models(),
         "skills": await skills.list_user_skills(),
         "builtin_skills": skills.list_builtin(),
         "datasets": await datasets.list_datasets(),
