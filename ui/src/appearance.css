@@ -93,6 +93,9 @@
 :root[data-interface="concept"] .provider-pill{border-color:var(--ice);box-shadow:0 0 14px var(--ice-dim)}
 :root[data-interface="concept"] .rail,
 :root[data-interface="concept"] .topbar{background:linear-gradient(180deg,var(--chrome),var(--bg0))}
+:root[data-interface="concept"] .topbar-left{
+  background:var(--chip);border:1px solid var(--chip-line);border-radius:12px;padding:5px 13px;
+}
 :root[data-interface="concept"] .send{box-shadow:0 0 16px var(--amber-dim)}
 
 /* Classic restores the compact pre-concept shell while keeping every palette available. */

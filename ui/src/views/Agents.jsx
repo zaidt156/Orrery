@@ -194,7 +194,7 @@ function AgentEditor({ initial, catalog, saving, error, onCancel, onSave }) {
   const [config, setConfig] = useState(() => cloneConfig(initial, catalog));
   const [guidelines, setGuidelines] = useState(() => (initial?.guidelines || []).join("\n"));
   const skills = useMemo(() => [
-    ...(catalog.builtin_skills || []).map((item) => ({ id: `builtin:${item.name}`, name: `${item.name} Â· built in` })),
+    ...(catalog.builtin_skills || []).map((item) => ({ id: `builtin:${item.name}`, name: `${item.name} · built in` })),
     ...(catalog.skills || []).map((item) => ({ id: item.id, name: item.name })),
   ], [catalog]);
 
@@ -258,12 +258,12 @@ function AgentEditor({ initial, catalog, saving, error, onCancel, onSave }) {
           <Toggle checked disabled label="Manual" onChange={() => {}} />
           <Toggle checked={config.trigger_modes.includes("api")} label="Scoped API" onChange={(value) => toggleTrigger("api", value)} />
           <Toggle checked={config.trigger_modes.includes("schedule")} label="Schedule" onChange={(value) => toggleTrigger("schedule", value)} />
-          <Toggle disabled label="Slack Â· connect account first" checked={false} onChange={() => {}} />
-          <Toggle disabled label="Gmail Â· connect account first" checked={false} onChange={() => {}} />
+          <Toggle disabled label="Slack · connect account first" checked={false} onChange={() => {}} />
+          <Toggle disabled label="Gmail · connect account first" checked={false} onChange={() => {}} />
         </div>
         {config.schedule.enabled && (
           <div className="agent-form-grid schedule">
-            <label><span>Cron Â· five fields</span><input value={config.schedule.cron} onChange={(e) => patchNested("schedule", "cron", e.target.value)} /></label>
+            <label><span>Cron · five fields</span><input value={config.schedule.cron} onChange={(e) => patchNested("schedule", "cron", e.target.value)} /></label>
             <label><span>IANA timezone</span><input value={config.schedule.timezone} onChange={(e) => patchNested("schedule", "timezone", e.target.value)} /></label>
             <label><span>When Orrery was offline</span><select value={config.schedule.misfire_policy} onChange={(e) => patchNested("schedule", "misfire_policy", e.target.value)}><option value="coalesce">Run once</option><option value="skip">Skip missed run</option></select></label>
             <label><span>Overlapping runs</span><select value={config.schedule.concurrency_policy} onChange={(e) => patchNested("schedule", "concurrency_policy", e.target.value)}><option value="forbid">Forbid overlap</option><option value="queue">Queue next</option><option value="replace">Cancel and replace</option></select></label>
@@ -287,7 +287,7 @@ function AgentEditor({ initial, catalog, saving, error, onCancel, onSave }) {
       <footer className="agent-editor-footer">
         <span><ShieldCheck /> Saved versions are immutable. Running work keeps its original grants.</span>
         <button type="button" className="btn ghost" onClick={onCancel}>Cancel</button>
-        <button className="btn primary" disabled={saving}><Save />{saving ? "Savingâ€¦" : initial ? "Save new version" : "Create agent"}</button>
+        <button className="btn primary" disabled={saving}><Save />{saving ? "Saving…" : initial ? "Save new version" : "Create agent"}</button>
       </footer>
     </form>
   );
@@ -317,6 +317,13 @@ function AgentDetail({ agent, onEdit, onStatus, onArchive }) {
         <span className={`agent-status status-${agent.status}`}>{agent.status}</span>
         <div className="grow" />
         <button className="btn ghost" onClick={onEdit}>Edit</button>
+        <button
+          className="btn"
+          disabled
+          title="The run engine ships in the next update — your agent, schedule, and grants are saved and will start executing then."
+        >
+          <CirclePlay />Run
+        </button>
         <button className="btn" onClick={() => onStatus(agent.status === "active" ? "paused" : "active")}>
           {agent.status === "active" ? <CirclePause /> : <CirclePlay />}{agent.status === "active" ? "Pause" : "Activate"}
         </button>
@@ -326,12 +333,12 @@ function AgentDetail({ agent, onEdit, onStatus, onArchive }) {
         <section className="agent-hero-card"><div className="agent-orbit-mark"><Bot /></div><div><span className="eyebrow">Goal</span><p>{config.goal}</p></div></section>
         <div className="agent-summary-grid">
           <article><Sparkles /><span>Model</span><b>{config.model}</b><p>{config.effort || "standard"} reasoning</p></article>
-          <article><CalendarClock /><span>Run mode</span><b>{schedule.enabled ? schedule.cron : (config.trigger_modes || ["manual"]).join(" Â· ")}</b><p>{schedule.enabled ? `${schedule.timezone} Â· ${schedule.misfire_policy}` : "Runs only from enabled triggers"}</p></article>
-          <article><ShieldCheck /><span>Guardrails</span><b>{config.budgets?.max_steps_per_run} steps Â· {config.budgets?.max_runtime_seconds}s</b><p>High-risk actions suspend for approval.</p></article>
+          <article><CalendarClock /><span>Run mode</span><b>{schedule.enabled ? schedule.cron : (config.trigger_modes || ["manual"]).join(" · ")}</b><p>{schedule.enabled ? `${schedule.timezone} · ${schedule.misfire_policy}` : "Runs only from enabled triggers"}</p></article>
+          <article><ShieldCheck /><span>Guardrails</span><b>{config.budgets?.max_steps_per_run} steps · {config.budgets?.max_runtime_seconds}s</b><p>High-risk actions suspend for approval.</p></article>
         </div>
         <section className="agent-detail-section"><div className="agent-section-heading"><h2>Guidelines</h2><span>{config.guidelines?.length || 0}</span></div>{config.guidelines?.length ? <ol>{config.guidelines.map((line, index) => <li key={`${index}-${line}`}>{line}</li>)}</ol> : <p className="agent-empty-copy">No extra guidelines. The goal and platform safety policy still apply.</p>}</section>
-        <section className="agent-detail-section"><div className="agent-section-heading"><h2>Granted capabilities</h2><span>{config.tool_grants?.length || 0}</span></div><div className="agent-capability-grid">{config.tool_grants?.length ? config.tool_grants.map((grant) => <div className="agent-capability" key={grant.tool}><Wrench /><div><b>{grant.tool}</b><p>{grant.approval.replaceAll("_", " ")} Â· {Object.values(grant.resources || {}).flat().length} scoped resources</p></div></div>) : <p className="agent-empty-copy">No tools. This agent can reason and answer, but cannot act.</p>}</div></section>
-        <section className="agent-detail-section"><div className="agent-section-heading"><h2>Activity</h2><span>durable run ledger</span></div><div className="agent-activity-empty"><CirclePlay /><b>No runs yet</b><p>Manual, scheduled, API, Slack, and Gmail runs will appear here with every model step, approval, and tool result.</p></div></section>
+        <section className="agent-detail-section"><div className="agent-section-heading"><h2>Granted capabilities</h2><span>{config.tool_grants?.length || 0}</span></div><div className="agent-capability-grid">{config.tool_grants?.length ? config.tool_grants.map((grant) => <div className="agent-capability" key={grant.tool}><Wrench /><div><b>{grant.tool}</b><p>{grant.approval.replaceAll("_", " ")} · {Object.values(grant.resources || {}).flat().length} scoped resources</p></div></div>) : <p className="agent-empty-copy">No tools. This agent can reason and answer, but cannot act.</p>}</div></section>
+        <section className="agent-detail-section"><div className="agent-section-heading"><h2>Activity</h2><span>durable run ledger</span></div><div className="agent-activity-empty"><CirclePlay /><b>No runs yet — the run engine ships in the next update</b><p>Your definition, schedule, and grants are saved as immutable versions. Once the engine lands, manual, scheduled, API, Slack, and Gmail runs appear here with every model step, approval, and tool result.</p></div></section>
       </div>
     </main>
   );
@@ -393,11 +400,11 @@ export default function Agents() {
         <div className="agents-list-head"><div><span className="eyebrow">Autonomous work</span><h2>Agents</h2></div><button className="icon-btn primary" aria-label="New agent" onClick={() => { setCreating(true); setEditing(true); setError(""); }}><Plus /></button></div>
         <p className="agents-list-note">A goal, exact authority, a model, and a bounded way to run.</p>
         <div className="agents-list-scroll">
-          {loading && <div className="agents-loading">Loading agentsâ€¦</div>}
+          {loading && <div className="agents-loading">Loading agents…</div>}
           {!loading && agents.length === 0 && <button className="agents-empty-list" onClick={() => { setCreating(true); setEditing(true); }}><Bot /><b>Create your first agent</b><span>Attach skills, data, tools, schedules, and integrations.</span></button>}
           {agents.map((agent) => (
             <button key={agent.id} className={`agent-list-item${selected?.id === agent.id ? " active" : ""}`} onClick={() => { setSelectedId(agent.id); setEditing(false); setCreating(false); setError(""); }}>
-              <span className={`agent-list-icon status-${agent.status}`}><Bot /></span><span><b>{agent.name}</b><small>{agent.config?.model || "No model"} Â· v{agent.version}</small></span><ChevronRight />
+              <span className={`agent-list-icon status-${agent.status}`}><Bot /></span><span><b>{agent.name}</b><small>{agent.config?.model || "No model"} · v{agent.version}</small></span><ChevronRight />
             </button>
           ))}
         </div>

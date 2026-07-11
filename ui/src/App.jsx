@@ -17,13 +17,14 @@ import {
 import { getAdmin, getAppUpdate, getBranding, getDefaults, getHealth, getModels, getTeam } from "./lib/api.js";
 import { Logo } from "./components/icons.jsx";
 import FirstRunSetup from "./components/FirstRunSetup.jsx";
+import TopSearch from "./components/TopSearch.jsx";
 import ConnectionCheck from "./components/ConnectionCheck.jsx";
 import { useAppearance } from "./components/AppearanceProvider.jsx";
 
 // Concept top bar: workspace identity on the left (custom branding when set), the workspace's
 // real default model as a chip on the right. Purely informational — model/effort are changed in
 // Chat and Settings, so nothing here pretends to be a control.
-function TopBar({ interfaceMode }) {
+function TopBar({ interfaceMode, tabs = [], onNavigate }) {
   const [b, setB] = useState(null);
   const [modelLabel, setModelLabel] = useState("");
   useEffect(() => {
@@ -57,6 +58,7 @@ function TopBar({ interfaceMode }) {
           {branded && b.tagline ? <div className="brand-tagline">{b.tagline}</div> : null}
         </div>
       </div>
+      {interfaceMode === "concept" && <TopSearch tabs={tabs} onNavigate={onNavigate} />}
       {interfaceMode === "concept" && modelLabel && (
         <div className="provider-pill" title="Workspace default model — change it in Settings or per chat">
           <i className="pulse-dot" />
@@ -109,6 +111,7 @@ export default function App() {
     return requested || "home";
   });
   const [db, setDb] = useState("checking"); // checking | ok | error | down
+  const [appVersion, setAppVersion] = useState("");
   const [features, setFeatures] = useState(null); // null until loaded → show all tabs
   const [teamState, setTeamState] = useState(null); // null until loaded; {team_mode, locked, user}
   const [update, setUpdate] = useState(null); // {latest_version, url} when a newer release exists
@@ -117,7 +120,11 @@ export default function App() {
     let alive = true;
     const check = () =>
       getHealth()
-        .then((h) => alive && setDb(h.database === "ok" ? "ok" : "error"))
+        .then((h) => {
+          if (!alive) return;
+          setDb(h.database === "ok" ? "ok" : "error");
+          if (h.version) setAppVersion(h.version);
+        })
         .catch(() => alive && setDb("down"));
     check();
     const id = setInterval(check, 15000);
@@ -179,7 +186,7 @@ export default function App() {
           >×</button>
         </div>
       )}
-      <TopBar interfaceMode={interfaceMode} />
+      <TopBar interfaceMode={interfaceMode} tabs={visibleTabs} onNavigate={setActive} />
       <FirstRunSetup />
       <div className="app-body">
         <nav className="rail" aria-label="Main navigation">
@@ -200,7 +207,7 @@ export default function App() {
           ))}
           <div className="spacer" />
           <ConnectionCheck db={db} />
-          <div className="rail-meta">Open source · MIT License</div>
+          <div className="rail-meta">{appVersion ? `Orrery v${appVersion} · ` : ""}Open source · MIT License</div>
         </nav>
         <Suspense fallback={<section className="view"><div className="s-sub">Loading...</div></section>}>
           <ActiveView onNavigate={setActive} />

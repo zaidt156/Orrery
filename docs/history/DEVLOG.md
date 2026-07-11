@@ -2265,3 +2265,52 @@ moving the v0.1.0-preview tag again (same public URLs).
 
 Next: watch the rebuilt installers + macOS smoke test go green, remove the old releases, then
 continue the Concept parity pass (top-bar search, per-view composition) and the Agents run loop.
+
+
+## Step 136 - Executables proven, macOS signing, once-ever first run, Concept pass 1 (July 11, 2026)
+
+The user's direction for this stretch: make the executables work properly FIRST, then work
+heavily on the futuristic look. Both moved:
+
+- **The rebuilt installers are live and the Windows one is proven end to end.** Both release
+  workflows went green on the fixed commit and the cloud-Mac smoke test passed. The new Windows
+  installer was then downloaded fresh, byte-verified, silently installed, and launched WHILE the
+  development copy was already running - the exact scenario that crashed this morning. The
+  installed app picked a free port on its own, connected to the database, and stayed healthy.
+- **The macOS "damaged" message has a root cause and a fix in the build.** The DMG app was being
+  shipped with NO signature at all (signing was fully skipped on CI), and Apple Silicon
+  hard-blocks completely unsigned apps with exactly that "damaged" dialog. The build now
+  ad-hoc signs every binary in the app and verifies the signature before packing the DMG.
+  A quarantined first open still needs right-click > Open until real notarization ships.
+- **Old releases removed.** v0.2.0, v0.1.3, v0.1.2, and v0.1.1 are gone from the Releases page;
+  v0.1.0-preview is the one canonical release, as requested.
+- **The first-run questions can only ever appear once.** Answering or skipping now records a
+  durable per-user flag in the app's own settings, so the dialog is gone for good after the
+  first start - even if the browser-side storage gets wiped.
+- **Concept pass, part 1 (the reference's top bar).** A real global search now sits in the
+  middle of the Concept top bar - Ctrl/Cmd+K from anywhere, searches chats, projects,
+  dashboards, ontologies, collections, skills, and the tabs themselves, and picking a chat
+  opens that conversation. The workspace identity on the left became the reference's chip, and
+  the sidebar footer now shows the app version (the health check reports it).
+
+Also in this pass, from the user's next screenshot batch (Agents tab):
+
+- **The agent builder could "break" the whole window.** The create/edit form had no bounded
+  height, so it silently overflowed a pane that cannot scroll - and clicking a checkbox deep in
+  the form made the browser scroll that unscrollable pane, leaving fragments at the top and a
+  void below. The editor now scrolls internally. Two undefined style variables (corner radius
+  and font aliases the new view referenced) were also defined, and the garbled "Â·" characters
+  across the Agents screens were fixed at the source.
+- **Interacting with a created agent is now honest.** Edit, Pause/Activate, and Archive work;
+  schedule editing lives under Edit > Triggers & schedule; and a visible (disabled) Run button
+  plus the Activity panel say plainly that the RUN ENGINE ships in the next update - the
+  definition, schedule, and grants are saved as immutable versions and will start executing
+  when it lands. Building that engine is the next milestone.
+- **Asking for a bare ".png" / ".mp3" now routes to file generation.** A word-boundary quirk in
+  the file-intent pattern made standalone extension mentions unmatchable; fixed, and the
+  extension test spec dropped in by the parallel session was adopted (20 cases green).
+
+Released by moving v0.1.0-preview once more so the installers pick up the macOS signing.
+
+Next: the Agents run engine (bounded execution, manual Run, schedules firing), then continue
+the Concept parity pass (per-view composition, cards, chat panel).

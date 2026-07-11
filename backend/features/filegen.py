@@ -40,8 +40,10 @@ _FILE_INTENT = re.compile(
     r"presentation|slide\s*deck|slides?|deck|csv|chart|graph|plot|diagram|infographic|"
     r"invoice|resume|cv|brochure|flyer|certificate|tex|latex|html|web\s?page|webpage|website|"
     r"landing page|single[-\s]?page app|audio|sound|sound file|sound effect|voiceover|"
-    r"voice-over|narration|text[-\s]?to[-\s]?speech|tts|speech|video|movie|animation|"
-    r"\.(?:pdf|docx?|xlsx?|pptx?|csv|tex|png|jpe?g|gif|webp|svg|zip|wav|mp3|mp4|webm|html?|md|txt|json))\b",
+    r"voice-over|narration|text[-\s]?to[-\s]?speech|tts|speech|video|movie|animation)\b"
+    # a bare ".ext" mention ("five .png files"): \b never matches between a space and a dot,
+    # so the extension alternative must live OUTSIDE the word-boundary group above
+    r"|\.(?:pdf|docx?|xlsx?|pptx?|csv|tex|png|jpe?g|gif|webp|svg|zip|wav|mp3|mp4|webm|html?|md|txt|json)\b",
     re.IGNORECASE,
 )
 _CREATE_VERB = re.compile(

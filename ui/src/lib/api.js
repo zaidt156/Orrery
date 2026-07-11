@@ -110,6 +110,7 @@ export const setBranding = (branding) => apiSend("/api/branding", "PUT", brandin
 export const getPrivacy = () => apiGet("/api/privacy");
 export const setPrivacy = (mode) => apiSend("/api/privacy", "PUT", { mode });
 export const getLife = () => apiGet("/api/life");
+export const markLifeOnboarded = () => apiSend("/api/life/onboarded", "POST", {});
 export const getLifeHistory = () => apiGet("/api/life/history");
 export const listLifeProposals = (status = "") =>
   apiGet(`/api/life/proposals${status ? `?status=${encodeURIComponent(status)}` : ""}`);

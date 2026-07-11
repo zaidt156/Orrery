@@ -127,8 +127,23 @@ if [[ -d node_modules ]]; then
 else
   run npm ci
 fi
-# No signing identity on CI/dev machines — build unsigned rather than failing.
-CSC_IDENTITY_AUTO_DISCOVERY=false run npx electron-builder --mac dmg --publish never
+# No Developer ID on CI/dev machines, but a COMPLETELY unsigned app is hard-blocked as
+# "damaged" on Apple Silicon. Build the .app first, AD-HOC sign every nested binary, then
+# pack the DMG from the signed app. Quarantined first-open still needs right-click → Open
+# (or System Settings → Open Anyway) until real notarization ships.
+CSC_IDENTITY_AUTO_DISCOVERY=false run npx electron-builder --mac dir --publish never
+APP_DIR="$(ls -d dist/mac*/Orrery.app 2>/dev/null | head -1 || true)"
+if [[ -z "$APP_DIR" ]]; then
+  echo "electron-builder did not produce Orrery.app under desktop/electron/dist" >&2
+  exit 1
+fi
+echo "Ad-hoc signing $APP_DIR..."
+while IFS= read -r -d '' bin; do
+  codesign --force --sign - "$bin" || true
+done < <(find "$APP_DIR" -type f \( -name "*.dylib" -o -name "*.so" -o -perm -111 \) -print0)
+run codesign --force --deep --sign - "$APP_DIR"
+run codesign --verify --deep --strict "$APP_DIR"
+CSC_IDENTITY_AUTO_DISCOVERY=false run npx electron-builder --prepackaged "$APP_DIR" --mac dmg --publish never
 popd >/dev/null
 
 DMG="$(ls desktop/electron/dist/Orrery-*-mac-*.dmg 2>/dev/null | head -1 || true)"

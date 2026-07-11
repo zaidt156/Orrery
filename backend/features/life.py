@@ -324,8 +324,37 @@ async def document_for_current_user() -> dict:
         "content": document.content,
         "revision": document.revision,
         "location": str(document.path),
-        "fresh": is_fresh(document.content),  # drives the first-run questions in the UI
+        "fresh": is_fresh(document.content),  # nothing personal saved yet
+        "onboarded": await onboarded_for_owner(owner_id),  # first-run questions shown once EVER
     }
+
+
+_ONBOARDING_KEY = "life_onboarding"
+
+
+def _onboarding_slot(owner_id: str | None) -> str:
+    return owner_id or "solo"
+
+
+async def onboarded_for_owner(owner_id: str | None) -> bool:
+    from backend.core import appconfig
+
+    state = await appconfig.get_setting(_ONBOARDING_KEY, {}) or {}
+    return _onboarding_slot(owner_id) in (state.get("done") or [])
+
+
+async def mark_onboarded_for_current_user() -> dict:
+    """Durable, per-owner, database-backed — the first-run dialog can never come back, even if
+    the webview's local storage is wiped or the user answers on another machine."""
+    from backend.core import appconfig
+    from backend.features import team
+
+    owner_id = await team.current_owner_id()
+    state = await appconfig.get_setting(_ONBOARDING_KEY, {}) or {}
+    done = set(state.get("done") or [])
+    done.add(_onboarding_slot(owner_id))
+    await appconfig.set_setting(_ONBOARDING_KEY, {"done": sorted(done)})
+    return {"onboarded": True}
 
 
 async def propose_for_owner(

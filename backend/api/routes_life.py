@@ -21,6 +21,11 @@ async def life_read() -> dict:
         _raise_life_error(exc)
 
 
+@router.post("/life/onboarded")
+async def life_mark_onboarded() -> dict:
+    return await life.mark_onboarded_for_current_user()
+
+
 @router.get("/life/history")
 async def life_history() -> dict:
     try:

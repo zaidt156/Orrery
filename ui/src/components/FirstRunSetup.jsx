@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { approveLifeProposal, createLifeProposal, getLife } from "../lib/api.js";
+import { approveLifeProposal, createLifeProposal, getLife, markLifeOnboarded } from "../lib/api.js";
 
 // First-run questions that seed LIFE.md — the app's living memory ("soul"). Shown only while
 // LIFE.md is still fresh (nothing personal in it) and never again once answered or skipped.
@@ -32,7 +32,9 @@ export default function FirstRunSetup() {
 
   useEffect(() => {
     if (localStorage.getItem(SKIP_KEY)) return;
-    getLife().then((d) => { if (d?.fresh) setOpen(true); }).catch(() => { /* locked or offline — stay closed */ });
+    // `onboarded` is the durable database-backed flag: the dialog appears on the FIRST start
+    // only, and can never return — even if the webview's local storage is wiped.
+    getLife().then((d) => { if (d?.fresh && !d?.onboarded) setOpen(true); }).catch(() => { /* locked or offline — stay closed */ });
   }, []);
 
   const answered = QUESTIONS.some((q) => answers[q.key]?.trim());
@@ -43,6 +45,8 @@ export default function FirstRunSetup() {
     try {
       const proposal = await createLifeProposal(composeLife(answers), "First-run setup");
       await approveLifeProposal(proposal.id, proposal.target_hash);
+      await markLifeOnboarded().catch(() => {});
+      localStorage.setItem(SKIP_KEY, "1");
       setOpen(false);
     } catch (e) {
       setErr(String(e.message || e));
@@ -53,6 +57,7 @@ export default function FirstRunSetup() {
 
   function skip() {
     localStorage.setItem(SKIP_KEY, "1");
+    markLifeOnboarded().catch(() => {});
     setOpen(false);
   }
 
