@@ -84,10 +84,11 @@ function cloneConfig(config, catalog) {
 }
 
 function Toggle({ checked, onChange, label, disabled = false }) {
+  // checked state is a CLASS, not a :has() selector — deterministic on every webview engine
   return (
-    <label className={`agent-check${disabled ? " disabled" : ""}`}>
+    <label className={`agent-check${disabled ? " disabled" : ""}${checked ? " checked" : ""}`}>
       <input type="checkbox" checked={checked} disabled={disabled} onChange={(event) => onChange(event.target.checked)} />
-      <span aria-hidden="true">{checked ? <Check /> : null}</span>
+      <span aria-hidden="true">{checked ? <Check strokeWidth={3.5} /> : null}</span>
       <b>{label}</b>
     </label>
   );
