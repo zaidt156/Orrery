@@ -109,6 +109,18 @@ export const getBranding = () => apiGet("/api/branding");
 export const setBranding = (branding) => apiSend("/api/branding", "PUT", branding);
 export const getPrivacy = () => apiGet("/api/privacy");
 export const setPrivacy = (mode) => apiSend("/api/privacy", "PUT", { mode });
+export const getLife = () => apiGet("/api/life");
+export const getLifeHistory = () => apiGet("/api/life/history");
+export const listLifeProposals = (status = "") =>
+  apiGet(`/api/life/proposals${status ? `?status=${encodeURIComponent(status)}` : ""}`);
+export const createLifeProposal = (content, reason = "") =>
+  apiSend("/api/life/proposals", "POST", { content, reason });
+export const approveLifeProposal = (id, target_hash) =>
+  apiSend(`/api/life/proposals/${id}/approve`, "POST", { target_hash });
+export const rejectLifeProposal = (id, target_hash, reason = "") =>
+  apiSend(`/api/life/proposals/${id}/reject`, "POST", { target_hash, reason });
+export const createLifeRollbackProposal = (revision, reason = "") =>
+  apiSend("/api/life/rollback-proposals", "POST", { revision, reason });
 export const getTasks = () => apiGet("/api/tasks");
 export const cancelTask = (id) => apiSend(`/api/tasks/${id}/cancel`, "POST");
 export const getUsage = () => apiGet("/api/usage");

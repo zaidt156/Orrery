@@ -285,3 +285,21 @@ class DatasetMongoBody(BaseModel):
     uri: str = ""          # mongodb:// URI -> keychain, never stored in the DB
     collection: str = ""
     workspace_id: str = ""
+
+
+class LifeProposalCreate(BaseModel):
+    content: str = Field(max_length=262_144)
+    reason: str = Field(default="", max_length=500)
+
+
+class LifeDecision(BaseModel):
+    target_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class LifeRejection(LifeDecision):
+    reason: str = Field(default="", max_length=300)
+
+
+class LifeRollbackCreate(BaseModel):
+    revision: str = Field(pattern=r"^[0-9a-f]{64}$")
+    reason: str = Field(default="", max_length=500)

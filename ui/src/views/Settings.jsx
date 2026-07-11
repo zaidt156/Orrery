@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   Building2,
+  BookOpen,
   Cpu,
   Database,
   Download,
@@ -21,11 +22,16 @@ import PageHero from "../components/PageHero.jsx";
 import { useAppearance } from "../components/AppearanceProvider.jsx";
 import {
   addCustomModel,
+  approveLifeProposal,
   clearProviderKey,
   connectPlan,
+  createLifeProposal,
+  createLifeRollbackProposal,
   deleteCustomModel,
   disconnectPlan,
   getBranding,
+  getLife,
+  getLifeHistory,
   getAppUpdate,
   getPrivacy,
   setPrivacy,
@@ -38,6 +44,8 @@ import {
   setDefaults,
   getModels,
   listMcp,
+  listLifeProposals,
+  rejectLifeProposal,
   updateMcp,
   getModelCatalog,
   getProviders,
@@ -74,6 +82,7 @@ const PROVIDER_LABEL = {
 const SETTINGS_SECTIONS = [
   { id: "general", label: "General", Icon: SlidersHorizontal },
   { id: "appearance", label: "Appearance", Icon: Palette },
+  { id: "memory", label: "Life Memory", Icon: BookOpen },
   { id: "accounts", label: "Accounts", Icon: KeyRound },
   { id: "database", label: "Database", Icon: Database },
   { id: "models", label: "Models", Icon: Cpu },
@@ -1057,6 +1066,154 @@ function ThemeSection() {
   );
 }
 
+function LifeSection() {
+  const [lifeDoc, setLifeDoc] = useState(null);
+  const [draft, setDraft] = useState("");
+  const [reason, setReason] = useState("");
+  const [proposals, setProposals] = useState([]);
+  const [history, setHistory] = useState([]);
+  const [busy, setBusy] = useState("");
+  const [error, setError] = useState("");
+
+  async function load({ resetDraft = false } = {}) {
+    const [nextDocument, nextProposals, nextHistory] = await Promise.all([
+      getLife(),
+      listLifeProposals("pending"),
+      getLifeHistory(),
+    ]);
+    setLifeDoc(nextDocument);
+    setProposals(nextProposals.proposals || []);
+    setHistory(nextHistory.revisions || []);
+    if (resetDraft || !lifeDoc) setDraft(nextDocument.content || "");
+  }
+
+  useEffect(() => {
+    load({ resetDraft: true }).catch((e) => setError(String(e.message || e)));
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function act(label, operation, { resetDraft = false } = {}) {
+    setBusy(label);
+    setError("");
+    try {
+      await operation();
+      await load({ resetDraft });
+    } catch (e) {
+      setError(String(e.message || e));
+    } finally {
+      setBusy("");
+    }
+  }
+
+  function propose() {
+    return act("propose", async () => {
+      await createLifeProposal(draft, reason);
+      setReason("");
+    });
+  }
+
+  return (
+    <>
+      <div className="section-label">Canonical memory â€” private, local, versioned, and user-controlled</div>
+      <div className="provider-block life-memory-block">
+        <div className="life-memory-intro">
+          <div>
+            <div className="mode-name">Your Orrery LIFE.md</div>
+            <div className="mode-sub">
+              Agents can only propose changes. Nothing becomes durable until you approve the exact diff.
+              Credentials and tokens are rejected.
+            </div>
+          </div>
+          {lifeDoc && <code title={lifeDoc.revision}>{lifeDoc.revision.slice(0, 12)}</code>}
+        </div>
+        {lifeDoc === null ? <div className="settings-loading s-sub">Loading memoryâ€¦</div> : (
+          <>
+            <textarea
+              className="life-editor"
+              aria-label="LIFE.md content"
+              spellCheck="false"
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+            />
+            <label className="life-reason-label">
+              <span>Reason for this change</span>
+              <input
+                className="key-input"
+                maxLength={500}
+                value={reason}
+                onChange={(event) => setReason(event.target.value)}
+                placeholder="What should future Orrery versions remember?"
+              />
+            </label>
+            <div className="life-editor-actions">
+              <span className="mode-sub" title={lifeDoc.location}>{lifeDoc.location}</span>
+              <button
+                className="btn primary"
+                disabled={!!busy || draft === lifeDoc.content}
+                onClick={propose}
+              >
+                {busy === "propose" ? "Preparingâ€¦" : "Review exact change"}
+              </button>
+            </div>
+          </>
+        )}
+        {error && <div className="key-err life-error" role="alert">{error}</div>}
+      </div>
+
+      <div className="section-label">Pending proposals â€” approval applies only the hash shown</div>
+      {proposals.length === 0 && <div className="s-sub life-empty">No changes are waiting for approval.</div>}
+      {proposals.map((proposal) => (
+        <article className="provider-block life-proposal" key={proposal.id}>
+          <div className="life-proposal-head">
+            <div>
+              <div className="mode-name">{proposal.reason || "LIFE.md change"}</div>
+              <div className="mode-sub">
+                {proposal.source_type} proposal Â· target <code>{proposal.target_hash.slice(0, 12)}</code>
+              </div>
+            </div>
+            <span className="status-pill warn">Review required</span>
+          </div>
+          <pre className="life-diff" aria-label="Exact LIFE.md change">{proposal.diff || "Content changed."}</pre>
+          <div className="life-proposal-actions">
+            <button
+              className="btn primary"
+              disabled={!!busy}
+              onClick={() => act(`approve-${proposal.id}`, () => approveLifeProposal(proposal.id, proposal.target_hash), { resetDraft: true })}
+            >
+              {busy === `approve-${proposal.id}` ? "Applyingâ€¦" : "Approve exact change"}
+            </button>
+            <button
+              className="btn ghost"
+              disabled={!!busy}
+              onClick={() => act(`reject-${proposal.id}`, () => rejectLifeProposal(proposal.id, proposal.target_hash))}
+            >
+              Reject
+            </button>
+          </div>
+        </article>
+      ))}
+
+      <div className="section-label">Revision history â€” content-addressed rollback points</div>
+      <div className="provider-block life-history-list">
+        {history.map((revision) => (
+          <div className="mode-row" key={revision.revision}>
+            <div className="mode-main">
+              <div className="mode-name"><code>{revision.revision.slice(0, 12)}</code>{revision.current ? " Â· Current" : ""}</div>
+              <div className="mode-sub">{new Date(revision.created_at).toLocaleString()} Â· {revision.size.toLocaleString()} bytes</div>
+            </div>
+            <button
+              className="btn ghost"
+              disabled={revision.current || !!busy}
+              onClick={() => act(`restore-${revision.revision}`, () => createLifeRollbackProposal(revision.revision))}
+            >
+              Prepare rollback
+            </button>
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
+
 const EFFORT_DEFAULTS = [["", "Standard"], ["low", "Quick"], ["high", "Deep"], ["xhigh", "Max"]];
 
 function DefaultsSection({ canManage }) {
@@ -1183,8 +1340,14 @@ export default function Settings() {
     ),
     appearance: (
       <>
-        <SettingsPanelHeader title="Appearance" description="Pick one of four looks for the whole app." />
+        <SettingsPanelHeader title="Appearance" description="Choose interface structure and color palette independently." />
         <ThemeSection />
+      </>
+    ),
+    memory: (
+      <>
+        <SettingsPanelHeader title="Life Memory" description="Control the durable context Orrery carries safely across upgrades." />
+        <LifeSection />
       </>
     ),
     accounts: (

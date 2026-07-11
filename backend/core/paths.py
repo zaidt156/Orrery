@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -47,3 +48,37 @@ def resource_path(*parts: str) -> Path:
 
 def runtime_path(*parts: str) -> Path:
     return app_dir().joinpath(*parts)
+
+
+def user_data_dir() -> Path:
+    """Return Orrery's upgrade-safe, per-user writable data directory.
+
+    ``runtime_path`` remains for files intentionally colocated with a source checkout or portable
+    build. Durable user state belongs here instead: installers may replace the application folder,
+    and a signed macOS app bundle is read-only. ``ORRERY_DATA_DIR`` is an explicit development and
+    managed-deployment override.
+    """
+    override = os.environ.get("ORRERY_DATA_DIR", "").strip()
+    if override:
+        return Path(override).expanduser()
+
+    if sys.platform == "win32":
+        base = os.environ.get("LOCALAPPDATA", "").strip()
+        root = Path(base) if base else Path.home() / "AppData" / "Local"
+        return root / "Orrery"
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Application Support" / "Orrery"
+
+    xdg = os.environ.get("XDG_DATA_HOME", "").strip()
+    root = Path(xdg).expanduser() if xdg else Path.home() / ".local" / "share"
+    return root / "orrery"
+
+
+def settings_file() -> Path:
+    """Configuration file location without making source development depend on installed paths."""
+    override = os.environ.get("ORRERY_ENV_FILE", "").strip()
+    if override:
+        return Path(override).expanduser()
+    if getattr(sys, "frozen", False):
+        return user_data_dir() / ".env"
+    return runtime_path(".env")

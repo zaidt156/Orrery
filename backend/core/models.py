@@ -420,6 +420,61 @@ class UserSkill(Base):
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class LifeProposal(Base):
+    """An immutable candidate change to one owner's canonical LIFE.md.
+
+    The full proposed bytes are stored in the user's own database so an approval is bound to exact
+    content. Application logs and audit events must use hashes/metadata only, never this field.
+    """
+
+    __tablename__ = "life_proposals"
+    __table_args__ = (
+        CheckConstraint(
+            "source_type IN ('user', 'agent', 'rollback', 'system')",
+            name="ck_life_proposals_source_type",
+        ),
+        CheckConstraint(
+            "status IN ('pending', 'applying', 'applied', 'rejected', 'expired', 'apply_failed')",
+            name="ck_life_proposals_status",
+        ),
+        Index("ix_life_proposals_owner_created", "owner_id", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    owner_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    base_hash: Mapped[str] = mapped_column(String(64))
+    target_hash: Mapped[str] = mapped_column(String(64))
+    proposed_content: Mapped[str] = mapped_column(Text)
+    diff: Mapped[str] = mapped_column(Text, default="")
+    reason: Mapped[str] = mapped_column(String(500), default="")
+    source_type: Mapped[str] = mapped_column(String(20), default="user")
+    source_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default="pending", index=True)
+    decided_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    error: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    expires_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True))
+    decided_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    applied_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class LifeRevision(Base):
+    """Metadata pointer for a content-addressed LIFE.md snapshot on local disk."""
+
+    __tablename__ = "life_revisions"
+    __table_args__ = (Index("ix_life_revisions_owner_created", "owner_id", "created_at"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    owner_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    content_hash: Mapped[str] = mapped_column(String(64), index=True)
+    previous_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    proposal_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("life_proposals.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    source_type: Mapped[str] = mapped_column(String(20), default="proposal")
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class TeamUser(Base):
     """A member of a shared (team) Orrery, identified by an access key. Only present when team mode is on.
 

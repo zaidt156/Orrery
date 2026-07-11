@@ -9,7 +9,7 @@ PROJECT_ROOT = paths.project_root()
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=str(paths.runtime_path(".env")),
+        env_file=str(paths.settings_file()),
         env_file_encoding="utf-8",
         extra="ignore",
     )

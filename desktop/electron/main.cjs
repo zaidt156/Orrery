@@ -55,6 +55,9 @@ function startBackend() {
     ORRERY_SESSION_TOKEN: SESSION_TOKEN,
     ORRERY_API_HOST: API_HOST,
     ORRERY_API_PORT: String(API_PORT),
+    // The PyInstaller backend lives inside resources/. Never let mutable memory, generated files,
+    // config, or caches land in that signed/update-replaced application directory.
+    ORRERY_DATA_DIR: app.getPath("userData"),
   };
 
   backendProcess = spawn(backend.command, backend.args, {

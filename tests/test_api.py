@@ -50,6 +50,65 @@ def test_permission_error_returns_403(monkeypatch):
     assert r.json()["detail"] == "Team access key required."
 
 
+def test_life_document_is_local_api_authenticated(monkeypatch):
+    from backend.features import life
+
+    async def fake_document():
+        return {"content": "# Life\n", "revision": "a" * 64, "location": "private/LIFE.md"}
+
+    monkeypatch.setattr(life, "document_for_current_user", fake_document)
+
+    assert _client().get("/api/life").status_code == 401
+    response = _client().get("/api/life", headers={"X-Orrery-Token": TOKEN})
+    assert response.status_code == 200
+    assert response.json()["revision"] == "a" * 64
+
+
+def test_life_approval_is_bound_to_exact_displayed_target(monkeypatch):
+    from backend.features import life
+
+    seen = {}
+
+    async def fake_approve(proposal_id, *, target_hash):
+        seen["decision"] = (proposal_id, target_hash)
+        return {"id": proposal_id, "target_hash": target_hash, "status": "applied"}
+
+    monkeypatch.setattr(life, "approve_for_current_user", fake_approve)
+    target = "b" * 64
+    response = _client().post(
+        "/api/life/proposals/proposal-1/approve",
+        headers={"X-Orrery-Token": TOKEN},
+        json={"target_hash": target},
+    )
+
+    assert response.status_code == 200
+    assert seen["decision"] == ("proposal-1", target)
+    assert response.json()["status"] == "applied"
+
+
+def test_life_approval_rejects_invalid_or_stale_digest(monkeypatch):
+    from backend.features import life
+
+    async def stale(_proposal_id, *, target_hash):
+        raise life.LifeConflictError(f"stale {target_hash[:4]}")
+
+    monkeypatch.setattr(life, "approve_for_current_user", stale)
+
+    invalid = _client().post(
+        "/api/life/proposals/p/approve",
+        headers={"X-Orrery-Token": TOKEN},
+        json={"target_hash": "short"},
+    )
+    stale_response = _client().post(
+        "/api/life/proposals/p/approve",
+        headers={"X-Orrery-Token": TOKEN},
+        json={"target_hash": "c" * 64},
+    )
+
+    assert invalid.status_code == 422
+    assert stale_response.status_code == 409
+
+
 def test_context_window_has_safe_bounds():
     # any size within bounds is accepted — the UI offers per-model tiers and the backend clamps to
     # the model's real maximum in chat.create/update_conversation

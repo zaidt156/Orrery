@@ -14,11 +14,11 @@ import time
 import uuid
 
 from backend.core.config import settings
-from backend.core.paths import runtime_path
+from backend.core.paths import user_data_dir
 
 log = logging.getLogger("orrery.files")
 
-_DIR = runtime_path("tmp", "generated")
+_DIR = user_data_dir() / "tmp" / "generated"
 _SAFE = re.compile(r"[^A-Za-z0-9._-]+")
 MAX_FILE_BYTES = 25_000_000
 

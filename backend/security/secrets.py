@@ -60,6 +60,10 @@ def redact_url(text: str) -> str:
 _SECRET_PATTERNS = [
     (re.compile(r"sk-[A-Za-z0-9_\-]{8,}"), "[redacted]"),
     (re.compile(r"AIza[A-Za-z0-9_\-]{8,}"), "[redacted]"),
+    (re.compile(r"xox(?:a|b|p|r|s)-[A-Za-z0-9-]{10,}", re.IGNORECASE), "[redacted]"),
+    (re.compile(r"xapp-[A-Za-z0-9-]{10,}", re.IGNORECASE), "[redacted]"),
+    (re.compile(r"(?:1//|ya29\.)[A-Za-z0-9._\-]{10,}"), "[redacted]"),
+    (re.compile(r"-----BEGIN (?:[A-Z0-9 ]+ )?PRIVATE KEY-----"), "[redacted private key]"),
     (re.compile(r"Bearer\s+[A-Za-z0-9._\-]{8,}", re.IGNORECASE), "Bearer [redacted]"),
     (_URL_PW, r"\1****\3"),
     (re.compile(r"([?&](?:key|api_key|token|access_token|secret)=)[^&\s]+", re.IGNORECASE), r"\1[redacted]"),

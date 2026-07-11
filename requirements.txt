@@ -35,6 +35,9 @@ procrastinate>=3.0
 # Secrets — OS keychain (security.md §1)
 keyring>=25.5
 
+# Cross-platform lock around canonical LIFE.md writes (upgrade-safe user memory).
+filelock>=3.29
+
 # Configuration
 pydantic>=2.10
 pydantic-settings>=2.14.2

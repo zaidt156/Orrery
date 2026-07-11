@@ -2100,3 +2100,38 @@ cloud-Mac smoke test chained after the macOS build — the same proven release p
 
 Next: dashboard connection persistence, the new GPT model IDs (waiting on which ones), and the
 remaining speed levers (bound the per-turn history load, frontend streaming re-renders).
+
+
+## Step 132 â€” Independent interfaces and upgrade-safe Life Memory (July 11, 2026)
+
+The redesign and durable-memory work now have enforceable foundations rather than visual or
+documentation-only promises.
+
+- **Interface and color are independent settings.** Classic and Concept now have separate stored
+  structural modes, while Simple, Futuristic, Winter, Summer, and Observatory are palette choices.
+  Legacy theme preferences migrate automatically. Classic starts in Chat without a Home tab;
+  Concept keeps the labeled navigation and Home workspace.
+- **LIFE.md survives upgrades.** Orrery bootstraps the user's private runtime memory into the native
+  OS user-data directory, never the installation folder. Electron explicitly passes that directory
+  to the packaged backend; generated files, WebView state, and packaged `.env` configuration also
+  moved out of the signed/update-replaced application directory.
+- **Agents cannot silently rewrite memory.** The dedicated Life service prepares an immutable
+  proposal with base and target SHA-256 hashes. Settings shows the exact plaintext diff, and a local
+  owner must approve that exact target digest. Writes use a cross-platform lock, stale-base check,
+  same-directory atomic replace, link/reparse-point defense, secret screening, and content-addressed
+  snapshots. Approval is crash-reconcilable; rejected, expired, or mismatched proposals cannot
+  apply.
+- **History is usable.** Settings now includes a Life Memory editor, pending review queue, exact
+  approve/reject actions, runtime-file location, revision list, and rollback proposals. Team users
+  receive isolated canonical files, while background work must carry an explicit snapshotted owner.
+- **The old macOS write failure is addressed at its root.** A packaged backend previously tried to
+  write under Electron's `resources/backend` directoryâ€”inside the signed `.app` on macOS. All
+  durable mutable paths now resolve through platform user data instead.
+
+Verified: 58 focused Python tests pass across paths, LIFE storage/approval, secrets, files, config,
+and authenticated APIs; the production UI build also passes. Browser-plugin verification remains
+blocked by its local kernel-asset error, so full live visual/runtime checks stay in the final matrix.
+
+Next: versioned Agent persistence and real CRUD/builder state, followed by bounded execution,
+schedules, the scoped external agent API, Slack/Gmail connectors, full Concept page composition,
+and clean-machine Windows/macOS installer gates.

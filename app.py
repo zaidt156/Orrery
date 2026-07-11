@@ -18,7 +18,7 @@ if sys.platform == "win32":
 from backend.core import database
 from backend.core.clipboard import set_clipboard_text
 from backend.core.config import settings
-from backend.core.paths import resource_path, runtime_path
+from backend.core.paths import resource_path, user_data_dir
 from backend.security.secrets import redact_url
 
 from backend.core.observability import install as _install_logging
@@ -29,7 +29,7 @@ log = logging.getLogger("orrery")
 # fresh per-session token so other local processes can't drive the API. Electron can pass one in
 # because it owns the desktop window and starts the backend as a child process.
 SESSION_TOKEN = os.environ.get("ORRERY_SESSION_TOKEN") or pysecrets.token_urlsafe(32)
-WEBVIEW_DATA_DIR = runtime_path("tmp", "webview2")
+WEBVIEW_DATA_DIR = user_data_dir() / "tmp" / "webview2"
 
 _ready = threading.Event()
 _boot_error: list[BaseException] = []
@@ -123,6 +123,9 @@ async def _boot_and_serve() -> None:
         )
     await run_migrations()
 
+    from backend.features import life as _life
+    _life.bootstrap()  # create the upgrade-safe solo memory charter once; never overwrites it
+
     from backend.features import files as _files
     _files.cleanup()  # prune generated files past their TTL so tmp/ doesn't grow forever
 
@@ -203,6 +206,7 @@ def _packaging_probe() -> None:
         resource_path("ui", "dist", "index.html"),
         resource_path("skills"),
         resource_path("assets", "desktop", "orrery.png"),
+        resource_path("LIFE.md"),
     ]
     missing = [str(path) for path in required if not path.exists()]
     if missing:
