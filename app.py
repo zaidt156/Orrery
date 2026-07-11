@@ -161,6 +161,9 @@ async def _boot_and_serve() -> None:
     from backend.features import taskbrain as _taskbrain
     await _taskbrain.reconcile_orphans()  # mark last run's 'running' tasks as interrupted
 
+    from backend.features import agent_runs as _agent_runs
+    await _agent_runs.reconcile_orphans()  # agent runs left 'running' by a closed app
+
     from backend.features import skills as _skills
     await _skills.refresh_user_skills()  # load the user's own enabled skills into memory
 

@@ -2314,3 +2314,49 @@ Released by moving v0.1.0-preview once more so the installers pick up the macOS 
 
 Next: the Agents run engine (bounded execution, manual Run, schedules firing), then continue
 the Concept parity pass (per-view composition, cards, chat panel).
+
+
+## Step 137 - Agents RUN: the bounded execution engine (July 11, 2026)
+
+Agents now actually work. The engine turns a saved definition into real, auditable runs:
+
+- **Press Run, watch it work.** The Run button starts a run (with an optional task for that run);
+  the Activity panel shows every run live - status, trigger, each model step, each tool call and
+  its result, the final output - and lets you cancel. Scheduled agents fire on their cron via a
+  one-minute heartbeat in the durable job queue, honoring the overlap policy (forbid / queue /
+  replace) and de-duplicating across workers.
+- **Every run is an immutable snapshot.** A run executes the exact config version it started
+  with - editing the agent never changes queued or running work. The whole conversation is
+  rebuilt from the durable step trace, so a run survives suspensions and app restarts (runs left
+  "running" by a closed app are marked interrupted at boot).
+- **The loop is bounded by the agent's own budgets:** model steps, wall-clock runtime,
+  input/output sizes, runs per day, and daily API cost are all enforced in code - a looping
+  agent stops with a plain explanation instead of burning tokens.
+- **Tools stay behind the grant wall.** The model calls tools through one fenced convention;
+  every call goes through the registry's grant check (allowed tools AND allowed resources).
+  An ungranted tool returns a refusal the agent can adapt to - verified by test.
+- **Risky actions suspend for the owner.** A call whose risk needs approval creates a pending
+  approval card in the Activity panel showing the EXACT action; nothing executes until you
+  approve, and a rejection is fed back so the agent can finish differently. Approve resumes the
+  run automatically. Approvals expire after a day.
+- **A latent Automations bug died on the way:** manual workflow runs were deferred to a queue
+  task name that was never registered, so queued runs could sit forever - both run_workflow and
+  the new run_agent are now properly registered on the worker.
+
+Verified: 8 new engine tests (tool loop, approval suspend/resume, step and runs-per-day budgets,
+ungranted-tool refusal) - 376 backend tests total, UI build clean.
+
+## The plan from here (user direction, July 11)
+
+1. **Architecture hardening for scale** - re-plan and secure the foundations so Orrery stays
+   fast and correct with LARGE amounts of files and data: storage/indexing strategy for big
+   collections, bounded context assembly at scale, the remaining frontend streaming re-render
+   fix, and a security re-review of the grown surface.
+2. **Real file previews** - a generated PPTX (and other Office types) currently previews as
+   text; previews should look like the real file (slides with layout and images, styled
+   documents, formatted sheets), with the current HTML preview as the fallback.
+3. **One-off "small apps"** - when the user asks for a quick app for urgent or one-time use,
+   Orrery should handle it end to end: generate it AND give a safe way to actually use it
+   (sandbox-hosted interactive preview or packaged download) - any sort of asked work.
+4. **Concept/futuristic theme, continued** - per-view composition to match the concept art.
+5. **Agents next increments** - scoped external API keys, Slack/Gmail triggers, learning notes.

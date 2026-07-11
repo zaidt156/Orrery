@@ -1,10 +1,19 @@
-"""Authenticated local API for versioned agent definitions and builder resources."""
+"""Authenticated local API for versioned agent definitions, builder resources, and runs."""
 
 from fastapi import APIRouter, HTTPException, Query, Response, status
+from pydantic import BaseModel, Field
 
-from backend.features import agents
+from backend.features import agent_runs, agents, team
 
 router = APIRouter()
+
+
+class AgentRunStart(BaseModel):
+    input: str = Field(default="", max_length=100_000)
+
+
+class ApprovalDecision(BaseModel):
+    approve: bool
 
 
 def _bad_config(exc: agents.AgentConfigError) -> None:
@@ -92,3 +101,51 @@ async def agent_archive(agent_id: str) -> Response:
     if item is None:
         raise HTTPException(status_code=404, detail="Agent not found")
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/agents/{agent_id}/runs", status_code=status.HTTP_201_CREATED)
+async def agent_run_start(agent_id: str, body: AgentRunStart) -> dict:
+    owner = await team.current_owner_id()
+    try:
+        return await agent_runs.start_run(agent_id, owner_id=owner, input_text=body.input,
+                                          trigger_type="manual", principal="local-owner")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/agents/{agent_id}/runs")
+async def agent_run_list(agent_id: str, limit: int = Query(default=50, ge=1, le=100)) -> dict:
+    owner = await team.current_owner_id()
+    return {"runs": await agent_runs.list_runs(agent_id, owner_id=owner, limit=limit)}
+
+
+@router.get("/agent-runs/{run_id}")
+async def agent_run_get(run_id: str) -> dict:
+    owner = await team.current_owner_id()
+    run = await agent_runs.get_run(run_id, owner_id=owner)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+    return run
+
+
+@router.post("/agent-runs/{run_id}/cancel")
+async def agent_run_cancel(run_id: str) -> dict:
+    owner = await team.current_owner_id()
+    if not await agent_runs.cancel_run(run_id, owner_id=owner):
+        raise HTTPException(status_code=404, detail="Run not found")
+    return {"ok": True}
+
+
+@router.get("/agent-approvals")
+async def agent_approvals() -> dict:
+    owner = await team.current_owner_id()
+    return {"approvals": await agent_runs.list_pending_approvals(owner_id=owner)}
+
+
+@router.post("/agent-approvals/{approval_id}/decide")
+async def agent_approval_decide(approval_id: str, body: ApprovalDecision) -> dict:
+    owner = await team.current_owner_id()
+    result = await agent_runs.decide_approval(approval_id, approve=body.approve, owner_id=owner)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Approval not found")
+    return result

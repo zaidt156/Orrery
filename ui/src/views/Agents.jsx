@@ -18,10 +18,16 @@ import {
 } from "lucide-react";
 import {
   archiveAgent,
+  cancelAgentRun,
   createAgent,
+  decideAgentApproval,
   getAgentCatalog,
+  getAgentRun,
+  listAgentApprovals,
+  listAgentRuns,
   listAgents,
   setAgentStatus,
+  startAgentRun,
   updateAgent,
 } from "../lib/api.js";
 
@@ -307,9 +313,138 @@ function AgentInspector({ agent }) {
   );
 }
 
+const RUN_ACTIVE = new Set(["queued", "running", "awaiting_approval"]);
+const RUN_DOT = { succeeded: "", failed: "red", cancelled: "red", interrupted: "red" };
+
+function relTime(stamp) {
+  const t = Date.parse(stamp || "");
+  if (Number.isNaN(t)) return "";
+  const s = Math.max(0, (Date.now() - t) / 1000);
+  if (s < 60) return "just now";
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  return `${Math.floor(s / 86400)}d ago`;
+}
+
+const STEP_ICON = { model: Sparkles, tool: Wrench, approval: ShieldCheck, system: Bot, memory: Database };
+
+function AgentActivity({ agent, formOpen, onFormClose }) {
+  const [runs, setRuns] = useState(null);
+  const [approvals, setApprovals] = useState([]);
+  const [openId, setOpenId] = useState(null);
+  const [openRun, setOpenRun] = useState(null);
+  const [input, setInput] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  async function reload(detailId = openId) {
+    try {
+      const [r, a] = await Promise.all([listAgentRuns(agent.id), listAgentApprovals()]);
+      const rows = r.runs || [];
+      setRuns(rows);
+      const runIds = new Set(rows.map((x) => x.id));
+      setApprovals((a.approvals || []).filter((p) => runIds.has(p.run_id)));
+      if (detailId) setOpenRun(await getAgentRun(detailId).catch(() => null));
+    } catch (e) { setErr(String(e.message || e)); }
+  }
+
+  useEffect(() => { setRuns(null); setOpenId(null); setOpenRun(null); setErr(""); reload(null); }, [agent.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  const active = (runs || []).some((run) => RUN_ACTIVE.has(run.status));
+  useEffect(() => {
+    if (!active) return undefined;
+    const timer = setInterval(() => reload(), 2500);
+    return () => clearInterval(timer);
+  }, [active, agent.id, openId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function start() {
+    setBusy(true); setErr("");
+    try { await startAgentRun(agent.id, input.trim()); setInput(""); onFormClose(); await reload(); }
+    catch (e) { setErr(String(e.message || e)); }
+    finally { setBusy(false); }
+  }
+
+  async function decide(approval, approve) {
+    setBusy(true); setErr("");
+    try { await decideAgentApproval(approval.id, approve); await reload(); }
+    catch (e) { setErr(String(e.message || e)); }
+    finally { setBusy(false); }
+  }
+
+  async function toggleRun(run) {
+    if (openId === run.id) { setOpenId(null); setOpenRun(null); return; }
+    setOpenId(run.id);
+    setOpenRun(await getAgentRun(run.id).catch(() => null));
+  }
+
+  return (
+    <section className="agent-detail-section">
+      <div className="agent-section-heading"><h2>Activity</h2><span>durable run ledger</span></div>
+      {formOpen && (
+        <div className="agent-run-form">
+          <textarea rows={2} value={input} onChange={(e) => setInput(e.target.value)}
+            placeholder="What should this agent work on for this run? Leave empty to just pursue its goal." />
+          <div className="agent-run-form-actions">
+            <button className="btn ghost sm" onClick={onFormClose} disabled={busy}>Cancel</button>
+            <button className="btn primary sm" onClick={start} disabled={busy}><CirclePlay />{busy ? "Starting…" : "Start run"}</button>
+          </div>
+        </div>
+      )}
+      {approvals.map((approval) => (
+        <div className="agent-approval-card" key={approval.id}>
+          <ShieldCheck />
+          <div className="agent-approval-body">
+            <b>Approval needed · {approval.tool_key} <span className={`risk-tag risk-${approval.risk}`}>{String(approval.risk || "").replaceAll("_", " ")}</span></b>
+            <pre>{approval.action}</pre>
+          </div>
+          <div className="agent-approval-actions">
+            <button className="btn ghost sm" disabled={busy} onClick={() => decide(approval, false)}>Reject</button>
+            <button className="btn primary sm" disabled={busy} onClick={() => decide(approval, true)}>Approve</button>
+          </div>
+        </div>
+      ))}
+      {err && <div className="agent-form-error" role="alert">{err}</div>}
+      {runs == null && <p className="agent-empty-copy">Loading runs…</p>}
+      {runs != null && runs.length === 0 && (
+        <div className="agent-activity-empty"><CirclePlay /><b>No runs yet</b><p>Press Run to give this agent a task now, or enable its schedule under Edit. Every model step, approval, and tool result lands here.</p></div>
+      )}
+      {(runs || []).map((run) => (
+        <div key={run.id} className={`agent-run-row${openId === run.id ? " open" : ""}`}>
+          <button type="button" className="agent-run-head" onClick={() => toggleRun(run)}>
+            <i className={`pulse ${RUN_ACTIVE.has(run.status) ? "amber" : (RUN_DOT[run.status] ?? "amber")}`} />
+            <b>{run.input_text?.trim() ? run.input_text.trim().slice(0, 80) : "Goal run"}</b>
+            <span className="agent-run-meta">{run.trigger_type} · {run.status.replaceAll("_", " ")} · {relTime(run.created_at)}</span>
+            <ChevronRight />
+          </button>
+          {openId === run.id && (
+            <div className="agent-run-body">
+              {RUN_ACTIVE.has(run.status) && (
+                <button className="btn ghost sm" onClick={async () => { await cancelAgentRun(run.id).catch(() => {}); reload(); }}>Cancel run</button>
+              )}
+              {(openRun?.steps || []).map((step) => {
+                const Icon = STEP_ICON[step.kind] || Bot;
+                return (
+                  <div key={step.sequence} className={`agent-step step-${step.status}`}>
+                    <Icon />
+                    <div><b>{step.summary || step.kind}</b>
+                      {step.detail && <pre>{step.detail.length > 1200 ? `${step.detail.slice(0, 1200)}…` : step.detail}</pre>}
+                    </div>
+                  </div>
+                );
+              })}
+              {run.output_text && <div className="agent-run-output"><b>Result</b><pre>{run.output_text}</pre></div>}
+              {run.error && <div className="agent-form-error">{run.error}</div>}
+            </div>
+          )}
+        </div>
+      ))}
+    </section>
+  );
+}
+
 function AgentDetail({ agent, onEdit, onStatus, onArchive }) {
   const config = agent.config || {};
   const schedule = config.schedule || {};
+  const [runFormOpen, setRunFormOpen] = useState(false);
   return (
     <main className="agents-main">
       <header className="agents-toolbar">
@@ -318,9 +453,10 @@ function AgentDetail({ agent, onEdit, onStatus, onArchive }) {
         <div className="grow" />
         <button className="btn ghost" onClick={onEdit}>Edit</button>
         <button
-          className="btn"
-          disabled
-          title="The run engine ships in the next update — your agent, schedule, and grants are saved and will start executing then."
+          className="btn primary"
+          disabled={agent.status !== "active"}
+          title={agent.status === "active" ? "Start a run now" : "Activate the agent to run it"}
+          onClick={() => setRunFormOpen((open) => !open)}
         >
           <CirclePlay />Run
         </button>
@@ -338,7 +474,7 @@ function AgentDetail({ agent, onEdit, onStatus, onArchive }) {
         </div>
         <section className="agent-detail-section"><div className="agent-section-heading"><h2>Guidelines</h2><span>{config.guidelines?.length || 0}</span></div>{config.guidelines?.length ? <ol>{config.guidelines.map((line, index) => <li key={`${index}-${line}`}>{line}</li>)}</ol> : <p className="agent-empty-copy">No extra guidelines. The goal and platform safety policy still apply.</p>}</section>
         <section className="agent-detail-section"><div className="agent-section-heading"><h2>Granted capabilities</h2><span>{config.tool_grants?.length || 0}</span></div><div className="agent-capability-grid">{config.tool_grants?.length ? config.tool_grants.map((grant) => <div className="agent-capability" key={grant.tool}><Wrench /><div><b>{grant.tool}</b><p>{grant.approval.replaceAll("_", " ")} · {Object.values(grant.resources || {}).flat().length} scoped resources</p></div></div>) : <p className="agent-empty-copy">No tools. This agent can reason and answer, but cannot act.</p>}</div></section>
-        <section className="agent-detail-section"><div className="agent-section-heading"><h2>Activity</h2><span>durable run ledger</span></div><div className="agent-activity-empty"><CirclePlay /><b>No runs yet — the run engine ships in the next update</b><p>Your definition, schedule, and grants are saved as immutable versions. Once the engine lands, manual, scheduled, API, Slack, and Gmail runs appear here with every model step, approval, and tool result.</p></div></section>
+        <AgentActivity agent={agent} formOpen={runFormOpen} onFormClose={() => setRunFormOpen(false)} />
       </div>
     </main>
   );

@@ -24,12 +24,37 @@ async def _health_ping() -> str:
     return "ok"
 
 
+async def _run_workflow(run_id: str) -> None:
+    from backend.automation.engine import execute_run
+
+    await execute_run(run_id)
+
+
+async def _run_agent(run_id: str) -> None:
+    from backend.features.agent_runs import execute_run
+
+    await execute_run(run_id)
+
+
+async def _agent_schedule_tick(timestamp: int) -> None:
+    from backend.features.agent_runs import schedule_tick
+
+    await schedule_tick(timestamp)
+
+
 @lru_cache(maxsize=1)
 def get_queue_app() -> App:
     """Build the Procrastinate app on first use — NOT at import time, because the database
-    may not be configured yet (importing this module must never crash the setup flow)."""
+    may not be configured yet (importing this module must never crash the setup flow).
+
+    Every task deferred BY NAME anywhere in the app must be registered here, or the worker
+    silently fails its jobs (that bit the workflow engine once)."""
     app = App(connector=PsycopgConnector(conninfo=_dsn()))
     app.task(name="health_ping")(_health_ping)
+    app.task(name="run_workflow")(_run_workflow)
+    run_agent = app.task(name="run_agent")(_run_agent)  # noqa: F841 — registration is the point
+    tick = app.task(name="agent_schedule_tick")(_agent_schedule_tick)
+    app.periodic(cron="* * * * *")(tick)  # agent schedules fire on a one-minute heartbeat
     return app
 
 
