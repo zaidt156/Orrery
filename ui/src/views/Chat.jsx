@@ -194,6 +194,20 @@ export default function Chat() {
   const [contextWindow, setContextWindow] = useState("1000000");
   const [evalFor, setEvalFor] = useState(null); // {messageId, content} — the answer being evaluated
   const [copiedKey, setCopiedKey] = useState(""); // which copy button just fired (✓ flash)
+  const [convoTotal, setConvoTotal] = useState(0); // sidebar pagination (plan Task 2)
+
+  async function loadMoreConvos() {
+    try {
+      const page = await listConversations(100, convos.length);
+      setConvos((prev) => {
+        const seen = new Set(prev.map((c) => c.id));
+        return [...prev, ...(page.conversations || []).filter((c) => !seen.has(c.id))];
+      });
+      setConvoTotal(page.total ?? convoTotal);
+    } catch (e) {
+      setBanner(String(e.message || e));
+    }
+  }
 
   useEffect(() => {
     let alive = true;
@@ -208,10 +222,12 @@ export default function Chat() {
         const c = await listConversations();
         if (!alive) return;
         setConvos(c.conversations);
+        setConvoTotal(c.total ?? c.conversations.length);
         hasConversations = c.conversations.length > 0;
         const newProjectId = sessionStorage.getItem("orrery_new_project_chat");
         const pending = sessionStorage.getItem("orrery_open_conversation");
-        const target = pending && c.conversations.find((item) => item.id === pending);
+        // open the handoff target directly by id — it may live beyond the first page
+        const target = pending ? { id: pending } : null;
         if (newProjectId) {
           sessionStorage.removeItem("orrery_new_project_chat");
           const firstMessage = sessionStorage.getItem("orrery_project_first_message");
@@ -751,6 +767,11 @@ export default function Chat() {
               <button className="convo-del" title="Delete chat" onClick={(e) => removeChat(c.id, e)}>×</button>
             </div>
           ))}
+          {convos.length < convoTotal && (
+            <button className="convo-more" onClick={loadMoreConvos}>
+              Show older chats ({convoTotal - convos.length} more)
+            </button>
+          )}
         </div>
         <TaskBrainPanel onOpenConversation={open} />
       </aside>

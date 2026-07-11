@@ -16,8 +16,8 @@ from backend.security import secrets
 router = APIRouter()
 
 @router.get("/conversations")
-async def conversations() -> dict:
-    return {"conversations": await chat.list_conversations()}
+async def conversations(limit: int = 100, offset: int = 0) -> dict:
+    return await chat.list_conversations(limit=limit, offset=offset)
 
 @router.post("/conversations")
 async def new_conversation(body: NewConversation) -> dict:

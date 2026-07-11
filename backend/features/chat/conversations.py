@@ -39,23 +39,36 @@ async def can_access_conversation(conv_id: str) -> bool:
         return bool(conv is not None and _owned_by(conv, owner))
 
 
-async def list_conversations() -> list[dict]:
+async def list_conversations(*, limit: int = 100, offset: int = 0) -> dict:
+    """Newest-first PAGE of chats plus the total — the sidebar loads pages, not everything."""
+    from sqlalchemy import func as sa_func
+
     owner = await team.current_owner_id()  # team mode: only this user's chats; solo: None (all)
+    limit = max(1, min(int(limit), 500))
+    offset = max(0, int(offset))
     async with get_sessionmaker()() as s:
         q = select(Conversation).order_by(Conversation.updated_at.desc())
+        count_q = select(sa_func.count()).select_from(Conversation)
         if owner is not None:
             q = q.where(Conversation.owner_id == owner)
-        rows = (await s.execute(q)).scalars().all()
-        return [
-            {
-                "id": str(c.id),
-                "project_id": str(c.project_id) if c.project_id else None,
-                "title": c.title,
-                "model": c.model,
-                "updated_at": c.updated_at.isoformat(),
-            }
-            for c in rows
-        ]
+            count_q = count_q.where(Conversation.owner_id == owner)
+        total = int((await s.execute(count_q)).scalar_one())
+        rows = (await s.execute(q.offset(offset).limit(limit))).scalars().all()
+        return {
+            "conversations": [
+                {
+                    "id": str(c.id),
+                    "project_id": str(c.project_id) if c.project_id else None,
+                    "title": c.title,
+                    "model": c.model,
+                    "updated_at": c.updated_at.isoformat(),
+                }
+                for c in rows
+            ],
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+        }
 
 
 async def create_conversation(

@@ -40,7 +40,7 @@ export default function Home({ onNavigate }) {
     let alive = true;
     const grab = (p, pick) => p.then(pick).catch(() => null);
     Promise.all([
-      grab(listConversations(), (r) => r.conversations || []),
+      grab(listConversations(200), (r) => ({ rows: r.conversations || [], total: r.total ?? (r.conversations || []).length })),
       grab(listProjects(), (r) => r.projects || []),
       grab(listDataConnections(), (r) => r.connections || []),
       grab(listDatasets(), (r) => r.datasets || []),
@@ -51,10 +51,11 @@ export default function Home({ onNavigate }) {
       grab(getDefaults(), (r) => r || {}),
       grab(getModels(), (r) => r.models || []),
       grab(getProviders(), (r) => r || {}),
-    ]).then(([convos, projects, connections, datasets, collections, ontologies, local, taskRows, defaults, models, providers]) => {
+    ]).then(([convoPage, projects, connections, datasets, collections, ontologies, local, taskRows, defaults, models, providers]) => {
       if (!alive) return;
       setStats({
-        convos, projects, connections, datasets, collections, ontologies,
+        convos: convoPage?.rows || [], convoTotal: convoPage?.total ?? 0,
+        projects, connections, datasets, collections, ontologies,
         localModels: local?.models || [],
       });
       setTasks(taskRows || []);
@@ -92,7 +93,7 @@ export default function Home({ onNavigate }) {
 
         <div className="section-label">Workspace</div>
         <div className="stat-cards">
-          <StatCard icon={MessageSquare} label="Conversations" value={s.convos?.length}
+          <StatCard icon={MessageSquare} label="Conversations" value={s.convoTotal}
             sub={s.convos?.length ? `latest ${relTime(s.convos[0]?.updated_at)}` : "start your first chat"}
             series={dayBuckets((s.convos || []).map((c) => c.updated_at))} onClick={() => onNavigate?.("chat")} />
           <StatCard icon={FolderKanban} label="Projects" value={s.projects?.length}

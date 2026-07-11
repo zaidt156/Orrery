@@ -80,6 +80,12 @@ _VERSIONED_MIGRATIONS: list[tuple[str, list[str]]] = [
         "      FROM messages) o "
         "WHERE m.id = o.id AND m.parent_id IS NULL AND o.prev IS NOT NULL",
     ]),
+    ("0006_list_scale_indexes", [
+        # The sidebar sorts by updated_at on every open, and skeleton loads scan a conversation's
+        # messages by time on every turn; both need indexes as workspaces grow (plan Task 2).
+        "CREATE INDEX IF NOT EXISTS ix_conversations_updated_at ON conversations (updated_at DESC)",
+        "CREATE INDEX IF NOT EXISTS ix_messages_conversation_created ON messages (conversation_id, created_at)",
+    ]),
 ]
 
 

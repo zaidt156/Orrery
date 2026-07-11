@@ -359,6 +359,10 @@ button.stat-card:hover{border-color:var(--ice); transform:translateY(-1px)}
   .activity-card,.system-card{overflow-y:visible}
 }
 
+.convo-more{width:100%;margin-top:4px;padding:8px;border:1px dashed var(--line-soft);
+  border-radius:8px;background:transparent;color:var(--muted);font-size:11px;cursor:pointer}
+.convo-more:hover{border-color:var(--line);color:var(--text)}
+
 /* in-flight reply body: plain text while streaming (markdown renders once, at completion) */
 .ai-text .stream-live{white-space:pre-wrap;word-break:break-word;font-size:13px;line-height:1.62}
 

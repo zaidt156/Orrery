@@ -39,7 +39,7 @@ def test_wrong_token_rejected():
 
 
 def test_permission_error_returns_403(monkeypatch):
-    async def locked_conversations():
+    async def locked_conversations(*, limit=100, offset=0):
         raise PermissionError("Team access key required.")
 
     monkeypatch.setattr(chat, "list_conversations", locked_conversations)

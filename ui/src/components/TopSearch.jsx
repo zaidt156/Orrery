@@ -45,7 +45,7 @@ export default function TopSearch({ tabs = [], onNavigate }) {
     if (index) return;
     const grab = (p, pick) => p.then(pick).catch(() => []);
     const [chats, projects, dashboards, ontologies, collections, skills] = await Promise.all([
-      grab(listConversations(), (r) => (r.conversations || []).map((c) => ({ id: c.id, name: c.title || "Untitled chat" }))),
+      grab(listConversations(200), (r) => (r.conversations || []).map((c) => ({ id: c.id, name: c.title || "Untitled chat" }))),
       grab(listProjects(), (r) => (r.projects || []).map((p) => ({ id: p.id, name: p.name || "Project" }))),
       grab(listDashboards(), (r) => (r.dashboards || []).map((d) => ({ id: d.id, name: d.name || d.title || "Dashboard" }))),
       grab(listOntologies(), (r) => (r.ontologies || []).map((o) => ({ id: o.id, name: o.name }))),
