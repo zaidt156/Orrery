@@ -13,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from backend.core.config import settings
 from backend.core.observability import new_request_id
 from backend.core.paths import resource_path
-from backend.features import artifacts
+from backend.features import artifacts, team
 
 _UI_DIST = resource_path("ui", "dist")
 
@@ -124,6 +124,7 @@ def create_app(session_token: str) -> FastAPI:
         if not x_orrery_token or not hmac.compare_digest(x_orrery_token, session_token):
             raise HTTPException(status_code=401, detail="Invalid session token")
         new_request_id()  # tag this request so all its log lines share one [id]
+        team.begin_request_cache()  # per-request team/identity memo (fresh every request)
 
     # Unauthenticated GET so it can load in a sandboxed <iframe>. The iframe uses
     # sandbox="allow-scripts" WITHOUT allow-same-origin → opaque origin, no access to the

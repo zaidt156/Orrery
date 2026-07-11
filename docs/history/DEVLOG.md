@@ -2377,6 +2377,32 @@ Also this step:
   Task 3 of the current plan.
 - Fixed issue screenshots were removed from the local Issues/ folder at the user's request.
 
+## Step 139 - Scale pass lands; GPT-5.6 lineup; the model knows its own name (July 11, 2026)
+
+Phase 1 of the plan moved four tasks, plus two fresh user reports, all verified by the suite:
+
+- **Streaming is smooth in long chats (plan Task 1).** Tokens now paint at most once per frame
+  instead of re-rendering the whole thread per token; the in-flight reply renders as plain text
+  and becomes formatted Markdown exactly once, at completion; finished messages cache their
+  derivations. The final rendered reply is byte-identical to before.
+- **Lists paginate and are indexed (plan Task 2).** The chat sidebar loads the newest 100 with
+  a "Show older chats" button and a true total; new indexes back the sidebar sort and the
+  per-turn message walk. Search handoffs open chats by id, so older chats still open directly.
+- **Big document drops no longer freeze the app (plan Task 3).** Re-uploading a file REPLACES
+  its old passages (the duplicate-on-reupload bug is dead), and larger uploads index in the
+  durable job queue with live progress in the Ontology tab while chat keeps working.
+- **The team-mode check is memoized per request (plan Task 4)** - the safe version of the memo
+  deliberately deferred in Step 117: a fresh cache per authenticated request (background work
+  always reads fresh), invalidated by every team-state mutation, so it can never fail open.
+- **The chat model now knows what it is** (user report: "which model are you" got a guess).
+  Orrery states the serving model in the system prompt, so the answer is exact on every route.
+- **OpenAI's July 9 GPT-5.6 family is wired in** (user request): sol (flagship), terra
+  (balanced), and luna (fast) map onto the API-key model picker's four slots, and the ChatGPT
+  plan menu gains all three tiers - existing 5.5 selections keep working, and old Codex CLIs
+  now hide EVERY current-generation pin (not just one id) while the auto route keeps working.
+
+Verified: 380 backend tests pass; UI builds clean.
+
 ## The plan from here (user direction, July 11)
 
 1. **Architecture hardening for scale** - re-plan and secure the foundations so Orrery stays

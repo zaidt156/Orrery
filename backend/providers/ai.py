@@ -257,22 +257,26 @@ def _ver(s: str) -> float:
 
 
 def _curate_openai(items: list[dict]) -> list[dict]:
-    """Latest flagship + reasoning (o-series) + a fast model + a pro, max 4."""
+    """Latest flagship + reasoning (o-series) + a fast model + a balanced/pro tier, max 4.
+
+    GPT-5.6 (July 2026) ships as a three-tier family: sol = flagship, terra = balanced,
+    luna = fast/cheap — mapped onto the same four slots so all tiers stay pickable."""
     by = {it["label"]: it for it in items}
     buckets: dict[str, list[str]] = {"flagship": [], "mini": [], "pro": [], "reason": []}
     for label in by:
         if re.match(r"^o\d", label):
             buckets["reason"].append(label)  # o1 / o3 / o4-mini = reasoning
-        elif "codex" in label or "chat-latest" in label:
+        elif "codex" in label or "chat-latest" in label or "realtime" in label or "image" in label:
             continue  # specialized aliases — skip
-        elif "mini" in label or "nano" in label:
+        elif "luna" in label or "mini" in label or "nano" in label:
             buckets["mini"].append(label)
-        elif "pro" in label:
+        elif "terra" in label or "pro" in label:
             buckets["pro"].append(label)
         else:
-            buckets["flagship"].append(label)
+            buckets["flagship"].append(label)  # sol (and the bare gpt-x.y alias) land here
     for b in buckets.values():
-        b.sort(key=_ver, reverse=True)
+        # same version → prefer the explicit tier name (gpt-5.6-sol) over the bare alias (gpt-5.6)
+        b.sort(key=lambda l: (_ver(l), "sol" in l or "terra" in l or "luna" in l), reverse=True)
     picked: list[str] = []
     for slot in ("flagship", "reason", "mini", "pro"):
         if buckets[slot]:

@@ -15,6 +15,7 @@ cannot be forged into admin. The unlock key for this machine lives in the OS key
 """
 from __future__ import annotations
 
+import contextvars
 import hashlib
 import secrets as pysecrets
 import uuid
@@ -47,13 +48,41 @@ def _dict(u: TeamUser) -> dict:
     }
 
 
+# Per-REQUEST memo for team_mode/current_user (they're called 4–6× per turn, each a query or a
+# keychain read). A fresh dict is set by the API auth dependency, so it can never go stale across
+# requests — and code with NO cache set (queue jobs, boot) always queries fresh. This is the safe
+# version of the memo Step 117 deliberately deferred (a timed cache could mask a just-enabled
+# team mode and fail open).
+_request_cache: contextvars.ContextVar[dict | None] = contextvars.ContextVar(
+    "orrery_team_request_cache", default=None
+)
+
+
+def begin_request_cache() -> None:
+    """Called by the API auth dependency at the start of every authenticated request."""
+    _request_cache.set({})
+
+
+def _invalidate_request_cache() -> None:
+    """Team-state mutators call this so THEIR OWN request re-reads fresh state afterwards."""
+    cache = _request_cache.get()
+    if cache is not None:
+        cache.clear()
+
+
 async def team_mode() -> bool:
     """True once a team has been set up (at least one user row exists)."""
+    cache = _request_cache.get()
+    if cache is not None and "team_mode" in cache:
+        return cache["team_mode"]
     try:
         async with get_sessionmaker()() as s:
-            return bool((await s.execute(select(func.count(TeamUser.id)))).scalar_one())
+            result = bool((await s.execute(select(func.count(TeamUser.id)))).scalar_one())
     except Exception:  # noqa: BLE001 — no DB / not migrated yet → treat as solo (single-user)
-        return False
+        result = False
+    if cache is not None:
+        cache["team_mode"] = result
+    return result
 
 
 async def _active_admins(session) -> int:
@@ -74,9 +103,16 @@ async def _authenticate(key: str) -> dict | None:
 
 async def current_user() -> dict | None:
     """Who this client is acting as: SOLO_USER when team mode is off; None when locked."""
+    cache = _request_cache.get()
+    if cache is not None and "user" in cache:
+        return cache["user"]
     if not await team_mode():
-        return SOLO_USER
-    return await _authenticate(secrets.get_secret(_UNLOCK_KEY) or "")
+        user = SOLO_USER
+    else:
+        user = await _authenticate(secrets.get_secret(_UNLOCK_KEY) or "")
+    if cache is not None:
+        cache["user"] = user
+    return user
 
 
 async def is_admin() -> bool:
@@ -142,6 +178,7 @@ async def setup_team(admin_name: str) -> dict:
         await s.execute(update(Project).where(Project.owner_id.is_(None)).values(owner_id=admin_id))
         await s.commit()
     secrets.set_secret(_UNLOCK_KEY, key)  # the founder's client is now unlocked
+    _invalidate_request_cache()
     return {"ok": True, "key": key}
 
 
@@ -151,11 +188,13 @@ async def unlock(key: str) -> dict:
     if not user:
         return {"ok": False, "error": "That key is not valid, or it has been revoked."}
     secrets.set_secret(_UNLOCK_KEY, (key or "").strip())
+    _invalidate_request_cache()
     return {"ok": True, "user": user}
 
 
 def sign_out() -> None:
     secrets.delete_secret(_UNLOCK_KEY)
+    _invalidate_request_cache()
 
 
 async def list_users() -> list[dict]:
@@ -193,6 +232,7 @@ async def set_user(user_id: str, *, role: str | None = None, disabled: bool | No
         if disabled is not None:
             row.disabled = bool(disabled)
         await s.commit()
+        _invalidate_request_cache()
         return {"ok": True}
 
 
@@ -205,4 +245,5 @@ async def delete_user(user_id: str) -> dict:
             return {"ok": False, "error": "This is the last admin — promote or add another admin first."}
         await s.delete(row)
         await s.commit()
+        _invalidate_request_cache()
         return {"ok": True}

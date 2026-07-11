@@ -1069,7 +1069,9 @@ def _chatgpt_plan_variants() -> list[tuple[str, str, str | None]]:
     can_pin_latest = _codex_can_pin_latest(cmd) if cmd else False
     out: list[tuple[str, str, str | None]] = []
     for vid, label, flag in CHATGPT_PLAN_VARIANTS:
-        if flag == _CODEX_LATEST_PINNED_MODEL and not can_pin_latest:
+        # old CLIs can pin only the legacy fast model; every current-generation pin (5.6 sol/
+        # terra/luna, 5.5) needs the recommended CLI. The auto default always works.
+        if flag and flag != _CODEX_OLD_FAST_MODEL and not can_pin_latest:
             continue
         out.append((vid, label, flag))
     return out
@@ -1108,7 +1110,7 @@ def _codex_model_flag(model_id: str | None, cmd: str, config_isolated: bool = Tr
     if not model_id or model_id == "chatgpt_plan/default":
         return None if config_isolated else _CODEX_OLD_FAST_MODEL
     flag = _CHATGPT_PLAN_FLAG.get(model_id)
-    if flag == _CODEX_LATEST_PINNED_MODEL and not _codex_can_pin_latest(cmd):
+    if flag and flag != _CODEX_OLD_FAST_MODEL and not _codex_can_pin_latest(cmd):
         return None if config_isolated else _CODEX_OLD_FAST_MODEL
     return flag or None
 

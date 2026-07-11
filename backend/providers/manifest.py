@@ -32,10 +32,13 @@ DEFAULT_MANIFEST: dict = {
     },
     "chatgpt_plan": {
         "recommended_cli_version": [0, 141, 0],
-        "codex_latest_pinned_model": "gpt-5.5",
+        "codex_latest_pinned_model": "gpt-5.6",  # July 2026 family: sol/terra/luna; bare id = sol
         "codex_old_fast_model": "gpt-5.4-mini",
         "variants": [
             ["chatgpt_plan/default", "ChatGPT plan - best available (auto) - reasoning", None],
+            ["chatgpt_plan/gpt-5.6", "ChatGPT plan - GPT-5.6 Sol - reasoning", "gpt-5.6"],
+            ["chatgpt_plan/gpt-5.6-terra", "ChatGPT plan - GPT-5.6 Terra - balanced", "gpt-5.6-terra"],
+            ["chatgpt_plan/gpt-5.6-luna", "ChatGPT plan - GPT-5.6 Luna - fast", "gpt-5.6-luna"],
             ["chatgpt_plan/gpt-5.5", "ChatGPT plan - GPT-5.5 - reasoning", "gpt-5.5"],
             ["chatgpt_plan/gpt-5.5-mini", "ChatGPT plan - GPT-5.4 mini - fast reasoning", "gpt-5.4-mini"],
         ],

@@ -32,8 +32,14 @@ async def _generate(
     message_id: str | None = None
     usage_out: dict = {}
     user_text = _latest_user_text(messages)
+    # Orrery knows which model serves this chat even when the model itself doesn't — say so, so
+    # "which model are you?" gets a real answer instead of a guess (user report).
+    identity = (
+        f"MODEL IDENTITY: this conversation is served by the model '{model}' through the user's "
+        "local Orrery workspace. When asked which model you are, state exactly that."
+    )
     formatted_prompt = build_system_prompt(  # explicit authority layers (app > skills > user > untrusted)
-        app_rules=FORMAT_INSTRUCTIONS,
+        app_rules=f"{FORMAT_INSTRUCTIONS}\n\n{identity}",
         skills_block=skills.skills_prompt(user_text),
         user_preferences=system_prompt,
         trusted_context=trusted_context,
