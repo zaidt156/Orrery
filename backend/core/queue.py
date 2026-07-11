@@ -42,6 +42,12 @@ async def _agent_schedule_tick(timestamp: int) -> None:
     await schedule_tick(timestamp)
 
 
+async def _ingest_documents(cid: str, spool: str) -> None:
+    from backend.features.rag import run_ingest
+
+    await run_ingest(cid, spool)
+
+
 @lru_cache(maxsize=1)
 def get_queue_app() -> App:
     """Build the Procrastinate app on first use — NOT at import time, because the database
@@ -53,6 +59,7 @@ def get_queue_app() -> App:
     app.task(name="health_ping")(_health_ping)
     app.task(name="run_workflow")(_run_workflow)
     run_agent = app.task(name="run_agent")(_run_agent)  # noqa: F841 — registration is the point
+    app.task(name="ingest_documents")(_ingest_documents)
     tick = app.task(name="agent_schedule_tick")(_agent_schedule_tick)
     app.periodic(cron="* * * * *")(tick)  # agent schedules fire on a one-minute heartbeat
     return app

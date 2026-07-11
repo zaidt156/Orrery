@@ -196,6 +196,8 @@ async def delete_collection(cid: str) -> bool:
 
 
 async def add_documents(cid: str, files: list[dict]) -> int:
+    from sqlalchemy import delete as sa_delete
+
     items: list[tuple[str, int, str]] = []
     for f in files:
         for i, ch in enumerate(chunk_text(_extract(f))):
@@ -203,11 +205,80 @@ async def add_documents(cid: str, files: list[dict]) -> int:
     if not items:
         return 0
     vecs = await embed_docs([c for _, _, c in items])
+    replaced = {src for src, _, _ in items}
     async with get_sessionmaker()() as s:
+        # Re-uploading a source REPLACES it — delete-then-insert in ONE transaction, so duplicates
+        # can't accumulate and retrieval never sees a half-replaced source (plan Task 3).
+        await s.execute(sa_delete(Chunk).where(
+            Chunk.collection_id == uuid.UUID(cid), Chunk.source.in_(replaced)
+        ))
         for (src, ordn, content), v in zip(items, vecs):
             s.add(Chunk(collection_id=uuid.UUID(cid), source=src, ordinal=ordn, content=content, embedding=v))
         await s.commit()
     return len(items)
+
+
+# ── bulk ingestion as a durable queue job (large drops must never freeze the app) ──
+_INGEST_PROGRESS: dict[str, dict] = {}  # collection id → {state,total_files,done_files,chunks,error}
+
+
+def ingest_progress(cid: str) -> dict | None:
+    return _INGEST_PROGRESS.get(str(uuid.UUID(cid)))
+
+
+async def enqueue_ingest(cid: str, files: list[dict]) -> dict:
+    """Spool payloads to disk and index them as a durable queue job (inline fallback).
+
+    The upload request returns immediately; the UI polls ingest_progress. Payloads are spooled
+    as a file because large base64 bodies don't belong in queue-job arguments."""
+    import json as _json
+    from pathlib import Path
+
+    from backend.core.paths import user_data_dir
+
+    safe_cid = str(uuid.UUID(cid))  # normalize before it touches a filename
+    spool_dir = user_data_dir() / "tmp" / "ingest"
+    spool_dir.mkdir(parents=True, exist_ok=True)
+    spool = spool_dir / f"{safe_cid}-{uuid.uuid4().hex}.json"
+    spool.write_text(_json.dumps(files), encoding="utf-8")
+    _INGEST_PROGRESS[safe_cid] = {"state": "queued", "total_files": len(files),
+                                  "done_files": 0, "chunks": 0, "error": None}
+    from backend.core.queue import get_queue_app
+
+    try:
+        await get_queue_app().configure_task(name="ingest_documents").defer_async(
+            cid=safe_cid, spool=str(spool))
+    except Exception:  # noqa: BLE001 — queue down (tests/dev): index inline so uploads still work
+        log.warning("ingest defer failed; running inline for %s", safe_cid)
+        await run_ingest(safe_cid, str(spool))
+    return {"queued": True, "files_queued": len(files)}
+
+
+async def run_ingest(cid: str, spool: str) -> None:
+    """Index one spool file with per-file transactions (progress is visible file by file)."""
+    import json as _json
+    from pathlib import Path
+
+    progress = _INGEST_PROGRESS.setdefault(cid, {"state": "queued", "total_files": 0,
+                                                 "done_files": 0, "chunks": 0, "error": None})
+    progress.update(state="running", error=None)
+    try:
+        files = _json.loads(Path(spool).read_text(encoding="utf-8"))
+        progress["total_files"] = len(files)
+        for payload in files:
+            added = await add_documents(cid, [payload])
+            progress["done_files"] += 1
+            progress["chunks"] += added
+        progress["state"] = "done"
+    except Exception as exc:  # noqa: BLE001 — recorded for the UI, never kills the worker
+        progress["state"] = "error"
+        progress["error"] = str(exc)[:300]
+        log.warning("ingest failed for %s: %s", cid, exc)
+    finally:
+        try:
+            Path(spool).unlink(missing_ok=True)
+        except OSError:
+            pass
 
 
 async def documents(cid: str) -> list[dict]:

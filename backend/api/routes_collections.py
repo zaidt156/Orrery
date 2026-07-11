@@ -29,11 +29,32 @@ async def collection_delete(cid: str) -> dict:
         raise HTTPException(status_code=404, detail="Collection not found")
     return {"deleted": True}
 
+# Bigger drops index in the durable queue so the request (and the whole app) never freezes.
+_ASYNC_INGEST_FILES = 4
+_ASYNC_INGEST_CHARS = 1_500_000
+
+
+def _should_queue_ingest(files: list[dict]) -> bool:
+    total = sum(len(str(f.get("content") or "")) for f in files)
+    return len(files) > _ASYNC_INGEST_FILES or total > _ASYNC_INGEST_CHARS
+
+
 @router.post("/collections/{cid}/documents")
 async def collection_upload(cid: str, body: UploadDocs) -> dict:
+    files = [a.model_dump() for a in body.files]
     try:
-        return {"added": await rag.add_documents(cid, [a.model_dump() for a in body.files])}
+        if _should_queue_ingest(files):
+            return await rag.enqueue_ingest(cid, files)
+        return {"added": await rag.add_documents(cid, files)}
     except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail=str(e)[:160])
+
+
+@router.get("/collections/{cid}/ingest-status")
+async def collection_ingest_status(cid: str) -> dict:
+    try:
+        return {"progress": rag.ingest_progress(cid)}
+    except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)[:160])
 
 @router.get("/collections/{cid}/search")
@@ -69,8 +90,12 @@ async def ontology_files(cid: str) -> dict:
 
 @router.post("/ontologies/{cid}/files")
 async def ontology_add_files(cid: str, body: UploadDocs) -> dict:
+    files = [a.model_dump() for a in body.files]
     try:
-        added = await rag.add_documents(cid, [a.model_dump() for a in body.files])
+        if _should_queue_ingest(files):
+            queued = await rag.enqueue_ingest(cid, files)
+            return {**queued, "added": 0, "files": await rag.documents(cid)}
+        added = await rag.add_documents(cid, files)
         return {"added": added, "files": await rag.documents(cid)}
     except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=400, detail=str(e)[:160])

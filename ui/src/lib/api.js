@@ -317,6 +317,7 @@ export function readFileAsAttachment(file) {
   });
 }
 
+export const getIngestStatus = (cid) => apiGet(`/api/collections/${cid}/ingest-status`);
 export const listConversations = (limit = 100, offset = 0) =>
   apiGet(`/api/conversations?limit=${limit}&offset=${offset}`);
 export const createConversation = (model, system_prompt, effort, context_window, project_id = null) =>

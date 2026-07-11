@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Brain, FileText, Plus, Save, Search, Trash2, Upload, X } from "lucide-react";
 import {
-  addOntologyFiles, createOntology, deleteOntology, deleteOntologyFile, listOntologies,
-  listOntologyFiles, readFileAsAttachment, updateOntology,
+  addOntologyFiles, createOntology, deleteOntology, deleteOntologyFile, getIngestStatus,
+  listOntologies, listOntologyFiles, readFileAsAttachment, updateOntology,
 } from "../lib/api.js";
 
 const emptyDraft = { name: "", description: "" };
@@ -87,6 +87,26 @@ export default function Ontology() {
     catch (e) { setErr(String(e.message || e)); } finally { setBusy(false); }
   }
 
+  const [ingest, setIngest] = useState(null); // {state,total_files,done_files} while a big drop indexes
+
+  async function pollIngest(cid) {
+    // big drops index in the background — poll until done, refreshing the file list as chunks land
+    for (;;) {
+      await new Promise((resolve) => setTimeout(resolve, 1800));
+      let progress = null;
+      try { progress = (await getIngestStatus(cid)).progress; } catch { /* keep polling */ }
+      setIngest(progress);
+      try { setFiles((await listOntologyFiles(cid)).files || []); } catch { /* transient */ }
+      if (!progress || progress.state === "done" || progress.state === "error") {
+        if (progress?.state === "error") setErr(progress.error || "Indexing failed.");
+        setIngest(progress?.state === "error" ? null : progress);
+        await refreshList();
+        setTimeout(() => setIngest(null), 4000);
+        return;
+      }
+    }
+  }
+
   async function onFilePick(e) {
     const picked = Array.from(e.target.files || []);
     e.target.value = "";
@@ -96,8 +116,13 @@ export default function Ontology() {
       const atts = await Promise.all(picked.map(readFileAsAttachment));
       const res = await addOntologyFiles(activeId, atts);
       setFiles(res.files || []);
-      await refreshList();
-      if (!res.added) setErr("No readable text found in those files (images and binaries can't be searched yet).");
+      if (res.queued) {
+        setIngest({ state: "queued", total_files: res.files_queued ?? atts.length, done_files: 0 });
+        pollIngest(activeId);  // fire-and-forget; keeps refreshing as the queue indexes
+      } else {
+        await refreshList();
+        if (!res.added) setErr("No readable text found in those files (images and binaries can't be searched yet).");
+      }
     } catch (e2) { setErr(String(e2.message || e2)); } finally { setUploading(false); }
   }
 
@@ -208,6 +233,14 @@ export default function Ontology() {
                   </button>
                 </div>
                 <input ref={fileRef} type="file" multiple hidden onChange={onFilePick} />
+                {ingest && ingest.state !== "done" && (
+                  <div className="project-muted">
+                    Indexing {ingest.done_files ?? 0} of {ingest.total_files ?? "?"} files in the background — chat keeps working meanwhile…
+                  </div>
+                )}
+                {ingest && ingest.state === "done" && (
+                  <div className="project-muted">Indexed {ingest.chunks ?? 0} passages ✓</div>
+                )}
                 {files.length === 0 ? (
                   <div className="project-muted">
                     Add files (PDF, Word, Excel, PowerPoint, text/code). When connected, their content is used as context in every chat.
