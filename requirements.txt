@@ -32,6 +32,9 @@ fastembed>=0.4
 # 3.x ships the psycopg connector in core (no [psycopg] extra).
 procrastinate>=3.0
 
+# Agent schedules (Phase 5): five-field cron validation + next-fire computation.
+croniter>=6.0
+
 # Secrets — OS keychain (security.md §1)
 keyring>=25.5
 

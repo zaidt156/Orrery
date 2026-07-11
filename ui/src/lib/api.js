@@ -122,6 +122,13 @@ export const rejectLifeProposal = (id, target_hash, reason = "") =>
 export const createLifeRollbackProposal = (revision, reason = "") =>
   apiSend("/api/life/rollback-proposals", "POST", { revision, reason });
 export const getTasks = () => apiGet("/api/tasks");
+export const listAgents = (includeArchived = false) =>
+  apiGet(`/api/agents${includeArchived ? "?include_archived=true" : ""}`);
+export const getAgentCatalog = () => apiGet("/api/agents/catalog");
+export const createAgent = (config) => apiSend("/api/agents", "POST", config);
+export const updateAgent = (id, config) => apiSend(`/api/agents/${id}`, "PUT", config);
+export const setAgentStatus = (id, status) => apiSend(`/api/agents/${id}/status`, "PATCH", { status });
+export const archiveAgent = (id) => apiSend(`/api/agents/${id}`, "DELETE");
 export const cancelTask = (id) => apiSend(`/api/tasks/${id}/cancel`, "POST");
 export const getUsage = () => apiGet("/api/usage");
 export const setSpendCap = (cap) => apiSend("/api/usage/cap", "PUT", cap);

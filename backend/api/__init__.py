@@ -151,7 +151,7 @@ def create_app(session_token: str) -> FastAPI:
 
 
     from backend.api import (
-        routes_admin_team, routes_app_settings, routes_collections, routes_conversations,
+        routes_admin_team, routes_agents, routes_app_settings, routes_collections, routes_conversations,
         routes_dashboards, routes_data, routes_files, routes_local_models, routes_mcp,
         routes_life, routes_models, routes_projects, routes_providers, routes_skills, routes_system,
         routes_tools,
@@ -159,7 +159,7 @@ def create_app(session_token: str) -> FastAPI:
     for module in (
         routes_system, routes_models, routes_app_settings, routes_providers, routes_local_models,
         routes_data, routes_dashboards, routes_collections, routes_skills, routes_mcp,
-        routes_admin_team, routes_projects, routes_conversations, routes_files, routes_tools,
+        routes_admin_team, routes_agents, routes_projects, routes_conversations, routes_files, routes_tools,
         routes_life,
     ):
         api.include_router(module.router, prefix="/api", dependencies=[Depends(require_token)])

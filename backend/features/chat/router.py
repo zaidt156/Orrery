@@ -337,11 +337,7 @@ async def _prepare_turn(
         project_id = conv.project_id
         context_window = _effective_context_window(conv.context_window)
 
-        rows = (
-            await s.execute(
-                select(Message).where(Message.conversation_id == cid).order_by(Message.created_at)
-            )
-        ).scalars().all()
+        rows = await persistence.load_skeletons(s, cid)  # light rows; text is hydrated per-need below
         seed = versioning.sibling_turn_seed(rows, sibling_of) if sibling_of else None
         if seed is not None:
             parent_id, history = seed
@@ -349,7 +345,7 @@ async def _prepare_turn(
         else:  # normal turn (or an unknown/non-user sibling target): thread onto the active path
             history = versioning.active_path(rows)
             parent_id = history[-1].id if history else None
-        messages = _model_history(history)
+        messages = await _hydrate_history(s, history)
         messages.append({"role": "user", "content": _build_user_content(user_content, attachments)})
 
         # Attachment metadata rides in artifacts so reloads render real chips (name+kind), not a
@@ -451,6 +447,41 @@ def _model_history(history: list[Message]) -> list[dict]:
     return [
         {"role": m.role, "content": (m.context or m.content) if i == last_user else (m.content or "")}
         for i, m in enumerate(history)
+    ]
+
+
+# Generous inline-history bound. The token-accurate trim still happens in _limit_messages; this cap
+# only keeps the DB load and per-turn Python work flat on very long chats. Turns older than the tail
+# already fell out of every realistic token window; their files return via relevance-gated retrieval.
+_HISTORY_TAIL = 200
+
+
+async def _hydrate_history(s, path: list) -> list[dict]:
+    """_model_history over SKELETON rows (persistence.load_skeletons): fetch the text the model
+    actually uses — `content` for the newest _HISTORY_TAIL path rows, plus `context` for the single
+    most-recent user turn — instead of every text column of every row in the conversation."""
+    tail = list(path[-_HISTORY_TAIL:])
+    if not tail:
+        return []
+    content_by_id = {
+        r.id: (r.content or "")
+        for r in (
+            await s.execute(select(Message.id, Message.content).where(Message.id.in_([m.id for m in tail])))
+        ).all()
+    }
+    last_user = max((i for i, m in enumerate(tail) if m.role == "user"), default=-1)
+    context_text = None
+    if last_user >= 0:
+        context_text = (
+            await s.execute(select(Message.context).where(Message.id == tail[last_user].id))
+        ).scalar_one_or_none()
+    return [
+        {
+            "role": m.role,
+            "content": (context_text or content_by_id.get(m.id, "")) if i == last_user
+            else content_by_id.get(m.id, ""),
+        }
+        for i, m in enumerate(tail)
     ]
 
 
@@ -1049,11 +1080,7 @@ async def stream_code_image(conv_id: str, user_content: str) -> AsyncIterator[di
             yield stream_events.error("Conversation not found.")
             return
         model, system_prompt, effort = conv.model, conv.system_prompt, conv.effort
-        history = (
-            await s.execute(
-                select(Message).where(Message.conversation_id == cid).order_by(Message.created_at)
-            )
-        ).scalars().all()
+        history = await persistence.load_skeletons(s, cid)  # only the tree shape is needed here
         path = versioning.active_path(history)
         s.add(Message(
             conversation_id=cid,
@@ -1091,17 +1118,13 @@ async def regenerate(conv_id: str) -> AsyncIterator[dict]:
         context_window = _effective_context_window(conv.context_window)
         model = ai.plan_long_context_model(model, context_window)  # match the live turn's 1M behavior
 
-        rows = (
-            await s.execute(
-                select(Message).where(Message.conversation_id == cid).order_by(Message.created_at)
-            )
-        ).scalars().all()
+        rows = await persistence.load_skeletons(s, cid)  # light rows; text is hydrated per-need below
         history = versioning.trim_to_last_user(versioning.active_path(rows))
         if not history:
             yield stream_events.error("Nothing to regenerate.")
             return
         anchor_id = history[-1].id  # the user turn being re-answered; the new reply branches here
-        messages = _model_history(history)
+        messages = await _hydrate_history(s, history)
 
     trusted_context = await project_store.trusted_context(project_id)
     budget_system = "\n\n".join(part for part in (system_prompt, trusted_context) if part)

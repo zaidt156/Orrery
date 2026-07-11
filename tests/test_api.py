@@ -109,6 +109,69 @@ def test_life_approval_rejects_invalid_or_stale_digest(monkeypatch):
     assert stale_response.status_code == 409
 
 
+def test_agents_api_uses_real_typed_config_and_owner_service(monkeypatch):
+    from backend.features import agents
+
+    seen = {}
+
+    async def fake_create(config):
+        seen["config"] = config
+        return {
+            "id": "agent-1",
+            "name": config.name,
+            "status": "active",
+            "version": 1,
+            "config": config.model_dump(mode="json"),
+        }
+
+    monkeypatch.setattr(agents, "create_agent", fake_create)
+    response = _client().post(
+        "/api/agents",
+        headers={"X-Orrery-Token": TOKEN},
+        json={
+            "name": "Researcher",
+            "goal": "Prepare a sourced brief.",
+            "model": "ollama/llama3",
+            "tool_grants": [{"tool": "web_search", "actions": ["execute"]}],
+        },
+    )
+
+    assert response.status_code == 201
+    assert isinstance(seen["config"], agents.AgentConfig)
+    assert response.json()["config"]["budgets"]["max_steps_per_run"] == 8
+
+
+def test_agents_api_rejects_unbounded_or_extra_config():
+    response = _client().post(
+        "/api/agents",
+        headers={"X-Orrery-Token": TOKEN},
+        json={
+            "name": "Unsafe",
+            "goal": "Do everything",
+            "model": "ollama/llama3",
+            "arbitrary_shell": True,
+            "budgets": {"max_steps_per_run": 100000},
+        },
+    )
+
+    assert response.status_code == 422
+
+
+def test_agents_api_returns_404_for_other_or_missing_owner(monkeypatch):
+    from backend.features import agents
+
+    async def missing(_agent_id):
+        return None
+
+    monkeypatch.setattr(agents, "get_agent", missing)
+    response = _client().get(
+        "/api/agents/00000000-0000-0000-0000-000000000001",
+        headers={"X-Orrery-Token": TOKEN},
+    )
+
+    assert response.status_code == 404
+
+
 def test_context_window_has_safe_bounds():
     # any size within bounds is accepted — the UI offers per-model tiers and the backend clamps to
     # the model's real maximum in chat.create/update_conversation

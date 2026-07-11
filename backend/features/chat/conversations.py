@@ -13,7 +13,7 @@ from sqlalchemy import select, update
 from backend.core.database import get_sessionmaker
 from backend.core.models import Conversation, Message, Project
 from backend.features import rag, team
-from backend.features.chat import versioning
+from backend.features.chat import persistence, versioning
 from backend.features.chat_context import (
     DEFAULT_CONTEXT_WINDOW, _effective_context_window, _message_artifacts,
 )
@@ -98,15 +98,20 @@ async def get_conversation(conv_id: str) -> dict | None:
             return None
         if owner is not None and conv.owner_id != owner:  # team mode: can't open another user's chat
             return None
-        msgs = (
-            await s.execute(
-                select(Message).where(Message.conversation_id == conv.id).order_by(Message.created_at)
-            )
-        ).scalars().all()
         # The visible thread is the ACTIVE path through the version tree; each message carries its
         # ‹ › switcher metadata (1-based index, sibling count, sibling ids in time order).
-        path = versioning.active_path(msgs)
-        vmap = versioning.version_map(msgs)
+        # The tree is walked on light skeleton rows; full text/artifacts/reasoning are loaded for
+        # the path's messages only — inactive branches keep just their ids for the ‹ › metadata.
+        skeletons = await persistence.load_skeletons(s, conv.id)
+        path_ids = [m.id for m in versioning.active_path(skeletons)]
+        vmap = versioning.version_map(skeletons)
+        by_id = {
+            m.id: m
+            for m in (
+                await s.execute(select(Message).where(Message.id.in_(path_ids)))
+            ).scalars().all()
+        } if path_ids else {}
+        path = [by_id[i] for i in path_ids if i in by_id]
         return {
             "id": str(conv.id), "title": conv.title, "model": conv.model,
             "project_id": str(conv.project_id) if conv.project_id else None,

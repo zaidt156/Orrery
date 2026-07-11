@@ -37,6 +37,22 @@ def _html_artifact_from_reply(text: str) -> tuple[str, list[dict]] | None:
     return cleaned, [{"kind": "file", **stored}]
 
 
+async def load_skeletons(s, cid: uuid.UUID) -> list:
+    """The conversation's version tree as LIGHT rows — id/parent_id/active/created_at/role only.
+
+    The versioning helpers need nothing more to walk the tree, and skipping the text columns
+    (content, context, artifacts, reasoning — the last two can be huge JSON/file-text blobs)
+    keeps the per-turn load flat as a conversation grows. Hydrate text for the few rows that
+    actually need it afterwards."""
+    return (
+        await s.execute(
+            select(Message.id, Message.parent_id, Message.active, Message.created_at, Message.role)
+            .where(Message.conversation_id == cid)
+            .order_by(Message.created_at)
+        )
+    ).all()
+
+
 async def _deactivate_children(s, cid: uuid.UUID, parent_id: uuid.UUID | None) -> None:
     """Take every existing sibling under this parent off the active path (the newcomer replaces them)."""
     cond = Message.parent_id.is_(None) if parent_id is None else Message.parent_id == parent_id
@@ -64,9 +80,7 @@ async def _persist_assistant(
             await _deactivate_children(s, cid, branch_from)
             parent_id = branch_from
         else:
-            rows = (
-                await s.execute(select(Message).where(Message.conversation_id == cid))
-            ).scalars().all()
+            rows = await load_skeletons(s, cid)
             tip = versioning.leaf_id(rows)  # normally the user turn just saved
             parent_id = uuid.UUID(tip) if tip else None
         message = Message(

@@ -4,7 +4,7 @@ import datetime
 import uuid
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import Boolean, CheckConstraint, Computed, DateTime, Float, ForeignKey, Index, Integer, String, Text, func, text
+from sqlalchemy import Boolean, CheckConstraint, Computed, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint, func, text
 from sqlalchemy.dialects.postgresql import TSVECTOR
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -473,6 +473,208 @@ class LifeRevision(Base):
     )
     source_type: Mapped[str] = mapped_column(String(20), default="proposal")
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class Agent(Base):
+    """Owner-scoped agent identity; executable configuration lives in immutable AgentVersion rows."""
+
+    __tablename__ = "agents"
+    __table_args__ = (
+        CheckConstraint("status IN ('active', 'paused', 'archived')", name="ck_agents_status"),
+        Index("ix_agents_owner_updated", "owner_id", "updated_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    owner_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    name: Mapped[str] = mapped_column(String(160))
+    description: Mapped[str] = mapped_column(String(1000), default="")
+    status: Mapped[str] = mapped_column(String(16), default="active", index=True)
+    current_version: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class AgentVersion(Base):
+    """Immutable, complete execution snapshot created on every agent edit."""
+
+    __tablename__ = "agent_versions"
+    __table_args__ = (
+        UniqueConstraint("agent_id", "version", name="uq_agent_versions_agent_version"),
+        Index("ix_agent_versions_agent_created", "agent_id", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    agent_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("agents.id", ondelete="CASCADE"), index=True
+    )
+    version: Mapped[int] = mapped_column(Integer)
+    config: Mapped[str] = mapped_column(Text)
+    config_hash: Mapped[str] = mapped_column(String(64), index=True)
+    created_by: Mapped[str] = mapped_column(String(36), default="solo")
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class AgentSchedule(Base):
+    __tablename__ = "agent_schedules"
+    __table_args__ = (
+        UniqueConstraint("agent_id", name="uq_agent_schedules_agent"),
+        CheckConstraint("misfire_policy IN ('skip', 'coalesce')", name="ck_agent_schedules_misfire"),
+        CheckConstraint(
+            "concurrency_policy IN ('forbid', 'queue', 'replace')",
+            name="ck_agent_schedules_concurrency",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    agent_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("agents.id", ondelete="CASCADE"), index=True
+    )
+    owner_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    cron: Mapped[str] = mapped_column(String(120), default="0 9 * * *")
+    timezone: Mapped[str] = mapped_column(String(80), default="UTC")
+    misfire_policy: Mapped[str] = mapped_column(String(12), default="coalesce")
+    concurrency_policy: Mapped[str] = mapped_column(String(12), default="forbid")
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    last_fire_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    next_fire_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class AgentRun(Base):
+    __tablename__ = "agent_runs"
+    __table_args__ = (
+        CheckConstraint(
+            "trigger_type IN ('manual', 'schedule', 'api', 'slack', 'gmail')",
+            name="ck_agent_runs_trigger_type",
+        ),
+        CheckConstraint(
+            "status IN ('queued', 'running', 'awaiting_approval', 'succeeded', 'failed', "
+            "'cancelled', 'interrupted')",
+            name="ck_agent_runs_status",
+        ),
+        Index("ix_agent_runs_agent_created", "agent_id", "created_at"),
+        Index("ix_agent_runs_owner_status", "owner_id", "status"),
+        Index("ix_agent_runs_idempotency", "agent_id", "idempotency_key"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    agent_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("agents.id", ondelete="CASCADE"), index=True
+    )
+    agent_version_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("agent_versions.id", ondelete="RESTRICT"), index=True
+    )
+    owner_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    trigger_type: Mapped[str] = mapped_column(String(16))
+    trigger_principal: Mapped[str] = mapped_column(String(200), default="local-owner")
+    trigger_event_id: Mapped[uuid.UUID | None] = mapped_column(PGUUID(as_uuid=True), nullable=True)
+    input_text: Mapped[str] = mapped_column(Text, default="")
+    input_digest: Mapped[str] = mapped_column(String(64))
+    idempotency_key: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    config_snapshot: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(24), default="queued", index=True)
+    output_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    output_digest: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    error: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    usage: Mapped[str] = mapped_column(Text, default="{}")
+    cancel_requested: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    started_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class AgentRunStep(Base):
+    __tablename__ = "agent_run_steps"
+    __table_args__ = (
+        CheckConstraint(
+            "kind IN ('system', 'model', 'tool', 'approval', 'memory')",
+            name="ck_agent_run_steps_kind",
+        ),
+        Index("ix_agent_run_steps_run_created", "run_id", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    run_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("agent_runs.id", ondelete="CASCADE"), index=True
+    )
+    sequence: Mapped[int] = mapped_column(Integer)
+    kind: Mapped[str] = mapped_column(String(16))
+    status: Mapped[str] = mapped_column(String(24), default="done")
+    tool_key: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    risk: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    input_digest: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    summary: Mapped[str] = mapped_column(String(500), default="")
+    detail: Mapped[str | None] = mapped_column(Text, nullable=True)
+    approval_id: Mapped[uuid.UUID | None] = mapped_column(PGUUID(as_uuid=True), nullable=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    finished_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class AgentApproval(Base):
+    __tablename__ = "agent_approvals"
+    __table_args__ = (
+        CheckConstraint("status IN ('pending', 'approved', 'rejected', 'expired')", name="ck_agent_approvals_status"),
+        Index("ix_agent_approvals_owner_status", "owner_id", "status"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    run_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("agent_runs.id", ondelete="CASCADE"), index=True
+    )
+    owner_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    tool_key: Mapped[str] = mapped_column(String(80))
+    risk: Mapped[str] = mapped_column(String(24))
+    action_digest: Mapped[str] = mapped_column(String(64))
+    action: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(12), default="pending", index=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    expires_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True))
+    decided_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    decided_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
+
+
+class AgentApiCredential(Base):
+    __tablename__ = "agent_api_credentials"
+    __table_args__ = (Index("ix_agent_api_credentials_prefix", "prefix"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    agent_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("agents.id", ondelete="CASCADE"), index=True
+    )
+    owner_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    name: Mapped[str] = mapped_column(String(120), default="Integration key")
+    prefix: Mapped[str] = mapped_column(String(16), unique=True)
+    key_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    scopes: Mapped[str] = mapped_column(String(200), default="invoke,read")
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    expires_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_used_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class AgentTriggerEvent(Base):
+    __tablename__ = "agent_trigger_events"
+    __table_args__ = (
+        UniqueConstraint("source", "source_event_id", name="uq_agent_trigger_events_source_event"),
+        Index("ix_agent_trigger_events_agent_received", "agent_id", "received_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    agent_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("agents.id", ondelete="CASCADE"), index=True
+    )
+    owner_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    source: Mapped[str] = mapped_column(String(20))
+    source_event_id: Mapped[str] = mapped_column(String(200))
+    principal: Mapped[str] = mapped_column(String(200))
+    payload_digest: Mapped[str] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(20), default="received")
+    received_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class TeamUser(Base):

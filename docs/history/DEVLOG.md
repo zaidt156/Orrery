@@ -2135,3 +2135,49 @@ blocked by its local kernel-asset error, so full live visual/runtime checks stay
 Next: versioned Agent persistence and real CRUD/builder state, followed by bounded execution,
 schedules, the scoped external agent API, Slack/Gmail connectors, full Concept page composition,
 and clean-machine Windows/macOS installer gates.
+
+
+## Step 133 - Agents foundation shipped, faster long chats, installers verified (July 11, 2026)
+
+The Agents tab now has its real data layer, a big chat speed lever landed, and both reported
+installer failures were run to ground before rebuilding the release.
+
+- **Agents are real data now.** Every agent is a typed, validated definition: a goal in plain
+  words, guidelines, the model that runs it, the context it may draw from (skills, datasets,
+  ontologies, projects), tool grants that name exactly which resources each tool may touch and
+  what needs approval, connector grants (Slack/Gmail), trigger modes (manual, schedule, API,
+  Slack, Gmail), hard budgets (steps, runtime, input/output size, runs and spend per day), and
+  a cron schedule with a timezone that can never fire more than once a minute. Every save creates
+  an immutable version - queued or running work can never be changed out from under itself - and
+  a config that appears to contain a secret is refused outright.
+- **Scope is enforced in code, not prompts.** The shared tool registry now carries a risk level
+  on every tool, and the tool runner itself checks an agent's grant before executing: no grant
+  for a resource, or the wrong resource id, and the call is refused - the same floor Chat,
+  Automations, and Agents all share. The most dangerous risk levels (destructive actions,
+  external writes, credential use) can never be marked pre-approved.
+- **The storage for what comes next is in place.** Runs, per-step traces, approval requests,
+  hashed per-agent API keys (for the "integrate an agent into your own website" direction), and
+  de-duplicated trigger events all have their tables - the run loop that uses them is the next
+  step, so nothing executes yet.
+- **The suite caught a release-blocker before it shipped.** A missing import in the conversation
+  loader would have crashed every chat open in the live app; the end-to-end versioning test
+  failed exactly there, and the one-line fix was verified with the full suite.
+- **Long chats got their speed lever.** Loading a conversation and preparing each turn now reads
+  light "skeleton" rows to walk the version tree and only loads full message text for the recent
+  turns the model actually sees, instead of every text column of every message ever written.
+  This was one of the two big items on the speed backlog; the streaming re-render fix remains.
+- **Both installer reports were triaged with evidence.** The Windows installer asset was
+  re-downloaded, verified byte-identical to the release, and installed cleanly on this machine -
+  the July 10 "error writing to file" was a stale pre-rebuild download or a transient temp-file
+  lock, not a broken release; Defender's history shows no Orrery detections. The macOS "Orrery is
+  damaged" dialog is Gatekeeper blocking an unsigned app, not a crash: the workaround is removing
+  the quarantine flag, and the real fix - code signing and notarization - stays on the list.
+- **Verified.** 342 backend tests pass, all 12 UI tests pass, and the production UI build is
+  clean. Committed to main and the v0.1.0-preview tag was moved so the Windows and macOS
+  installers rebuild under the same public download links, with the cloud-Mac smoke test chained
+  after the macOS build.
+
+Next up: the bounded agent run loop (execute within budgets, per-step trace, approval gates),
+then the scoped external per-agent API and Slack/Gmail connectors; after that the frontend
+streaming re-renders, the dashboard-connection persistence retest, and the new GPT model IDs
+(still waiting on which ones).

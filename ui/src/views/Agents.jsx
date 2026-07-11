@@ -1,95 +1,418 @@
-const SIDE = [
-  { name: "Ticket triager", pip: ["live", "RUNNING"], meta: ["continuous · checks every 5 min", "claude-sonnet-4-6 · scope: tickets"], active: true },
-  { name: "Data quality fixer", pip: ["paused", "SLEEPS 1H"], meta: ["on a timer · wakes hourly", "gpt-4o · scope: orders"] },
-  { name: "Report improver", pip: ["iter", "LOOP 4/10"], meta: ["until done · improving each pass", "llama3 · local · scope: digests"] },
-];
+import { useEffect, useMemo, useState } from "react";
+import {
+  Archive,
+  Bot,
+  CalendarClock,
+  Check,
+  ChevronRight,
+  CirclePause,
+  CirclePlay,
+  Database,
+  KeyRound,
+  Plus,
+  Save,
+  ShieldCheck,
+  Sparkles,
+  Wrench,
+  X,
+} from "lucide-react";
+import {
+  archiveAgent,
+  createAgent,
+  getAgentCatalog,
+  listAgents,
+  setAgentStatus,
+  updateAgent,
+} from "../lib/api.js";
 
-export default function Agents() {
+const EMPTY_CATALOG = {
+  models: [], skills: [], builtin_skills: [], datasets: [], ontologies: [], projects: [],
+  connections: [], dashboards: [], mcp_servers: [], tools: [], connectors: [],
+};
+
+function defaultConfig(catalog) {
+  return {
+    name: "",
+    description: "",
+    goal: "",
+    guidelines: [],
+    model: catalog.models?.[0]?.id || "",
+    effort: "",
+    skills: [],
+    datasets: [],
+    ontologies: [],
+    projects: [],
+    tool_grants: [],
+    connector_grants: [],
+    trigger_modes: ["manual"],
+    budgets: {
+      max_steps_per_run: 8,
+      max_runtime_seconds: 300,
+      max_input_chars: 20000,
+      max_output_chars: 20000,
+      max_runs_per_day: 100,
+      max_cost_usd_per_day: 5,
+    },
+    permissions: {
+      life_access: "none",
+      allow_life_with_cloud_models: false,
+      approval_risks: ["local_write", "external_write", "destructive", "credential_use"],
+    },
+    schedule: {
+      enabled: false,
+      cron: "0 9 * * *",
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+      misfire_policy: "coalesce",
+      concurrency_policy: "forbid",
+    },
+  };
+}
+
+function unique(values) {
+  return [...new Set(values)];
+}
+
+function cloneConfig(config, catalog) {
+  return { ...defaultConfig(catalog), ...structuredClone(config || {}) };
+}
+
+function Toggle({ checked, onChange, label, disabled = false }) {
   return (
-    <section className="view">
-      <aside className="auto-side">
-        <button className="btn primary">+ New agent</button>
-        <div style={{ fontFamily: "var(--font-mono)", fontSize: "9px", color: "var(--faint)", lineHeight: 1.7, padding: "0 3px" }}>
-          a goal · a scope · a model ·<br />a way to run
-        </div>
-        <div className="convo-list">
-          {SIDE.map((a) => (
-            <div key={a.name} className={`wf${a.active ? " active" : ""}`} tabIndex={0}>
-              <div className="w-name">{a.name} <span className={`status-pip ${a.pip[0]}`}>{a.pip[1]}</span></div>
-              <div className="w-meta">{a.meta[0]}<br />{a.meta[1]}</div>
-            </div>
-          ))}
-        </div>
-      </aside>
+    <label className={`agent-check${disabled ? " disabled" : ""}`}>
+      <input type="checkbox" checked={checked} disabled={disabled} onChange={(event) => onChange(event.target.checked)} />
+      <span aria-hidden="true">{checked ? <Check /> : null}</span>
+      <b>{label}</b>
+    </label>
+  );
+}
 
-      <div className="auto-main">
-        <div className="auto-toolbar">
-          <span className="view-title">Ticket triager</span>
-          <span className="pill"><span className="pulse-dot" />Running</span>
-          <span className="pill"><b className="mono" style={{ color: "var(--ice)", fontWeight: 500, fontSize: "10.5px" }}>claude-sonnet-4-6</b></span>
-          <div className="grow" />
-          <button className="btn">⏸ Pause</button>
-          <button className="btn ghost">■ Stop</button>
-          <button className="btn ghost">Edit scope</button>
+function ResourcePicker({ title, description, items, selected, onChange, empty }) {
+  return (
+    <fieldset className="agent-fieldset">
+      <legend>{title}</legend>
+      {description && <p>{description}</p>}
+      {items.length === 0 ? <div className="agent-resource-empty">{empty}</div> : (
+        <div className="agent-resource-grid">
+          {items.map((item) => {
+            const id = String(item.id);
+            return (
+              <Toggle
+                key={id}
+                checked={selected.includes(id)}
+                label={item.name || item.label || id}
+                onChange={(checked) => onChange(checked ? unique([...selected, id]) : selected.filter((value) => value !== id))}
+              />
+            );
+          })}
         </div>
+      )}
+    </fieldset>
+  );
+}
 
-        <div className="agent-wrap">
-          <div className="agent-cards">
-            <div className="card acard">
-              <h5>Goal</h5>
-              <p>Keep every new support ticket triaged — category, priority, and a one-line summary. Accuracy matters more than speed; ask me when unsure.</p>
-            </div>
-            <div className="card acard">
-              <h5>Scope — works only here</h5>
-              <div className="scope-line">
-                tables · <b>tickets</b> read/write · <b>products</b> read<br />
-                tools · <b>database</b>, <b>LLM</b><br />
-                <span className="no">cannot</span> delete rows · touch other tables<br />
-                limits · 60 loops/day · 80% confidence bar
+function optionsForResource(field, catalog) {
+  if (field === "connection_id") return catalog.connections || [];
+  if (field === "collection_id") return catalog.ontologies || [];
+  if (field === "dashboard_id") return catalog.dashboards || [];
+  if (field === "server_id") return catalog.mcp_servers || [];
+  return [];
+}
+
+function ToolGrantEditor({ catalog, grants, onChange }) {
+  function toggleTool(tool, checked) {
+    if (!checked) return onChange(grants.filter((grant) => grant.tool !== tool.key));
+    const resources = {};
+    for (const field of tool.resource_fields || []) resources[field] = [];
+    onChange([...grants, { tool: tool.key, actions: ["execute"], resources, approval: "risk_based" }]);
+  }
+
+  function updateGrant(toolKey, patch) {
+    onChange(grants.map((grant) => grant.tool === toolKey ? { ...grant, ...patch } : grant));
+  }
+
+  return (
+    <fieldset className="agent-fieldset agent-tools-fieldset">
+      <legend>Tools &amp; exact scope</legend>
+      <p>Tools are denied unless selected here. Resource-aware tools also require an explicit resource.</p>
+      <div className="agent-tool-list">
+        {(catalog.tools || []).map((tool) => {
+          const grant = grants.find((item) => item.tool === tool.key);
+          return (
+            <div className={`agent-tool-row${grant ? " selected" : ""}`} key={tool.key}>
+              <div className="agent-tool-heading">
+                <Toggle checked={!!grant} label={tool.label} onChange={(checked) => toggleTool(tool, checked)} />
+                <span className={`risk-tag risk-${tool.risk}`}>{String(tool.risk || "read").replaceAll("_", " ")}</span>
               </div>
+              {grant && (
+                <div className="agent-tool-scope">
+                  {(tool.resource_fields || []).map((field) => {
+                    const items = optionsForResource(field, catalog);
+                    const selected = grant.resources?.[field] || [];
+                    return (
+                      <div key={field} className="agent-tool-resources">
+                        <span>{field.replaceAll("_", " ")}</span>
+                        {items.length === 0 ? <em>No compatible resources exist yet.</em> : items.map((item) => {
+                          const id = String(item.id);
+                          return (
+                            <Toggle
+                              key={id}
+                              checked={selected.includes(id)}
+                              label={item.name || item.label || id}
+                              onChange={(checked) => updateGrant(tool.key, {
+                                resources: {
+                                  ...grant.resources,
+                                  [field]: checked ? unique([...selected, id]) : selected.filter((value) => value !== id),
+                                },
+                              })}
+                            />
+                          );
+                        })}
+                      </div>
+                    );
+                  })}
+                  <label className="agent-inline-field">
+                    <span>Approval</span>
+                    <select value={grant.approval} onChange={(event) => updateGrant(tool.key, { approval: event.target.value })}>
+                      <option value="risk_based">Based on risk</option>
+                      <option value="always">Every call</option>
+                      {!(["external_write", "destructive", "credential_use"].includes(tool.risk)) && (
+                        <option value="preapproved">Preapproved within scope</option>
+                      )}
+                    </select>
+                  </label>
+                </div>
+              )}
             </div>
-            <div className="card acard">
-              <h5>Run mode &amp; budget</h5>
-              <div className="scope-line">continuous · checks every <b>5 min</b><br />stops when · you stop it · budget hit · 3 errors in a row</div>
-              <div style={{ fontFamily: "var(--font-mono)", fontSize: "10px", color: "var(--muted)", marginTop: "10px" }}>today $0.42 / $2.00</div>
-              <div className="slider" style={{ marginTop: "7px" }}><div className="fill" style={{ width: "21%" }} /></div>
-            </div>
-          </div>
+          );
+        })}
+      </div>
+    </fieldset>
+  );
+}
 
-          <div className="works-with">
-            <span className="section-label" style={{ margin: 0 }}>Works with</span>
-            <span className="pill">↔ agent · Data quality fixer</span>
-            <span className="pill">→ automation · Doc reply drafts</span>
-            <span className="pill">↑ you · approvals under 80% confidence</span>
-          </div>
+function AgentEditor({ initial, catalog, saving, error, onCancel, onSave }) {
+  const [config, setConfig] = useState(() => cloneConfig(initial, catalog));
+  const [guidelines, setGuidelines] = useState(() => (initial?.guidelines || []).join("\n"));
+  const skills = useMemo(() => [
+    ...(catalog.builtin_skills || []).map((item) => ({ id: `builtin:${item.name}`, name: `${item.name} Â· built in` })),
+    ...(catalog.skills || []).map((item) => ({ id: item.id, name: item.name })),
+  ], [catalog]);
 
-          <div className="feed">
-            <div className="feed-head"><span className="pulse-dot" />Live activity — every step and learning is logged</div>
-            <div className="fitem">
-              <span className="f-it">LOOP 12</span>
-              <span className="f-body">Found 3 new tickets — classified 2 billing, 1 bug at 94% confidence — wrote category, priority, summary to <span className="mono" style={{ color: "#7FD4C0" }}>tickets</span>.</span>
-              <span className="f-time">2m</span>
-            </div>
-            <div className="fitem learn">
-              <span className="f-it">NOTE</span>
-              <span className="f-body"><b>Learned:</b> "urgent" in a subject line is a weak signal — refund mentions predict priority better. Saved to my notes; future loops start from this.</span>
-              <span className="f-time">1h</span>
-            </div>
-            <div className="fitem">
-              <span className="f-it">LOOP 9</span>
-              <span className="f-body">Ticket #4811 classified at 61% — below my 80% bar, so it is waiting for you.
-                <span className="approve-btns"><button className="btn">Approve</button><button className="btn ghost">Reclassify</button></span>
-              </span>
-              <span className="f-time">1h</span>
-            </div>
-            <div className="fitem">
-              <span className="f-it">LOOP 8</span>
-              <span className="f-body">Idle pass — no new tickets. Re-checked the last 20 labels against my notes; all consistent.</span>
-              <span className="f-time">3h</span>
-            </div>
-          </div>
+  function patch(field, value) {
+    setConfig((current) => ({ ...current, [field]: value }));
+  }
+
+  function patchNested(group, field, value) {
+    setConfig((current) => ({ ...current, [group]: { ...current[group], [field]: value } }));
+  }
+
+  function toggleTrigger(trigger, checked) {
+    const next = checked
+      ? unique([...config.trigger_modes, trigger])
+      : config.trigger_modes.filter((item) => item !== trigger);
+    patch("trigger_modes", next);
+    if (trigger === "schedule") patchNested("schedule", "enabled", checked);
+  }
+
+  function submit(event) {
+    event.preventDefault();
+    onSave({
+      ...config,
+      guidelines: guidelines.split("\n").map((line) => line.trim()).filter(Boolean),
+    });
+  }
+
+  return (
+    <form className="agent-editor" onSubmit={submit}>
+      <header className="agent-editor-header">
+        <div><span className="eyebrow">Agent builder</span><h2>{initial ? `Edit ${initial.name}` : "Create a capable, bounded agent"}</h2></div>
+        <button type="button" className="icon-btn" aria-label="Close agent editor" onClick={onCancel}><X /></button>
+      </header>
+
+      <div className="agent-form-section">
+        <h3><Bot /> Identity &amp; purpose</h3>
+        <div className="agent-form-grid two">
+          <label><span>Name</span><input required maxLength={160} value={config.name} onChange={(e) => patch("name", e.target.value)} placeholder="Weekly research brief" /></label>
+          <label><span>Model</span><select required value={config.model} onChange={(e) => patch("model", e.target.value)}><option value="">Choose a connected model</option>{(catalog.models || []).map((model) => <option key={model.id} value={model.id}>{model.label || model.id}</option>)}</select></label>
+        </div>
+        <label><span>Description</span><input maxLength={1000} value={config.description} onChange={(e) => patch("description", e.target.value)} placeholder="What this agent is for" /></label>
+        <label><span>Goal</span><textarea required rows={5} maxLength={8000} value={config.goal} onChange={(e) => patch("goal", e.target.value)} placeholder="Describe the outcome, success criteria, and when to ask you instead of guessing." /></label>
+        <label><span>Guidelines <small>one per line</small></span><textarea rows={5} value={guidelines} onChange={(e) => setGuidelines(e.target.value)} placeholder={"Prefer primary sources.\nNever invent missing data.\nAsk before external writes."} /></label>
+      </div>
+
+      <div className="agent-form-section">
+        <h3><Database /> Orrery context</h3>
+        <div className="agent-picker-columns">
+          <ResourcePicker title="Skills" items={skills} selected={config.skills} onChange={(value) => patch("skills", value)} empty="Create a skill to attach reusable guidance." />
+          <ResourcePicker title="Projects" items={catalog.projects || []} selected={config.projects} onChange={(value) => patch("projects", value)} empty="No projects yet." />
+          <ResourcePicker title="Datasets" items={catalog.datasets || []} selected={config.datasets} onChange={(value) => patch("datasets", value)} empty="No datasets yet." />
+          <ResourcePicker title="Ontologies" items={catalog.ontologies || []} selected={config.ontologies} onChange={(value) => patch("ontologies", value)} empty="No ontologies yet." />
         </div>
       </div>
+
+      <div className="agent-form-section"><h3><Wrench /> Capabilities</h3><ToolGrantEditor catalog={catalog} grants={config.tool_grants} onChange={(value) => patch("tool_grants", value)} /></div>
+
+      <div className="agent-form-section">
+        <h3><CalendarClock /> Triggers &amp; schedule</h3>
+        <div className="agent-trigger-row">
+          <Toggle checked disabled label="Manual" onChange={() => {}} />
+          <Toggle checked={config.trigger_modes.includes("api")} label="Scoped API" onChange={(value) => toggleTrigger("api", value)} />
+          <Toggle checked={config.trigger_modes.includes("schedule")} label="Schedule" onChange={(value) => toggleTrigger("schedule", value)} />
+          <Toggle disabled label="Slack Â· connect account first" checked={false} onChange={() => {}} />
+          <Toggle disabled label="Gmail Â· connect account first" checked={false} onChange={() => {}} />
+        </div>
+        {config.schedule.enabled && (
+          <div className="agent-form-grid schedule">
+            <label><span>Cron Â· five fields</span><input value={config.schedule.cron} onChange={(e) => patchNested("schedule", "cron", e.target.value)} /></label>
+            <label><span>IANA timezone</span><input value={config.schedule.timezone} onChange={(e) => patchNested("schedule", "timezone", e.target.value)} /></label>
+            <label><span>When Orrery was offline</span><select value={config.schedule.misfire_policy} onChange={(e) => patchNested("schedule", "misfire_policy", e.target.value)}><option value="coalesce">Run once</option><option value="skip">Skip missed run</option></select></label>
+            <label><span>Overlapping runs</span><select value={config.schedule.concurrency_policy} onChange={(e) => patchNested("schedule", "concurrency_policy", e.target.value)}><option value="forbid">Forbid overlap</option><option value="queue">Queue next</option><option value="replace">Cancel and replace</option></select></label>
+          </div>
+        )}
+      </div>
+
+      <div className="agent-form-section">
+        <h3><ShieldCheck /> Limits &amp; memory</h3>
+        <div className="agent-form-grid limits">
+          <label><span>Steps per run</span><input type="number" min="1" max="30" value={config.budgets.max_steps_per_run} onChange={(e) => patchNested("budgets", "max_steps_per_run", Number(e.target.value))} /></label>
+          <label><span>Runtime seconds</span><input type="number" min="15" max="3600" value={config.budgets.max_runtime_seconds} onChange={(e) => patchNested("budgets", "max_runtime_seconds", Number(e.target.value))} /></label>
+          <label><span>Runs per day</span><input type="number" min="1" max="10000" value={config.budgets.max_runs_per_day} onChange={(e) => patchNested("budgets", "max_runs_per_day", Number(e.target.value))} /></label>
+          <label><span>Daily API budget $</span><input type="number" min="0" max="10000" step="0.1" value={config.budgets.max_cost_usd_per_day} onChange={(e) => patchNested("budgets", "max_cost_usd_per_day", Number(e.target.value))} /></label>
+          <label><span>LIFE.md access</span><select value={config.permissions.life_access} onChange={(e) => patchNested("permissions", "life_access", e.target.value)}><option value="none">None</option><option value="read">Read approved memory</option><option value="propose">Read + propose changes</option></select></label>
+          <label><span>Reasoning depth</span><select value={config.effort} onChange={(e) => patch("effort", e.target.value)}><option value="">Standard</option><option value="low">Quick</option><option value="medium">Medium</option><option value="high">Deep</option><option value="xhigh">Maximum</option></select></label>
+        </div>
+      </div>
+
+      {error && <div className="agent-form-error" role="alert">{error}</div>}
+      <footer className="agent-editor-footer">
+        <span><ShieldCheck /> Saved versions are immutable. Running work keeps its original grants.</span>
+        <button type="button" className="btn ghost" onClick={onCancel}>Cancel</button>
+        <button className="btn primary" disabled={saving}><Save />{saving ? "Savingâ€¦" : initial ? "Save new version" : "Create agent"}</button>
+      </footer>
+    </form>
+  );
+}
+
+function AgentInspector({ agent }) {
+  if (!agent) return <aside className="agents-inspector"><div className="agent-inspector-empty"><ShieldCheck /><b>Bounded by default</b><p>Choose or create an agent to inspect its exact authority.</p></div></aside>;
+  const config = agent.config || {};
+  return (
+    <aside className="agents-inspector">
+      <div className="agents-inspector-head"><span className="eyebrow">Authority snapshot</span><b>Version {agent.version}</b><code>{agent.config_hash?.slice(0, 12)}</code></div>
+      <section><h4><Wrench /> Tools</h4>{config.tool_grants?.length ? config.tool_grants.map((grant) => <div className="inspector-line" key={grant.tool}><b>{grant.tool}</b><span>{grant.approval.replaceAll("_", " ")}</span></div>) : <p>No tools granted.</p>}</section>
+      <section><h4><Database /> Context</h4><div className="agent-count-grid"><span><b>{config.skills?.length || 0}</b>skills</span><span><b>{config.datasets?.length || 0}</b>datasets</span><span><b>{config.ontologies?.length || 0}</b>ontologies</span><span><b>{config.projects?.length || 0}</b>projects</span></div></section>
+      <section><h4><ShieldCheck /> Limits</h4><div className="inspector-line"><b>{config.budgets?.max_steps_per_run || 0} steps</b><span>per run</span></div><div className="inspector-line"><b>{config.budgets?.max_runtime_seconds || 0}s</b><span>runtime</span></div><div className="inspector-line"><b>${Number(config.budgets?.max_cost_usd_per_day || 0).toFixed(2)}</b><span>daily API cap</span></div><div className="inspector-line"><b>{config.permissions?.life_access || "none"}</b><span>LIFE.md</span></div></section>
+      <section><h4><KeyRound /> Integration API</h4><p>{config.trigger_modes?.includes("api") ? "Enabled for scoped, revocable keys. No key exists until you create one." : "Disabled for this agent."}</p></section>
+    </aside>
+  );
+}
+
+function AgentDetail({ agent, onEdit, onStatus, onArchive }) {
+  const config = agent.config || {};
+  const schedule = config.schedule || {};
+  return (
+    <main className="agents-main">
+      <header className="agents-toolbar">
+        <div><span className="eyebrow">Agent workspace</span><h1>{agent.name}</h1></div>
+        <span className={`agent-status status-${agent.status}`}>{agent.status}</span>
+        <div className="grow" />
+        <button className="btn ghost" onClick={onEdit}>Edit</button>
+        <button className="btn" onClick={() => onStatus(agent.status === "active" ? "paused" : "active")}>
+          {agent.status === "active" ? <CirclePause /> : <CirclePlay />}{agent.status === "active" ? "Pause" : "Activate"}
+        </button>
+        <button className="icon-btn danger" aria-label="Archive agent" onClick={onArchive}><Archive /></button>
+      </header>
+      <div className="agents-detail-scroll">
+        <section className="agent-hero-card"><div className="agent-orbit-mark"><Bot /></div><div><span className="eyebrow">Goal</span><p>{config.goal}</p></div></section>
+        <div className="agent-summary-grid">
+          <article><Sparkles /><span>Model</span><b>{config.model}</b><p>{config.effort || "standard"} reasoning</p></article>
+          <article><CalendarClock /><span>Run mode</span><b>{schedule.enabled ? schedule.cron : (config.trigger_modes || ["manual"]).join(" Â· ")}</b><p>{schedule.enabled ? `${schedule.timezone} Â· ${schedule.misfire_policy}` : "Runs only from enabled triggers"}</p></article>
+          <article><ShieldCheck /><span>Guardrails</span><b>{config.budgets?.max_steps_per_run} steps Â· {config.budgets?.max_runtime_seconds}s</b><p>High-risk actions suspend for approval.</p></article>
+        </div>
+        <section className="agent-detail-section"><div className="agent-section-heading"><h2>Guidelines</h2><span>{config.guidelines?.length || 0}</span></div>{config.guidelines?.length ? <ol>{config.guidelines.map((line, index) => <li key={`${index}-${line}`}>{line}</li>)}</ol> : <p className="agent-empty-copy">No extra guidelines. The goal and platform safety policy still apply.</p>}</section>
+        <section className="agent-detail-section"><div className="agent-section-heading"><h2>Granted capabilities</h2><span>{config.tool_grants?.length || 0}</span></div><div className="agent-capability-grid">{config.tool_grants?.length ? config.tool_grants.map((grant) => <div className="agent-capability" key={grant.tool}><Wrench /><div><b>{grant.tool}</b><p>{grant.approval.replaceAll("_", " ")} Â· {Object.values(grant.resources || {}).flat().length} scoped resources</p></div></div>) : <p className="agent-empty-copy">No tools. This agent can reason and answer, but cannot act.</p>}</div></section>
+        <section className="agent-detail-section"><div className="agent-section-heading"><h2>Activity</h2><span>durable run ledger</span></div><div className="agent-activity-empty"><CirclePlay /><b>No runs yet</b><p>Manual, scheduled, API, Slack, and Gmail runs will appear here with every model step, approval, and tool result.</p></div></section>
+      </div>
+    </main>
+  );
+}
+
+export default function Agents() {
+  const [agents, setAgents] = useState([]);
+  const [catalog, setCatalog] = useState(EMPTY_CATALOG);
+  const [selectedId, setSelectedId] = useState(null);
+  const [editing, setEditing] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  const selected = agents.find((agent) => agent.id === selectedId) || agents[0] || null;
+
+  async function load(preferredId) {
+    const [agentData, catalogData] = await Promise.all([listAgents(), getAgentCatalog()]);
+    const nextAgents = agentData.agents || [];
+    setAgents(nextAgents);
+    setCatalog({ ...EMPTY_CATALOG, ...catalogData });
+    setSelectedId(preferredId || selectedId || nextAgents[0]?.id || null);
+  }
+
+  useEffect(() => {
+    load().catch((e) => setError(String(e.message || e))).finally(() => setLoading(false));
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function save(config) {
+    setSaving(true); setError("");
+    try {
+      const result = creating ? await createAgent(config) : await updateAgent(selected.id, config);
+      await load(result.id);
+      setCreating(false); setEditing(false);
+    } catch (e) {
+      setError(String(e.message || e));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function changeStatus(status) {
+    setError("");
+    try { const result = await setAgentStatus(selected.id, status); await load(result.id); }
+    catch (e) { setError(String(e.message || e)); }
+  }
+
+  async function archive() {
+    if (!window.confirm(`Archive ${selected.name}? Existing history stays available.`)) return;
+    setError("");
+    try { await archiveAgent(selected.id); setSelectedId(null); await load(); }
+    catch (e) { setError(String(e.message || e)); }
+  }
+
+  return (
+    <section className="view agents-view">
+      <aside className="agents-list-pane">
+        <div className="agents-list-head"><div><span className="eyebrow">Autonomous work</span><h2>Agents</h2></div><button className="icon-btn primary" aria-label="New agent" onClick={() => { setCreating(true); setEditing(true); setError(""); }}><Plus /></button></div>
+        <p className="agents-list-note">A goal, exact authority, a model, and a bounded way to run.</p>
+        <div className="agents-list-scroll">
+          {loading && <div className="agents-loading">Loading agentsâ€¦</div>}
+          {!loading && agents.length === 0 && <button className="agents-empty-list" onClick={() => { setCreating(true); setEditing(true); }}><Bot /><b>Create your first agent</b><span>Attach skills, data, tools, schedules, and integrations.</span></button>}
+          {agents.map((agent) => (
+            <button key={agent.id} className={`agent-list-item${selected?.id === agent.id ? " active" : ""}`} onClick={() => { setSelectedId(agent.id); setEditing(false); setCreating(false); setError(""); }}>
+              <span className={`agent-list-icon status-${agent.status}`}><Bot /></span><span><b>{agent.name}</b><small>{agent.config?.model || "No model"} Â· v{agent.version}</small></span><ChevronRight />
+            </button>
+          ))}
+        </div>
+        <div className="agents-list-foot"><ShieldCheck /><span>Local by default<br /><small>External access is opt-in and scoped.</small></span></div>
+      </aside>
+
+      {editing ? (
+        <main className="agents-main agent-editor-main"><AgentEditor initial={creating ? null : selected?.config} catalog={catalog} saving={saving} error={error} onCancel={() => { setEditing(false); setCreating(false); setError(""); }} onSave={save} /></main>
+      ) : selected ? (
+        <AgentDetail agent={selected} onEdit={() => setEditing(true)} onStatus={changeStatus} onArchive={archive} />
+      ) : (
+        <main className="agents-main agents-zero"><div className="agent-zero-orbit"><Bot /></div><span className="eyebrow">Build with boundaries</span><h1>Give recurring work a durable home.</h1><p>Create an agent, attach only the Orrery context and tools it needs, then choose manual, schedule, API, Slack, or Gmail triggers.</p><button className="btn primary" onClick={() => { setCreating(true); setEditing(true); }}><Plus />Create agent</button>{error && <div className="agent-form-error">{error}</div>}</main>
+      )}
+
+      {!editing && <AgentInspector agent={selected} />}
     </section>
   );
 }

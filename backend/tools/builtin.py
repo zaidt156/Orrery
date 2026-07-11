@@ -38,6 +38,7 @@ class WebSearchConfig(BaseModel):
 class WebSearchTool(Tool):
     label = "Web search"
     category = "net"
+    risk = "network"
     config_model = WebSearchConfig
 
     async def execute(self, config: WebSearchConfig) -> dict:
@@ -56,6 +57,8 @@ class DocSearchConfig(BaseModel):
 class DocSearchTool(Tool):
     label = "Search my documents"
     category = "ai"
+    risk = "sensitive_read"
+    resource_fields = ("collection_id",)
     config_model = DocSearchConfig
 
     async def execute(self, config: DocSearchConfig) -> dict:
@@ -74,6 +77,8 @@ class DbQueryConfig(BaseModel):
 class DbQueryTool(Tool):
     label = "Database query (read-only)"
     category = "data"
+    risk = "sensitive_read"
+    resource_fields = ("connection_id",)
     config_model = DbQueryConfig
 
     async def execute(self, config: DbQueryConfig) -> dict:
@@ -94,6 +99,7 @@ class RunPythonConfig(BaseModel):
 class RunPythonTool(Tool):
     label = "Run Python (sandbox)"
     category = "code"
+    risk = "local_write"
     config_model = RunPythonConfig
 
     async def execute(self, config: RunPythonConfig) -> dict:
@@ -118,6 +124,7 @@ class RunShellConfig(BaseModel):
 class RunShellTool(Tool):
     label = "Run shell commands (sandbox)"
     category = "code"
+    risk = "local_write"
     config_model = RunShellConfig
 
     async def execute(self, config: RunShellConfig) -> dict:
@@ -148,6 +155,7 @@ class FileGenerateTool(Tool):
     label = "Generate file"
     category = "code"
     writes = True
+    risk = "local_write"
     config_model = FileGenerateConfig
 
     async def execute(self, config: FileGenerateConfig) -> dict:
@@ -192,6 +200,7 @@ class CrabboxRunTool(Tool):
     label = "Run command with Crabbox"
     category = "code"
     writes = True
+    risk = "destructive"
     config_model = CrabboxRunConfig
 
     async def execute(self, config: CrabboxRunConfig) -> dict:
@@ -215,6 +224,8 @@ class DashboardRefreshConfig(BaseModel):
 class DashboardRefreshTool(Tool):
     label = "Refresh dashboard"
     category = "tools"
+    risk = "sensitive_read"
+    resource_fields = ("dashboard_id",)
     config_model = DashboardRefreshConfig
 
     async def execute(self, config: DashboardRefreshConfig) -> dict:
@@ -241,6 +252,8 @@ class McpCallTool(Tool):
     label = "MCP tool call"
     category = "net"
     writes = True  # external side effects are unknown → approval-gated wherever gates apply
+    risk = "external_write"
+    resource_fields = ("server_id",)
     config_model = McpCallConfig
 
     async def execute(self, config: McpCallConfig) -> dict:

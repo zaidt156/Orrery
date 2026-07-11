@@ -31,6 +31,8 @@ def test_builtin_tools_are_discoverable():
     assert catalog["db_query"]["writes"] is False
     assert catalog["crabbox_run"]["writes"] is True
     assert catalog["file_generate"]["writes"] is True
+    assert catalog["db_query"]["risk"] == "sensitive_read"
+    assert catalog["db_query"]["resource_fields"] == ["connection_id"]
 
 
 @pytest.mark.anyio
@@ -39,6 +41,25 @@ async def test_scope_allowlist_is_enforced_in_code():
     assert out["ok"] is False and "allow-list" in out["error"]
     ok = await run_tool("_test_echo", {"text": "hi"}, allowed={"_test_echo"})
     assert ok == {"ok": True, "echo": "hi"}
+
+
+@pytest.mark.anyio
+async def test_resource_grant_is_enforced_below_agent_prompt():
+    missing = await run_tool(
+        "db_query",
+        {"connection_id": "a" * 36, "sql": "SELECT 1"},
+        allowed={"db_query"},
+        grant={"actions": ["execute"], "resources": {}},
+    )
+    wrong = await run_tool(
+        "db_query",
+        {"connection_id": "a" * 36, "sql": "SELECT 1"},
+        allowed={"db_query"},
+        grant={"actions": ["execute"], "resources": {"connection_id": ["b" * 36]}},
+    )
+
+    assert missing["ok"] is False and "no grant" in missing["error"]
+    assert wrong["ok"] is False and "cannot access" in wrong["error"]
 
 
 @pytest.mark.anyio

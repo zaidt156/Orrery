@@ -24,6 +24,8 @@ class Tool:
     label: str = ""               # human name for palettes/config panels
     category: str = "tools"       # ai | data | code | net | tools
     writes: bool = False          # affects the world outside Orrery → approval-gated in agent flows
+    risk: str = "read"            # read | sensitive_read | local_write | external_write | destructive | credential_use | network
+    resource_fields: tuple[str, ...] = ()  # config fields an agent grant must constrain
     config_model: type[BaseModel] | None = None
 
     async def execute(self, config: BaseModel) -> dict:
@@ -55,12 +57,25 @@ def list_tools() -> list[dict]:
         schema: dict[str, Any] = {}
         if tool.config_model is not None:
             schema = tool.config_model.model_json_schema()
-        out.append({"key": key, "label": tool.label or key, "category": tool.category,
-                    "writes": bool(tool.writes), "schema": schema})
+        out.append({
+            "key": key,
+            "label": tool.label or key,
+            "category": tool.category,
+            "writes": bool(tool.writes),
+            "risk": tool.risk,
+            "resource_fields": list(tool.resource_fields),
+            "schema": schema,
+        })
     return out
 
 
-async def run_tool(key: str, args: dict | None = None, *, allowed: set[str] | None = None) -> dict:
+async def run_tool(
+    key: str,
+    args: dict | None = None,
+    *,
+    allowed: set[str] | None = None,
+    grant: dict | None = None,
+) -> dict:
     """Execute one tool call. Returns {"ok": bool, ...} — never raises to the caller.
 
     `allowed` is the caller's scope allow-list (an agent's granted tools, a workflow's node set).
@@ -71,8 +86,25 @@ async def run_tool(key: str, args: dict | None = None, *, allowed: set[str] | No
     tool = _TOOLS.get(key)
     if tool is None:
         return {"ok": False, "error": f"Unknown tool '{key}'."}
+    values = args or {}
+    if grant is not None:
+        actions = set(grant.get("actions") or [])
+        if "execute" not in actions:
+            return {"ok": False, "error": f"Tool '{key}' is not granted the execute action."}
+        constraints = grant.get("resources") or {}
+        for field in tool.resource_fields:
+            permitted = {str(value) for value in constraints.get(field, [])}
+            actual = values.get(field)
+            if not permitted:
+                return {"ok": False, "error": f"Tool '{key}' has no grant for resource '{field}'."}
+            if isinstance(actual, list):
+                accepted = all(str(value) in permitted for value in actual)
+            else:
+                accepted = str(actual) in permitted
+            if not accepted:
+                return {"ok": False, "error": f"Tool '{key}' cannot access that {field}."}
     try:
-        config = tool.config_model.model_validate(args or {}) if tool.config_model else None
+        config = tool.config_model.model_validate(values) if tool.config_model else None
     except ValidationError as exc:
         problems = "; ".join(f"{'.'.join(str(p) for p in e['loc'])}: {e['msg']}" for e in exc.errors()[:3])
         return {"ok": False, "error": f"Invalid arguments for '{key}': {problems}"}
