@@ -37,7 +37,9 @@ th{background:#26314f;color:#fff}
 
 
 def _find_soffice() -> str | None:
-    found = shutil.which("soffice") or shutil.which("libreoffice")
+    from backend.core import proc
+
+    found = proc.find_executable("soffice") or shutil.which("libreoffice")
     if found:
         return found
     candidates = [

@@ -2346,6 +2346,37 @@ Agents now actually work. The engine turns a saved definition into real, auditab
 Verified: 8 new engine tests (tool loop, approval suspend/resume, step and runs-per-day budgets,
 ungranted-tool refusal) - 376 backend tests total, UI build clean.
 
+## Step 138 - Agents builder verified by screenshot; macOS Docker detection fixed (July 11, 2026)
+
+The evening's Agents-builder complaints were run down with a NEW verification method: a headless
+probe driving the exact same engine the desktop window uses (Qt WebEngine), clicking the real UI
+and screenshotting every step. Three real defects fell out, each proven fixed by a screenshot:
+
+- **The builder went blank because of the catalog, not the checkboxes.** /agents/catalog bundled
+  live model discovery (which can probe provider CLIs for seconds), and the screen blocked the
+  agent list AND every checkbox group on it - bare boxes with headings and nothing inside. The
+  catalog now returns only fast database lists, models come from the same cached source as the
+  chat picker, and each part renders the moment it arrives with honest "Loading..." states.
+- **Selected chips showed no tick.** The checkbox fill relied on a CSS :has() rule that the
+  app's webview did not paint. The checked state is now a plain class set directly from React -
+  it cannot silently fail - with a bold dark tick on the amber box.
+- **The tick sat low in its box.** The icon kept its built-in 24px height attribute and a text
+  baseline; explicit sizing and block display center it exactly.
+
+Also this step:
+
+- **macOS "install Docker" loop fixed at the root.** A packaged .app launches with a minimal
+  PATH, so the bundled-database bootstrap could not SEE an installed Docker and asked the user
+  to install it again and again. The shared subprocess helper now resolves bare command names
+  (docker, ollama, soffice) against the well-known macOS install locations, and every docker/
+  ollama call site plus the bootstrap goes through it. Ships in the next installer rebuild.
+- **Stress-test residue swept.** The parallel session's 100-file lifecycle test cleaned its own
+  database rows (verified: no scratch collections/projects/chunks remain), but left ~131 MB of
+  Edge browser test profiles under tmp/ - removed. One real find: the eam_demo_work_orders
+  dataset exists TWICE (a July 2 double-upload) - the known re-upload-duplicates issue, already
+  Task 3 of the current plan.
+- Fixed issue screenshots were removed from the local Issues/ folder at the user's request.
+
 ## The plan from here (user direction, July 11)
 
 1. **Architecture hardening for scale** - re-plan and secure the foundations so Orrery stays
@@ -2360,3 +2391,40 @@ ungranted-tool refusal) - 376 backend tests total, UI build clean.
    (sandbox-hosted interactive preview or packaged download) - any sort of asked work.
 4. **Concept/futuristic theme, continued** - per-view composition to match the concept art.
 5. **Agents next increments** - scoped external API keys, Slack/Gmail triggers, learning notes.
+
+
+## Step 138 - A real 100-file mixed-format lifecycle stress test (July 11, 2026)
+
+The scale-hardening work now has a repeatable mixed-format gate instead of relying only on small
+unit tests or the existing text-only ontology benchmark.
+
+- **100 real files, every FileGen format.** The new manual harness creates five each of PDF,
+  DOCX, XLSX, PPTX, CSV, TeX, PNG, JPEG, GIF, WebP, SVG, WAV, MP3, MP4, WebM, ZIP, HTML,
+  Markdown, text, and JSON. Each batch runs inside Orrery's actual offline, non-root,
+  resource-capped Docker sandbox; the AI provider is deliberately excluded so the result is
+  deterministic and costs nothing.
+- **The complete internal lifecycle is checked.** All 100 outputs must pass FileGen's backend
+  validators, persist to the temporary generated-file library, reload byte-for-byte, and produce
+  a preview. The 50 text/PDF/Office files that Orrery can search are then indexed into a disposable
+  project, queried one by one, gathered through the same chat retrieval path, relevance-isolated
+  from an unrelated question, and deletion-tested. Media and archives are correctly treated as
+  downloadable artifacts rather than searchable text.
+- **The harness is safe to repeat.** It requires an explicit command-line opt-in, refuses any
+  non-loopback database, names every database resource with a fresh UUID, deletes only IDs created
+  by the current run, keeps generated blobs in an OS temporary directory, and runs every cleanup
+  path independently even after a failure. It never sweeps user resources by a shared name.
+- **Measured on this machine.** The passing run took 25.2 seconds: 17.0s for 20 sandbox batches,
+  2.1s for 100 store/reload/preview cycles, 4.6s to index the 50 readable files, and 0.8s for
+  50 pointed searches. The serialized 100-file payload was 0.77 MiB against the configured 64 MiB
+  request cap. Cleanup removed all 200 blob/metadata entries and the current run's database rows.
+- **The older broad context test still passes.** The 300-file ontology run completed in 29.7s
+  (25.4s ingestion, 0.3s direct search, 0.2s chat gathering) with attribution and no unrelated
+  context leak.
+
+Verified: the new 100-file lifecycle passes, the 300-file ontology stress test passes,
+376 backend tests pass, all 12 UI tests pass, and the production UI build is clean. The build's
+existing large-chunk warning remains visible; it is not a build failure.
+
+Next: execute the five-workstream plan recorded in Step 137, starting with scale foundations
+(streaming, pagination/indexes, idempotent off-thread ingestion, request-scoped team-mode caching,
+and the security re-review), then real Office previews and safe one-off app bundles.

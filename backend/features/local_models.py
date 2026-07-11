@@ -89,7 +89,8 @@ def _ollama_command() -> str | None:
             shutil.which("ollama"),
         ]
         return next((path for path in candidates if path and os.path.isfile(path)), None)
-    return shutil.which("ollama")
+    from backend.core import proc
+    return proc.find_executable("ollama")  # covers a macOS .app's minimal PATH
 
 
 def _validate_model_name(model: str, curated_only: bool = False) -> str:

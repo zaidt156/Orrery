@@ -16,9 +16,10 @@ backend log for them to show the matching "install/start Docker" dialog. Keep th
 from __future__ import annotations
 
 import logging
-import shutil
 import subprocess
 import time
+
+from backend.core import proc
 
 log = logging.getLogger("orrery.dockerboot")
 
@@ -54,14 +55,17 @@ def run_args() -> list[str]:
 
 
 def _docker(*args: str, timeout: int = _RUN_TIMEOUT) -> subprocess.CompletedProcess:
-    return subprocess.run(
+    return proc.run(
         ["docker", *args], capture_output=True, text=True, timeout=timeout, check=False
     )
 
 
 def docker_state() -> str:
-    """"ready" (daemon answering), "stopped" (CLI present, daemon down), or "missing"."""
-    if shutil.which("docker") is None:
+    """"ready" (daemon answering), "stopped" (CLI present, daemon down), or "missing".
+
+    find_executable (not bare which) — a packaged macOS app's minimal PATH can't see docker,
+    which made Orrery ask users to install Docker they already had."""
+    if proc.find_executable("docker") is None:
         return "missing"
     try:
         probe = _docker("info")
@@ -112,7 +116,7 @@ def provision() -> str | None:
         else:
             log.info("Creating the bundled database container (first run may pull the image)")
             print("First run: downloading the bundled PostgreSQL image (one time, a few minutes)...", flush=True)
-            created = subprocess.run(run_args(), capture_output=True, text=True, timeout=600, check=False)
+            created = proc.run(run_args(), capture_output=True, text=True, timeout=600, check=False)
             ok = created.returncode == 0
             if not ok:
                 log.error("docker run failed: %s", (created.stderr or "")[-400:])
