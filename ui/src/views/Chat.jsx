@@ -427,6 +427,18 @@ export default function Chat() {
     };
     let savedMsgId = null;
     let reasoningAcc = createReasoningSnapshot();
+    // High-frequency token deltas coalesce into ONE React commit per animation frame — the
+    // per-token full-thread re-render was the main "long chats stream janky" cause. Any other
+    // event (and every stream-end path) flushes first, so event ordering never changes.
+    let pendingDelta = "", pendingThinking = "", flushHandle = 0;
+    const flushDeltas = () => {
+      if (flushHandle) { cancelAnimationFrame(flushHandle); flushHandle = 0; }
+      if (pendingDelta) { const d = pendingDelta; pendingDelta = ""; appendDelta(setMessages, d); }
+      if (pendingThinking) { const t = pendingThinking; pendingThinking = ""; appendThinking(setMessages, t); }
+    };
+    const scheduleFlush = () => {
+      if (!flushHandle) flushHandle = requestAnimationFrame(() => { flushHandle = 0; flushDeltas(); });
+    };
     const handleEvent = (ev) => {
         // Keep the persisted snapshot on the same exact path as the live panel. In particular,
         // reasoning_delta text is appended verbatim and compatibility events are stored once.
@@ -446,9 +458,11 @@ export default function Chat() {
         }
         if (!isActive()) return;
 
-        if (ev.delta) appendDelta(setMessages, ev.delta);
-        else if (ev.reasoning_delta) appendThinking(setMessages, ev.reasoning_delta);
-        else if (ev.reasoning_outer) setLast({ outer: ev.reasoning_outer });
+        if (ev.delta) { pendingDelta += ev.delta; scheduleFlush(); return; }
+        if (ev.reasoning_delta) { pendingThinking += ev.reasoning_delta; scheduleFlush(); return; }
+        flushDeltas();  // buffered text lands before any other event applies
+
+        if (ev.reasoning_outer) setLast({ outer: ev.reasoning_outer });
         else if (ev.reasoning_step) appendTrace(setMessages, ev.reasoning_step);
         else if (ev.reasoning_event) appendTrace(setMessages, ev.reasoning_event);
         else if (ev.reasoning_summary) setLast({ summary: ev.reasoning_summary });
@@ -471,6 +485,7 @@ export default function Chat() {
     };
     try {
       const streamResult = await start(handleEvent, ctrl.signal);
+      flushDeltas();
       if (streamResult?.done === false && isActive()) {
         try {
           const full = await getConversation(cid);
@@ -488,9 +503,11 @@ export default function Chat() {
         }
       }
     } catch (e) {
+      flushDeltas();  // keep whatever streamed before the failure/abort
       if (e.name === "AbortError") setLast({ streaming: false }); // keep the partial reply
       else setLast({ content: String(e.message || e), error: true, streaming: false });
     } finally {
+      flushDeltas();
       setSending(false);
       abortRef.current = null;
       if (savedMsgId && hasReasoning(reasoningAcc)) {
@@ -920,9 +937,9 @@ export default function Chat() {
                   {tokenLabel(m) && <span className="token-chip" title="Exact for API models; estimated otherwise">{tokenLabel(m)}</span>}
                 </div>
                 {(() => {
-                  const { thinking: inlineThinking, body } = splitInlineThinking(stripDocSpec(m.content));
+                  const derived = deriveAiView(m);
+                  const { thinking: inlineThinking, body, svgs, cleaned } = derived;
                   const rawThinking = m.thinking || inlineThinking;
-                  const { svgs, cleaned } = m.streaming ? { svgs: [], cleaned: body } : extractSvgs(body);
                   const svgTitle = convos.find((c) => c.id === activeId)?.title;
                   return (
                     <>
@@ -931,7 +948,9 @@ export default function Chat() {
                         <ReasoningPanel outer={m.outer} trace={m.trace} thinking={rawThinking} summary={m.summary} sources={m.sources} streaming={m.streaming} />
                       )}
                       <div className="ai-text">
-                        {cleaned ? <Markdown>{cleaned}</Markdown> : null}
+                        {m.streaming
+                          ? (body ? <div className="stream-live">{body}</div> : null)
+                          : (cleaned ? <Markdown>{cleaned}</Markdown> : null)}
                         {m.streaming && body && <span className="caret" />}
                       </div>
                       {svgs.map((svg, si) => (
@@ -1165,6 +1184,20 @@ function ensureStreamingAssistant(messages) {
     a.push({ role: "assistant", content: "", streaming: true });
   }
   return a;
+}
+
+// Per-message view derivation (strip docspec, split think, extract SVGs). Completed messages
+// keep stable object identity across renders, so their result is cached — a streaming token no
+// longer re-runs these regexes over every message in the thread. While streaming, markdown
+// parsing is skipped entirely (plain text + caret); the finished message renders Markdown once.
+const _derivedCache = new WeakMap();
+function deriveAiView(m) {
+  if (!m.streaming && _derivedCache.has(m)) return _derivedCache.get(m);
+  const { thinking, body } = splitInlineThinking(stripDocSpec(m.content));
+  const { svgs, cleaned } = m.streaming ? { svgs: [], cleaned: body } : extractSvgs(body);
+  const out = { thinking, body, svgs, cleaned };
+  if (!m.streaming) _derivedCache.set(m, out);
+  return out;
 }
 
 // Append a streamed delta to the active assistant message.

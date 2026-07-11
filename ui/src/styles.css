@@ -359,6 +359,9 @@ button.stat-card:hover{border-color:var(--ice); transform:translateY(-1px)}
   .activity-card,.system-card{overflow-y:visible}
 }
 
+/* in-flight reply body: plain text while streaming (markdown renders once, at completion) */
+.ai-text .stream-live{white-space:pre-wrap;word-break:break-word;font-size:13px;line-height:1.62}
+
 /* ── first-run Life setup ──────────────────────── */
 .firstrun-back{
   position:fixed; inset:0; z-index:80; display:grid; place-items:center;
