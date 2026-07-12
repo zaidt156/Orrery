@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Using Orrery - Guide</title>
+<meta name="description" content="A simple, friendly guide to installing and using Orrery: your private, local-first AI workspace. Bring your own models and your own database." />
+<meta property="og:title" content="Using Orrery - Guide" />
+<meta property="og:description" content="How to install and use Orrery - in plain language, for everyone." />
+<link rel="icon" href="assets/orrery.png" />
+<style>
+:root{--ink:#f7f0df;--strong:#fffaf0;--muted:#c8bfae;--quiet:#8f877b;--bg:#141311;--panel:#1f211f;--panel2:#292721;--line:rgba(247,240,223,.14);--line2:rgba(247,240,223,.25);--gold:#e5a93f;--teal:#52c8b2;--green:#91c477;--rose:#d9677f;--radius:8px;--max:900px;--font:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;--mono:"SF Mono","Cascadia Code",Consolas,ui-monospace,monospace}
+*{box-sizing:border-box}html{scroll-behavior:smooth}
+body{margin:0;min-width:320px;color:var(--ink);background:var(--bg);font-family:var(--font);line-height:1.62;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+body:before{content:"";position:fixed;inset:0;z-index:-2;background:linear-gradient(90deg,rgba(255,255,255,.022) 1px,transparent 1px),linear-gradient(180deg,rgba(255,255,255,.018) 1px,transparent 1px),linear-gradient(135deg,#15130f,#161a19 46%,#11100f);background-size:64px 64px,64px 64px,auto}
+a{color:var(--teal);text-decoration:none}a:hover{text-decoration:underline;text-underline-offset:3px}
+img{display:block;max-width:100%}h1,h2,h3,p{margin:0}h1,h2,h3{line-height:1.14;color:var(--strong)}
+.wrap{width:calc(100% - 40px);max-width:var(--max);margin:0 auto}
+header{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--line);background:rgba(20,19,17,.86);backdrop-filter:blur(16px)}
+nav{height:64px;display:flex;align-items:center;gap:18px}
+.brand{display:inline-flex;align-items:center;gap:10px;font-weight:760;color:var(--strong)}
+.brand img{width:32px;height:32px;border-radius:8px}
+.navlinks{margin-left:auto;display:flex;align-items:center;gap:20px;font-size:.92rem;font-weight:650}
+.navlinks a{color:var(--muted)}.navlinks a:hover{color:var(--strong);text-decoration:none}
+.hero{padding:64px 0 30px;border-bottom:1px solid var(--line)}
+.kicker{display:inline-flex;align-items:center;gap:9px;margin-bottom:18px;color:var(--muted);font:.76rem var(--mono);text-transform:uppercase}
+.kicker:before{content:"";width:10px;height:10px;border-radius:99px;background:var(--teal)}
+.hero h1{font-size:2.9rem;font-weight:820;max-width:16ch}
+.hero p{max-width:60ch;margin-top:18px;color:var(--muted);font-size:1.12rem}
+.layout{display:grid;grid-template-columns:210px 1fr;gap:44px;padding:40px 0 80px;align-items:start}
+.toc{position:sticky;top:88px;display:grid;gap:2px;font-size:.9rem}
+.toc a{color:var(--muted);padding:6px 10px;border-radius:6px;border-left:2px solid transparent}
+.toc a:hover{color:var(--strong);background:rgba(245,237,221,.05);text-decoration:none}
+.content section{padding:14px 0 30px;border-bottom:1px solid var(--line);scroll-margin-top:84px}
+.content section:last-child{border-bottom:0}
+.content h2{font-size:1.6rem;margin-bottom:6px}
+.content h2 .n{color:var(--gold);font:700 1rem var(--mono);margin-right:10px}
+.content h3{font-size:1.05rem;margin:22px 0 6px}
+.content p{margin-top:10px;color:var(--muted)}
+.content ul,.content ol{margin:10px 0 0;padding-left:22px;color:var(--muted)}
+.content li{margin:7px 0}
+.content b,.content strong{color:var(--ink)}
+code{padding:2px 6px;border-radius:6px;color:#bdf3e8;background:rgba(82,200,178,.12);font:.86em var(--mono)}
+.callout{margin-top:16px;padding:14px 16px;border:1px solid rgba(229,169,63,.3);border-radius:var(--radius);background:rgba(229,169,63,.07);color:#d7c8ae;font-size:.95rem}
+.callout.teal{border-color:rgba(82,200,178,.3);background:rgba(82,200,178,.07);color:#bfe9df}
+.callout b{color:#f3ca7d}.callout.teal b{color:#bff3e8}
+.cards{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:16px}
+.tile{padding:16px;border:1px solid var(--line);border-radius:var(--radius);background:rgba(245,237,221,.045)}
+.tile b{display:block;color:var(--strong);margin-bottom:5px}
+.tile span{color:var(--muted);font-size:.9rem}
+.button{display:inline-flex;align-items:center;gap:8px;margin-top:18px;padding:11px 16px;border:1px solid #f0b54f;border-radius:var(--radius);color:#15110a;background:#e8aa3d;font-weight:760;font-size:.94rem}
+.button:hover{background:#f2bd59;text-decoration:none}
+.button.ghost{border-color:var(--line2);color:var(--strong);background:rgba(245,237,221,.06)}
+.button.ghost:hover{border-color:var(--teal);background:rgba(245,237,221,.1)}
+footer{border-top:1px solid var(--line);padding:30px 0;color:var(--quiet);font-size:.9rem}
+.foot{display:flex;align-items:center;gap:16px;flex-wrap:wrap}.foot .links{margin-left:auto;display:flex;gap:16px}
+@media(max-width:820px){.layout{grid-template-columns:1fr;gap:24px}.toc{position:static;display:flex;flex-wrap:wrap;gap:6px;padding-bottom:8px;border-bottom:1px solid var(--line)}.toc a{border-left:0}.hero h1{font-size:2.2rem}.cards{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header><div class="wrap"><nav aria-label="Primary"><a class="brand" href="index.html"><img src="assets/orrery.png" alt="" /><span>Orrery</span></a><div class="navlinks"><a href="index.html#download">Download</a><a href="index.html#features">Features</a><a href="https://github.com/zaidt156/Orrery">GitHub</a></div></nav></div></header>
+
+<main>
+<section class="hero"><div class="wrap"><span class="kicker">Using Orrery</span><h1>Your private AI workspace, made simple.</h1><p>This guide walks you through installing Orrery and using it day to day - in plain language, no jargon. If you can install an app and paste a key, you're ready.</p></div></section>
+
+<div class="wrap"><div class="layout">
+<nav class="toc" aria-label="Contents">
+  <a href="#what">What is Orrery</a>
+  <a href="#install">Install it</a>
+  <a href="#firstrun">First run</a>
+  <a href="#model">Connect a model</a>
+  <a href="#chat">Chat &amp; your data</a>
+  <a href="#projects">Projects</a>
+  <a href="#agents">Agents</a>
+  <a href="#dashboards">Dashboards</a>
+  <a href="#themes">Themes</a>
+  <a href="#privacy">Your privacy</a>
+  <a href="#trouble">Troubleshooting</a>
+  <a href="#help">Get help</a>
+</nav>
+
+<div class="content">
+
+<section id="what"><h2><span class="n">01</span>What is Orrery</h2>
+<p>Orrery is a desktop app that brings AI into one private workspace on <b>your own computer</b>. You connect the AI models you already use (Claude, ChatGPT, Google, or a free local model) and, optionally, your own database - and Orrery ties them together.</p>
+<p>The important part: your files, chats, and data stay on your machine. Nothing is sent anywhere except to the AI provider <em>you</em> chose, and only when you ask it to.</p>
+<div class="cards">
+<div class="tile"><b>Chat</b><span>Talk to any model, with your documents in the loop.</span></div>
+<div class="tile"><b>Data &amp; dashboards</b><span>Ask questions of your database; save live dashboards.</span></div>
+<div class="tile"><b>Agents</b><span>Give a goal and let a bounded worker do it.</span></div>
+<div class="tile"><b>Media &amp; files</b><span>Generate documents, images, and more.</span></div>
+</div>
+</section>
+
+<section id="install"><h2><span class="n">02</span>Install it</h2>
+<h3>Windows</h3>
+<ol>
+<li>Download the <b>Windows installer (.exe)</b> from the download page.</li>
+<li>Run it. If Windows shows a blue "protected your PC" box, click <b>More info -&gt; Run anyway</b> (the app isn't code-signed yet - that's expected for a preview).</li>
+<li>Orrery installs like any app, with a Start Menu and desktop shortcut.</li>
+</ol>
+<h3>macOS</h3>
+<ol>
+<li>Download the <b>.dmg</b> for your Mac - Apple Silicon (M1/M2/M3) or Intel.</li>
+<li>Open it and drag <b>Orrery</b> into your Applications folder.</li>
+<li>The first time, <b>right-click Orrery -&gt; Open</b> (instead of double-clicking) to get past Gatekeeper. You only do this once.</li>
+</ol>
+<a class="button" href="index.html#download">Go to downloads</a>
+</section>
+
+<section id="firstrun"><h2><span class="n">03</span>First run</h2>
+<p>Orrery keeps everything in a small database on your computer, and it sets that up for you automatically.</p>
+<ul>
+<li><b>If you have Docker Desktop installed:</b> just open Orrery. It starts Docker if needed, creates its database the first time, and opens - no setup screens.</li>
+<li><b>If you don't have Docker:</b> Orrery shows a friendly dialog with a button to get <a href="https://www.docker.com/products/docker-desktop/">Docker Desktop</a>. Install it, reopen Orrery, and you're set.</li>
+<li><b>Already run your own PostgreSQL?</b> You can point Orrery at it instead in Settings, and Docker isn't needed at all.</li>
+</ul>
+<div class="callout teal"><b>Tip:</b> The very first launch asks you a couple of quick questions (what to call you, what you'll use Orrery for). Your answers become Orrery's private memory - you can edit or skip them any time in Settings.</div>
+</section>
+
+<section id="model"><h2><span class="n">04</span>Connect a model</h2>
+<p>Orrery doesn't ship with an AI - you bring your own, which keeps you in control of cost and privacy. Open <b>Settings -&gt; Accounts</b> and pick whatever you have:</p>
+<ul>
+<li><b>An API key</b> from OpenAI, Anthropic (Claude), Google, Mistral, DeepSeek, or any OpenAI-compatible service - paste it and you're done. Keys are stored in your operating system's secure keychain, never in a file.</li>
+<li><b>A plan account</b> - connect your Claude or ChatGPT subscription through their official app.</li>
+<li><b>A free local model</b> with Ollama - runs entirely on your machine, no key, no internet.</li>
+</ul>
+<p>Then in <b>Settings -&gt; Models</b>, turn on the ones you want to see in the chat menu. Switch models any time, even mid-conversation.</p>
+</section>
+
+<section id="chat"><h2><span class="n">05</span>Chat &amp; your data</h2>
+<p>The Chat tab is the heart of Orrery. Type a question and the answer streams back. You can attach files (PDF, Word, Excel, images, code) and ask about them - Orrery reads them on your machine.</p>
+<h3>Use my data</h3>
+<p>Flip on <b>Use my data</b> and pick a collection to have Orrery answer from your own documents, citing which file each fact came from. Build collections in the <b>Data</b> and <b>Ontology</b> tabs by dropping in files.</p>
+<div class="callout"><b>Good to know:</b> Orrery figures out what you actually want. Ask a calculation and you get an answer; ask for "a PDF report" and you get a real file. It won't turn a plain question into a random file.</div>
+</section>
+
+<section id="projects"><h2><span class="n">06</span>Projects</h2>
+<p>A Project is a workspace for related chats, with its own files and standing instructions. Create one for a client, a topic, or a piece of work - every chat inside it automatically knows that project's context, so you don't repeat yourself.</p>
+</section>
+
+<section id="agents"><h2><span class="n">07</span>Agents</h2>
+<p>Agents are workers you give a <b>goal</b> instead of a single message. You decide exactly what each agent can touch - which tools, which data - and set limits (how many steps, how much it can spend per day) and a schedule.</p>
+<ul>
+<li>Press <b>Run</b> and watch every step, tool call, and result in a live feed.</li>
+<li>Anything risky <b>pauses and asks you</b> before it happens - nothing acts outside its lane.</li>
+<li>Schedule an agent to run on its own (say, every morning).</li>
+</ul>
+</section>
+
+<section id="dashboards"><h2><span class="n">08</span>Dashboards</h2>
+<p>Describe the dashboard you want in plain words and pick a model. Orrery reads your connected data, writes the queries, and picks the charts - <b>once</b>. After that it just refreshes on live data, so reopening it costs nothing. Every query is visible and read-only, so it can never change your data.</p>
+</section>
+
+<section id="themes"><h2><span class="n">09</span>Themes</h2>
+<p>Make Orrery yours in <b>Settings -&gt; Appearance</b>. Choose from five color looks - Simple, Futuristic, Winter, Summer, and Observatory - and two layouts (a compact Classic view or a fuller Concept dashboard). Mix and match; the whole app restyles instantly.</p>
+</section>
+
+<section id="privacy"><h2><span class="n">10</span>Your privacy</h2>
+<p>Privacy isn't a setting in Orrery - it's the design.</p>
+<ul>
+<li>Your files, chats, database, and generated files stay <b>on your computer</b>.</li>
+<li>Orrery talks only to the AI providers you set up - nothing else.</li>
+<li>When you use a cloud model, Orrery can automatically mask personal details (emails, phone numbers, card numbers) before anything is sent. Use a local model and nothing leaves at all.</li>
+<li>No analytics, no tracking, no "phone home".</li>
+</ul>
+</section>
+
+<section id="trouble"><h2><span class="n">11</span>Troubleshooting</h2>
+<h3>The app won't open / "setup failed"</h3>
+<p>This almost always means the database isn't up yet. Make sure <b>Docker Desktop</b> is installed and let it finish starting, then reopen Orrery - it brings its database up automatically. If Docker isn't installed, the app shows a button to get it.</p>
+<h3>Windows "protected your PC" / macOS "damaged" or "unidentified developer"</h3>
+<p>Preview builds aren't code-signed yet. On Windows click <b>More info -&gt; Run anyway</b>; on macOS <b>right-click -&gt; Open</b> the first time. A signed release is planned.</p>
+<h3>A model says it's out of credit / hit a limit</h3>
+<p>That's your provider account, not Orrery. Top up with that provider, or switch to another connected model (or a local Ollama model) in the chat menu.</p>
+</section>
+
+<section id="help"><h2><span class="n">12</span>Get help</h2>
+<p>Found a bug or have an idea? Open an issue on GitHub - feedback genuinely shapes what gets built next.</p>
+<a class="button ghost" href="https://github.com/zaidt156/Orrery/issues">Report an issue or idea</a>
+</section>
+
+</div>
+</div></div>
+
+<footer><div class="wrap foot"><a class="brand" href="index.html"><img src="assets/orrery.png" alt="" /><span>Orrery</span></a><span>Local AI workspace. Your keys, your data.</span><div class="links"><a href="index.html">Home</a><a href="index.html#download">Download</a><a href="https://github.com/zaidt156/Orrery">GitHub</a></div></div></footer>
+</main>
+</body>
+</html>

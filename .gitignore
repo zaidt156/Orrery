@@ -59,6 +59,7 @@ skills/
 docs/*
 !docs/README.md
 !docs/index.html
+!docs/guide.html
 !docs/.nojekyll
 !docs/assets/
 docs/assets/*
