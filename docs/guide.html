@@ -3,10 +3,10 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Using Orrery - Guide</title>
-<meta name="description" content="A simple, friendly guide to installing and using Orrery: your private, local-first AI workspace. Bring your own models and your own database." />
-<meta property="og:title" content="Using Orrery - Guide" />
-<meta property="og:description" content="How to install and use Orrery - in plain language, for everyone." />
+<title>Using Orrery Guide</title>
+<meta name="description" content="A simple, friendly guide to installing and using Orrery: your private AI workspace that runs on your own computer. Bring your own models and your own database." />
+<meta property="og:title" content="Using Orrery Guide" />
+<meta property="og:description" content="How to install and use Orrery, written in plain language for everyone." />
 <link rel="icon" href="assets/orrery.png" />
 <style>
 :root{--ink:#f7f0df;--strong:#fffaf0;--muted:#c8bfae;--quiet:#8f877b;--bg:#141311;--panel:#1f211f;--panel2:#292721;--line:rgba(247,240,223,.14);--line2:rgba(247,240,223,.25);--gold:#e5a93f;--teal:#52c8b2;--green:#91c477;--rose:#d9677f;--radius:8px;--max:900px;--font:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;--mono:"SF Mono","Cascadia Code",Consolas,ui-monospace,monospace}
@@ -61,129 +61,129 @@ footer{border-top:1px solid var(--line);padding:30px 0;color:var(--quiet);font-s
 <header><div class="wrap"><nav aria-label="Primary"><a class="brand" href="index.html"><img src="assets/orrery.png" alt="" /><span>Orrery</span></a><div class="navlinks"><a href="index.html#download">Download</a><a href="index.html#features">Features</a><a href="https://github.com/zaidt156/Orrery">GitHub</a></div></nav></div></header>
 
 <main>
-<section class="hero"><div class="wrap"><span class="kicker">Using Orrery</span><h1>Your private AI workspace, made simple.</h1><p>This guide walks you through installing Orrery and using it day to day - in plain language, no jargon. If you can install an app and paste a key, you're ready.</p></div></section>
+<section class="hero"><div class="wrap"><span class="kicker">Using Orrery</span><h1>Your private AI workspace, made simple.</h1><p>This is a friendly walkthrough of installing Orrery and using it day to day. No jargon, and nothing you need to be technical for. If you can install an app and paste a key, you are ready.</p></div></section>
 
 <div class="wrap"><div class="layout">
 <nav class="toc" aria-label="Contents">
   <a href="#what">What is Orrery</a>
-  <a href="#install">Install it</a>
-  <a href="#firstrun">First run</a>
-  <a href="#model">Connect a model</a>
-  <a href="#chat">Chat &amp; your data</a>
+  <a href="#install">Installing it</a>
+  <a href="#firstrun">The first time you open it</a>
+  <a href="#model">Connecting a model</a>
+  <a href="#chat">Chat and your files</a>
   <a href="#projects">Projects</a>
   <a href="#agents">Agents</a>
   <a href="#dashboards">Dashboards</a>
-  <a href="#themes">Themes</a>
+  <a href="#themes">Making it yours</a>
   <a href="#privacy">Your privacy</a>
-  <a href="#trouble">Troubleshooting</a>
-  <a href="#help">Get help</a>
+  <a href="#trouble">If something goes wrong</a>
+  <a href="#help">Getting help</a>
 </nav>
 
 <div class="content">
 
 <section id="what"><h2><span class="n">01</span>What is Orrery</h2>
-<p>Orrery is a desktop app that brings AI into one private workspace on <b>your own computer</b>. You connect the AI models you already use (Claude, ChatGPT, Google, or a free local model) and, optionally, your own database - and Orrery ties them together.</p>
-<p>The important part: your files, chats, and data stay on your machine. Nothing is sent anywhere except to the AI provider <em>you</em> chose, and only when you ask it to.</p>
+<p>Orrery is a desktop app that puts AI into one private workspace on your own computer. You bring the AI models you already use, like Claude, ChatGPT, Google, or a free model that runs locally, and you can bring your own database too. Orrery is the thing that ties it all together in one window.</p>
+<p>Here is the part that matters most. Your files, your chats, and your data stay on your machine. The only time anything leaves is when you ask a cloud model a question, and even then it only sees what that question needs.</p>
 <div class="cards">
-<div class="tile"><b>Chat</b><span>Talk to any model, with your documents in the loop.</span></div>
-<div class="tile"><b>Data &amp; dashboards</b><span>Ask questions of your database; save live dashboards.</span></div>
-<div class="tile"><b>Agents</b><span>Give a goal and let a bounded worker do it.</span></div>
-<div class="tile"><b>Media &amp; files</b><span>Generate documents, images, and more.</span></div>
+<div class="tile"><b>Chat</b><span>Talk to any model, with your own documents in the conversation.</span></div>
+<div class="tile"><b>Data and dashboards</b><span>Ask questions of your database and save live dashboards.</span></div>
+<div class="tile"><b>Agents</b><span>Hand off a goal and let a bounded worker carry it out.</span></div>
+<div class="tile"><b>Files and media</b><span>Create documents, images, and other files on the spot.</span></div>
 </div>
 </section>
 
-<section id="install"><h2><span class="n">02</span>Install it</h2>
-<h3>Windows</h3>
+<section id="install"><h2><span class="n">02</span>Installing it</h2>
+<h3>On Windows</h3>
 <ol>
-<li>Download the <b>Windows installer (.exe)</b> from the download page.</li>
-<li>Run it. If Windows shows a blue "protected your PC" box, click <b>More info -&gt; Run anyway</b> (the app isn't code-signed yet - that's expected for a preview).</li>
-<li>Orrery installs like any app, with a Start Menu and desktop shortcut.</li>
+<li>Download the Windows installer from the download page. It is the file ending in <code>.exe</code>.</li>
+<li>Run it. If Windows shows a blue box that says it protected your PC, click <b>More info</b> and then <b>Run anyway</b>. The app is not code signed yet, which is normal for an early build, so that warning is expected.</li>
+<li>Orrery installs like any other app and adds a Start Menu and desktop shortcut.</li>
 </ol>
-<h3>macOS</h3>
+<h3>On a Mac</h3>
 <ol>
-<li>Download the <b>.dmg</b> for your Mac - Apple Silicon (M1/M2/M3) or Intel.</li>
+<li>Download the <code>.dmg</code> that matches your Mac. Pick Apple Silicon for an M1, M2, or M3, and Intel for an older one.</li>
 <li>Open it and drag <b>Orrery</b> into your Applications folder.</li>
-<li>The first time, <b>right-click Orrery -&gt; Open</b> (instead of double-clicking) to get past Gatekeeper. You only do this once.</li>
+<li>The very first time, right click Orrery and choose <b>Open</b> rather than double clicking. That gets you past the Mac security prompt, and you only do it once.</li>
 </ol>
 <a class="button" href="index.html#download">Go to downloads</a>
 </section>
 
-<section id="firstrun"><h2><span class="n">03</span>First run</h2>
-<p>Orrery keeps everything in a small database on your computer, and it sets that up for you automatically.</p>
+<section id="firstrun"><h2><span class="n">03</span>The first time you open it</h2>
+<p>Orrery keeps everything in a small database on your computer, and it sets that up for you. You do not have to configure anything.</p>
 <ul>
-<li><b>If you have Docker Desktop installed:</b> just open Orrery. It starts Docker if needed, creates its database the first time, and opens - no setup screens.</li>
-<li><b>If you don't have Docker:</b> Orrery shows a friendly dialog with a button to get <a href="https://www.docker.com/products/docker-desktop/">Docker Desktop</a>. Install it, reopen Orrery, and you're set.</li>
-<li><b>Already run your own PostgreSQL?</b> You can point Orrery at it instead in Settings, and Docker isn't needed at all.</li>
+<li>If you already have Docker Desktop installed, just open Orrery. It starts Docker for you if it is not running, creates its database the first time, and opens. No setup screens.</li>
+<li>If you do not have Docker yet, Orrery shows a friendly window with a button to go get <a href="https://www.docker.com/products/docker-desktop/">Docker Desktop</a>. Install it, open Orrery again, and you are set.</li>
+<li>If you already run your own PostgreSQL, you can point Orrery at it in Settings instead, and then Docker is not needed at all.</li>
 </ul>
-<div class="callout teal"><b>Tip:</b> The very first launch asks you a couple of quick questions (what to call you, what you'll use Orrery for). Your answers become Orrery's private memory - you can edit or skip them any time in Settings.</div>
+<div class="callout teal"><b>A nice touch.</b> The first launch asks you a couple of quick questions, like what to call you and what you plan to use Orrery for. Your answers become Orrery's private memory of you, and you can change or clear them any time in Settings.</div>
 </section>
 
-<section id="model"><h2><span class="n">04</span>Connect a model</h2>
-<p>Orrery doesn't ship with an AI - you bring your own, which keeps you in control of cost and privacy. Open <b>Settings -&gt; Accounts</b> and pick whatever you have:</p>
+<section id="model"><h2><span class="n">04</span>Connecting a model</h2>
+<p>Orrery does not come with an AI of its own. You bring your own, which keeps you in charge of both cost and privacy. Open Settings, go to Accounts, and pick whatever you have.</p>
 <ul>
-<li><b>An API key</b> from OpenAI, Anthropic (Claude), Google, Mistral, DeepSeek, or any OpenAI-compatible service - paste it and you're done. Keys are stored in your operating system's secure keychain, never in a file.</li>
-<li><b>A plan account</b> - connect your Claude or ChatGPT subscription through their official app.</li>
-<li><b>A free local model</b> with Ollama - runs entirely on your machine, no key, no internet.</li>
+<li>An API key from OpenAI, Anthropic (Claude), Google, Mistral, DeepSeek, or any service that speaks the same format. Paste it and you are done. Keys are kept in your computer's secure keychain, never in a plain file.</li>
+<li>A subscription account. You can connect your Claude or ChatGPT plan through their own official app.</li>
+<li>A free local model with Ollama. It runs entirely on your machine, with no key and no internet needed.</li>
 </ul>
-<p>Then in <b>Settings -&gt; Models</b>, turn on the ones you want to see in the chat menu. Switch models any time, even mid-conversation.</p>
+<p>After that, open the Models section in Settings and switch on the ones you want to see in the chat menu. You can change models whenever you like, even in the middle of a conversation.</p>
 </section>
 
-<section id="chat"><h2><span class="n">05</span>Chat &amp; your data</h2>
-<p>The Chat tab is the heart of Orrery. Type a question and the answer streams back. You can attach files (PDF, Word, Excel, images, code) and ask about them - Orrery reads them on your machine.</p>
-<h3>Use my data</h3>
-<p>Flip on <b>Use my data</b> and pick a collection to have Orrery answer from your own documents, citing which file each fact came from. Build collections in the <b>Data</b> and <b>Ontology</b> tabs by dropping in files.</p>
-<div class="callout"><b>Good to know:</b> Orrery figures out what you actually want. Ask a calculation and you get an answer; ask for "a PDF report" and you get a real file. It won't turn a plain question into a random file.</div>
+<section id="chat"><h2><span class="n">05</span>Chat and your files</h2>
+<p>Chat is the heart of Orrery. Type a question and the answer streams back. You can attach files too, like a PDF, a Word or Excel document, an image, or code, and ask about them. Orrery reads them right on your machine.</p>
+<h3>Answering from your own documents</h3>
+<p>Turn on <b>Use my data</b> and choose a collection, and Orrery will answer from your own documents and tell you which file each fact came from. You build these collections in the Data and Ontology tabs by dropping files in.</p>
+<div class="callout"><b>Worth knowing.</b> Orrery works out what you actually meant. Ask a calculation and you get the answer. Ask for a PDF report and you get a real file. A plain question will not suddenly turn into a random file.</div>
 </section>
 
 <section id="projects"><h2><span class="n">06</span>Projects</h2>
-<p>A Project is a workspace for related chats, with its own files and standing instructions. Create one for a client, a topic, or a piece of work - every chat inside it automatically knows that project's context, so you don't repeat yourself.</p>
+<p>A project is a home for related chats, with its own files and its own standing instructions. Make one for a client, a topic, or a piece of work, and every chat inside it already knows that project's context. You never have to repeat yourself.</p>
 </section>
 
 <section id="agents"><h2><span class="n">07</span>Agents</h2>
-<p>Agents are workers you give a <b>goal</b> instead of a single message. You decide exactly what each agent can touch - which tools, which data - and set limits (how many steps, how much it can spend per day) and a schedule.</p>
+<p>An agent is a worker you give a goal to, rather than a single message. You decide exactly what it is allowed to touch, which tools and which data, and you set its limits, like how many steps it can take and how much it can spend in a day. You can also give it a schedule.</p>
 <ul>
-<li>Press <b>Run</b> and watch every step, tool call, and result in a live feed.</li>
-<li>Anything risky <b>pauses and asks you</b> before it happens - nothing acts outside its lane.</li>
-<li>Schedule an agent to run on its own (say, every morning).</li>
+<li>Press <b>Run</b> and watch every step, every tool it uses, and every result appear in a live feed.</li>
+<li>Anything risky stops and asks you first before it happens. Nothing acts outside what you allowed.</li>
+<li>Give it a schedule and it can run on its own, say every morning.</li>
 </ul>
 </section>
 
 <section id="dashboards"><h2><span class="n">08</span>Dashboards</h2>
-<p>Describe the dashboard you want in plain words and pick a model. Orrery reads your connected data, writes the queries, and picks the charts - <b>once</b>. After that it just refreshes on live data, so reopening it costs nothing. Every query is visible and read-only, so it can never change your data.</p>
+<p>Describe the dashboard you want in plain words and pick a model. Orrery reads your connected data, writes the queries, and chooses the charts, and it does that once. After that it simply refreshes on live data, so opening it again costs nothing. Every query is visible and read only, so it can never change your data.</p>
 </section>
 
-<section id="themes"><h2><span class="n">09</span>Themes</h2>
-<p>Make Orrery yours in <b>Settings -&gt; Appearance</b>. Choose from five color looks - Simple, Futuristic, Winter, Summer, and Observatory - and two layouts (a compact Classic view or a fuller Concept dashboard). Mix and match; the whole app restyles instantly.</p>
+<section id="themes"><h2><span class="n">09</span>Making it yours</h2>
+<p>Open Settings and go to Appearance. There are five color looks to choose from, called Simple, Futuristic, Winter, Summer, and Observatory, plus two layouts: a compact Classic view or a fuller Concept dashboard. Mix them however you like, and the whole app restyles right away.</p>
 </section>
 
 <section id="privacy"><h2><span class="n">10</span>Your privacy</h2>
-<p>Privacy isn't a setting in Orrery - it's the design.</p>
+<p>Privacy is not a setting you flip on in Orrery. It is how the app is built.</p>
 <ul>
-<li>Your files, chats, database, and generated files stay <b>on your computer</b>.</li>
-<li>Orrery talks only to the AI providers you set up - nothing else.</li>
-<li>When you use a cloud model, Orrery can automatically mask personal details (emails, phone numbers, card numbers) before anything is sent. Use a local model and nothing leaves at all.</li>
-<li>No analytics, no tracking, no "phone home".</li>
+<li>Your files, chats, database, and generated files all stay on your computer.</li>
+<li>Orrery only ever talks to the AI providers you set up, and nothing else.</li>
+<li>When you use a cloud model, Orrery can automatically hide personal details like emails, phone numbers, and card numbers before anything is sent. Use a local model and nothing leaves at all.</li>
+<li>There is no tracking, no analytics, and nothing phoning home.</li>
 </ul>
 </section>
 
-<section id="trouble"><h2><span class="n">11</span>Troubleshooting</h2>
-<h3>The app won't open / "setup failed"</h3>
-<p>This almost always means the database isn't up yet. Make sure <b>Docker Desktop</b> is installed and let it finish starting, then reopen Orrery - it brings its database up automatically. If Docker isn't installed, the app shows a button to get it.</p>
-<h3>Windows "protected your PC" / macOS "damaged" or "unidentified developer"</h3>
-<p>Preview builds aren't code-signed yet. On Windows click <b>More info -&gt; Run anyway</b>; on macOS <b>right-click -&gt; Open</b> the first time. A signed release is planned.</p>
-<h3>A model says it's out of credit / hit a limit</h3>
-<p>That's your provider account, not Orrery. Top up with that provider, or switch to another connected model (or a local Ollama model) in the chat menu.</p>
+<section id="trouble"><h2><span class="n">11</span>If something goes wrong</h2>
+<h3>The app will not open, or it says setup failed</h3>
+<p>This nearly always means the database is not up yet. Make sure Docker Desktop is installed, give it a moment to finish starting, and open Orrery again. It brings its database up on its own. If Docker is not installed, the app gives you a button to go get it.</p>
+<h3>Windows says it protected your PC, or the Mac says the app cannot be opened</h3>
+<p>Early builds are not code signed yet. On Windows, click <b>More info</b> and then <b>Run anyway</b>. On a Mac, right click the app and choose <b>Open</b> the first time. A signed release is on the way.</p>
+<h3>A model says it is out of credit or hit a limit</h3>
+<p>That is your provider account rather than Orrery. Top up with that provider, or just switch to another connected model, including a free local one, in the chat menu.</p>
 </section>
 
-<section id="help"><h2><span class="n">12</span>Get help</h2>
-<p>Found a bug or have an idea? Open an issue on GitHub - feedback genuinely shapes what gets built next.</p>
+<section id="help"><h2><span class="n">12</span>Getting help</h2>
+<p>Found a bug or have an idea? Open an issue on GitHub. Feedback genuinely shapes what gets built next.</p>
 <a class="button ghost" href="https://github.com/zaidt156/Orrery/issues">Report an issue or idea</a>
 </section>
 
 </div>
 </div></div>
 
-<footer><div class="wrap foot"><a class="brand" href="index.html"><img src="assets/orrery.png" alt="" /><span>Orrery</span></a><span>Local AI workspace. Your keys, your data.</span><div class="links"><a href="index.html">Home</a><a href="index.html#download">Download</a><a href="https://github.com/zaidt156/Orrery">GitHub</a></div></div></footer>
+<footer><div class="wrap foot"><a class="brand" href="index.html"><img src="assets/orrery.png" alt="" /><span>Orrery</span></a><span>A local AI workspace. Your keys, your data.</span><div class="links"><a href="index.html">Home</a><a href="index.html#download">Download</a><a href="https://github.com/zaidt156/Orrery">GitHub</a></div></div></footer>
 </main>
 </body>
 </html>
