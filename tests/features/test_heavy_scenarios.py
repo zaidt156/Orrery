@@ -193,3 +193,29 @@ async def test_vague_question_followup_does_not_inherit_prior_file_intent(monkey
     ]
     assert await _drive(monkeypatch, "what do you see", history=history) == ["model"]
     assert await _drive(monkeypatch, "who is this?", history=history) == ["model"]
+
+
+@pytest.mark.anyio
+async def test_calculation_after_generative_turn_is_answered_not_filed(monkeypatch):
+    # Reported with screenshots: a plain arithmetic question typed after a "sing me a song" turn
+    # inherited that audio intent and produced wandering_star_song.wav instead of the sum. A
+    # calculation is a fresh ask to ANSWER and must never inherit a generative intent.
+    history = [
+        {"role": "user", "content": "lets write a poem and try to sing it in a girl voice and give me that song"},
+        {"role": "assistant", "content": "Here is a song draft."},
+    ]
+    assert await _drive(monkeypatch, "Whats 12598653 + 1836493", history=history) == ["model"]
+    assert await _drive(monkeypatch, "12 * 8 - 3", history=history) == ["model"]
+    assert await _drive(monkeypatch, "how many days in a leap year", history=history) == ["model"]
+
+
+def test_is_question_covers_contractions_and_arithmetic():
+    from backend.features.chat import retrieval
+
+    assert retrieval._is_question("Whats 12598653 + 1836493")
+    assert retrieval._is_question("hows the weather")
+    assert retrieval._is_question("12 * 8")
+    assert retrieval._is_question("wheres my file")
+    # genuine proceed signals stay non-questions (so they still inherit)
+    assert not retrieval._is_question("do it")
+    assert not retrieval._is_question("make it navy blue")

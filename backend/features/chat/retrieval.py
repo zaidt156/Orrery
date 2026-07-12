@@ -6,8 +6,6 @@ import re
 
 from backend.core.config import settings
 from backend.features import rag
-from backend.providers import ai
-from backend.security import privacy
 
 
 async def _rag_context(model: str, collection_id: str, query: str) -> tuple[str | None, list[str]]:
@@ -52,14 +50,14 @@ async def _gather_rag(
     """Retrieve and merge top chunks across every relevant collection (selected data + project files).
 
     Searching all of them means project files are never dropped when "use my data" is also on, and a
-    project chat always sees its own files. Results are de-duplicated and redacted for cloud models.
+    project chat always sees its own files. Results are de-duplicated; the final provider boundary
+    applies the configured privacy mode to all prompt layers together.
 
     `auto_collection_ids` are collections that ride along automatically (a chat's own uploaded files),
     as opposed to ones the user explicitly chose ("use my data", a project). Auto collections are held
     to the strict relevance bar on EVERY turn, so a file uploaded earlier doesn't leak into a later,
     unrelated question — the user didn't ask for it this time.
     """
-    is_local = ai.model_provider(model) == "ollama"
     auto = auto_collection_ids or set()
     seen: set[tuple[str, str]] = set()
     blocks: list[str] = []
@@ -85,7 +83,7 @@ async def _gather_rag(
             if key in seen:
                 continue
             seen.add(key)
-            blocks.append(f"[{r['source']}]\n{privacy.redact_for_model(r['content'], is_local)}")
+            blocks.append(f"[{r['source']}]\n{r['content']}")
             if r["source"] not in sources:
                 sources.append(r["source"])
     return ("\n\n".join(blocks) if blocks else None), sources
@@ -103,18 +101,31 @@ def _vague_query(text: str) -> bool:
 # merits, or a vision-style ask silently produces another file. (Reported: "what do you see" after
 # a file turn generated a second, useless PDF — see docs/history/DEVLOG.md.)
 _QUESTION_LEAD = re.compile(
-    r"^(?:what|why|how|who|whom|whose|which|when|where|"
-    r"do\s+(?:you|we|i)|does|are\s+(?:you|we|there|these|those)|is\s+(?:this|that|it|there)|"
+    # question words, allowing the apostrophe-less contraction (whats/hows/wheres/whos/whens/whys) —
+    # "Whats 5+5" is a question, but the bare word boundary after "what" made it read as a proceed
+    # signal and inherit the prior turn's intent (reported: a calc after a song made a WAV).
+    r"^(?:what|why|how|who|whom|whose|which|when|where)(?:['’]?s)?\b|"
+    r"^(?:do\s+(?:you|we|i)|does|did|are\s+(?:you|we|there|these|those)|is\s+(?:this|that|it|there)|"
     r"can\s+you|could\s+you|would\s+you|should\s+(?:i|we|it)|"
-    r"tell\s+me|explain|describe)\b",
+    r"tell\s+me|explain|describe|calculate|compute|solve|convert|list|define)\b",
     re.IGNORECASE,
 )
 
+# An arithmetic/calculation expression (two numbers around an operator) is a fresh ask to ANSWER —
+# never a "proceed with the previous job" signal. Without this, a bare "12598653 + 1836493" typed
+# after a song turn inherited that intent and produced an audio file instead of the sum.
+_ARITHMETIC = re.compile(r"\d[\d,]*\s*[-+*/x×÷^%]\s*\d")
+
 
 def _is_question(text: str) -> bool:
-    """True when a short turn reads as a fresh question (so it must NOT inherit a prior intent)."""
+    """True when a short turn reads as a fresh question or a calculation (so it must NOT inherit a
+    prior generative intent — reported: '12598653 + 1836493' after a song turn produced a WAV)."""
     stripped = (text or "").strip()
-    return bool(stripped) and ("?" in stripped or bool(_QUESTION_LEAD.match(stripped)))
+    return bool(stripped) and (
+        "?" in stripped
+        or bool(_QUESTION_LEAD.match(stripped))
+        or bool(_ARITHMETIC.search(stripped))
+    )
 
 
 # Praise/thanks-only turns ("nice", "wow, love it", "thanks!") are social closers, not
