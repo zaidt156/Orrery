@@ -27,5 +27,10 @@ class Settings(BaseSettings):
     max_upload_bytes: int = 64 * 1024 * 1024  # request body cap (multi-image messages)
     generated_file_ttl_hours: int = 168  # auto-delete generated files older than this (7 days)
 
+    # Model-backed intent decider: before an expensive/irreversible generative action (file/image/
+    # audio/project), confirm the route with the model reading the ACTUAL current turn — the
+    # root-cause fix for regex misroutes (a calc after a song made a WAV). Plain chat never calls it.
+    model_intent_decider: bool = True
+
 
 settings = Settings()

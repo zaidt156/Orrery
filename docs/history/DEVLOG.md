@@ -2403,6 +2403,30 @@ Phase 1 of the plan moved four tasks, plus two fresh user reports, all verified 
 
 Verified: 380 backend tests pass; UI builds clean.
 
+## Step 140 - A model-backed decider ends the context-mixing class (July 12, 2026)
+
+The routing bugs kept coming from the same place: a regex heuristic (taskrouter) that reads
+keywords but not meaning. Reported this round: "Whats 12598653 + 1836493" typed after a
+"sing me a song" turn produced a 3.4MB wandering_star_song.wav instead of the sum. Same shape as
+the earlier "what do you see"->PDF and "nice"->random-SVG bugs. The user asked for the real fix:
+a decider that takes context and, before acting, asks the model how to handle the task.
+
+- **Immediate fix (regex).** _is_question now accepts apostrophe-less contractions (whats/hows/
+  wheres) and recognizes an arithmetic expression as a fresh ask, so a calculation can never
+  inherit a prior generative intent. Regression tests added.
+- **Root-cause fix (the decider).** New taskrouter.decide(): the fast heuristic still runs
+  instantly, but BEFORE an expensive/irreversible generative action (file/image/audio/project)
+  Orrery asks the model to classify the TRUE current message against recent context, returning
+  strict JSON {route, format}. If the model says the turn is really a chat answer, chat wins.
+  Plain-chat turns never call the model (no added latency on ordinary messages); any model
+  failure - limit, offline, malformed - falls back to the heuristic, so a turn is never blocked.
+  It is universal (works on any model/connection via a plain JSON convention, not a provider
+  structured-output API) and can be turned off with one config flag (model_intent_decider).
+- Wired into the chat dispatcher; the model judges user_content while the heuristic keeps its
+  fast "do it"-inheritance path on the concatenated text. 428 backend tests pass (new:
+  decision parsing, chat-skips-the-model, model-overrides-a-false-audio-route, real-file
+  confirmed, failure-falls-back, disabled-flag).
+
 ## The plan from here (user direction, July 11)
 
 1. **Architecture hardening for scale** - re-plan and secure the foundations so Orrery stays

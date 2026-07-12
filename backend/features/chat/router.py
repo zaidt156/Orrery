@@ -906,7 +906,16 @@ async def stream_reply(
         )
         if prev:
             plan_text = f"{prev}\n{user_content}"
-    plan = taskrouter.plan(plan_text, has_attachments=bool(attachments))
+    # Heuristic decides instantly; before an expensive generative action it asks the model to
+    # confirm the route by reading the TRUE current message + recent context (root-cause fix for
+    # regex misroutes — a calc after a song produced a WAV). Falls back to the heuristic on failure.
+    plan = await taskrouter.decide(
+        plan_text,
+        current_message=user_content,
+        model=model,
+        recent_messages=messages,
+        has_attachments=bool(attachments),
+    )
     # An attached image means the user is asking ABOUT that image (vision) — never route such a turn to
     # file/image generation. taskrouter.plan("") yields the default chat plan.
     if has_image_attachment and plan.route in ("file", "image"):
