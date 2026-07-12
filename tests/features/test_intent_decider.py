@@ -73,6 +73,46 @@ async def test_model_failure_falls_back_to_heuristic(monkeypatch):
 
 
 @pytest.mark.anyio
+async def test_typoed_create_request_is_rescued_to_file(monkeypatch):
+    from backend.providers import ai
+
+    # "Creat" (typo, no create-verb match) + no period → heuristic routes CV to CHAT. The message
+    # names a deliverable ("CV"), so the decider consults the model, which routes it to file.
+    monkeypatch.setattr(ai, "stream_chat", _fake_stream('{"route": "file", "format": "pdf"}'))
+    plan = await taskrouter.decide(
+        "Creat me a CV of a dummy data engineer, chose bets format you can",
+        model="openai/x", recent_messages=[],
+    )
+    assert plan.route == "file"
+
+
+@pytest.mark.anyio
+async def test_plain_question_with_no_deliverable_noun_skips_model(monkeypatch):
+    from backend.providers import ai
+
+    called = {"n": 0}
+
+    async def boom(*a, **k):
+        called["n"] += 1
+        yield ""
+
+    monkeypatch.setattr(ai, "stream_chat", boom)
+    plan = await taskrouter.decide("explain how kafka partitions work", model="openai/x", recent_messages=[])
+    assert plan.route == "chat"
+    assert called["n"] == 0  # no deliverable noun → no consult → instant
+
+
+@pytest.mark.anyio
+async def test_question_about_a_cv_stays_chat(monkeypatch):
+    from backend.providers import ai
+
+    # "what should a CV include" names "CV" so the decider consults, but the model returns chat.
+    monkeypatch.setattr(ai, "stream_chat", _fake_stream('{"route": "chat", "format": null}'))
+    plan = await taskrouter.decide("what should a good CV include", model="openai/x", recent_messages=[])
+    assert plan.route == "chat"
+
+
+@pytest.mark.anyio
 async def test_decider_disabled_uses_heuristic_only(monkeypatch):
     from backend.core.config import settings
     from backend.providers import ai

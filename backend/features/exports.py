@@ -496,11 +496,10 @@ def build_pdf(title: str, model: str, blocks: list[ExportBlock]) -> bytes:
         title=title,
         author="Orrery",
     )
+    # No "Model:" subtitle here — a user-requested document (CV, letter, report) must read as the
+    # real thing; provenance already lives in the chat UI, not stamped inside the file.
     story = [
         Paragraph(html.escape(title), heading_styles[1]),
-        Paragraph(f"Model: {html.escape(model or 'unknown')}", ParagraphStyle(
-            "OrreryMeta", parent=body, fontSize=8.5, textColor=colors.HexColor("#69758a")
-        )),
         Spacer(1, 4 * mm),
     ]
 
@@ -587,11 +586,7 @@ def build_docx(title: str, model: str, blocks: list[ExportBlock]) -> bytes:
     section.right_margin = Inches(0.75)
     document.core_properties.title = title
     document.core_properties.author = "Orrery"
-    document.add_heading(title, level=0)
-    meta = document.add_paragraph()
-    meta_run = meta.add_run(f"Model: {model or 'unknown'}")
-    meta_run.italic = True
-    meta_run.font.size = Pt(9)
+    document.add_heading(title, level=0)  # no "Model:" subtitle — the document is the deliverable
 
     for block in blocks:
         if block.kind == "heading":
@@ -779,7 +774,6 @@ def build_html(title: str, model: str, content: str) -> bytes:
 </head>
 <body>
   <h1>{html.escape(title)}</h1>
-  <div class="meta">Model: {html.escape(model or 'unknown')}</div>
   {body}
 </body>
 </html>"""

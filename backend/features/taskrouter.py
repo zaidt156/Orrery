@@ -159,6 +159,18 @@ def _chat_plan(has_attachments: bool = False) -> TaskPlan:
 _GENERATIVE_ROUTES = {"file", "image", "project"}
 _DECIDER_ROUTES = {"chat", "file", "image", "audio", "project"}
 
+# When the heuristic says "chat" but the message names a deliverable, the regex may have MISSED a
+# real create request (e.g. the typo "Creat me a CV" — no create-verb match, no period — routed a
+# CV to chat+export instead of proper file generation). These nouns trigger a model consult; the
+# model is the arbiter, so a false trigger only costs one small call, never a wrong route.
+_GENERATIVE_NOUN = re.compile(
+    r"\b(cv|resume|report|invoice|letter|essay|memo|proposal|contract|brochure|flyer|certificate|"
+    r"pdf|docx?|word\s+doc|xlsx?|excel|pptx?|powerpoint|slides?|deck|presentation|spreadsheet|csv|"
+    r"document|image|picture|photo|logo|icon|diagram|chart|infographic|illustration|poster|"
+    r"song|audio|music|soundtrack|voice|speech|narration|podcast|mp3|wav|video|animation)\b",
+    re.IGNORECASE,
+)
+
 _DECIDER_PROMPT = """You are the intent router for a local AI workspace. Decide how to handle the \
 user's CURRENT message. Earlier turns are BACKGROUND ONLY — classify what the user is asking for \
 RIGHT NOW, not what an earlier message asked for.
@@ -284,9 +296,16 @@ async def decide(
     heuristic = plan(heuristic_text, has_attachments=has_attachments)
     from backend.core.config import settings
 
-    if heuristic.route not in _GENERATIVE_ROUTES or not settings.model_intent_decider or not model:
+    if not settings.model_intent_decider or not model:
         return heuristic
     judged = current_message if current_message is not None else heuristic_text
+    # Consult the model to confirm a generative route (catch false POSITIVES: calc->WAV) OR to
+    # rescue a chat route that names a deliverable (catch false NEGATIVES: typo'd "Creat me a CV").
+    consult = heuristic.route in _GENERATIVE_ROUTES or (
+        heuristic.route == "chat" and bool(_GENERATIVE_NOUN.search(judged or ""))
+    )
+    if not consult:
+        return heuristic
     decision = await _model_decision(judged, model, recent_messages)
     if decision is None:
         return heuristic
