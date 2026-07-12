@@ -16,8 +16,11 @@ backend log for them to show the matching "install/start Docker" dialog. Keep th
 from __future__ import annotations
 
 import logging
+import os
 import subprocess
+import sys
 import time
+from pathlib import Path
 
 from backend.core import proc
 
@@ -39,6 +42,21 @@ def should_autoprovision(configured_url: str | None, *, stdin_isatty: bool) -> b
     return not configured_url and not stdin_isatty
 
 
+def _is_bundled_local_url(url: str | None) -> bool:
+    """True when the URL is the bundled local database that provision() manages."""
+    return bool(url) and ("127.0.0.1:5432/orrery" in url or "localhost:5432/orrery" in url)
+
+
+def should_ensure_local(configured_url: str | None, *, stdin_isatty: bool) -> bool:
+    """Bring the bundled local database up (starting Docker if needed) whenever Orrery would
+    actually USE it — a fresh install with no URL, OR a returning user whose SAVED URL is that
+    same bundled local DB. A user's own external Postgres URL is left untouched, and a console
+    (dev / setup script) run manages Docker itself."""
+    if stdin_isatty:
+        return False
+    return (not configured_url) or _is_bundled_local_url(configured_url)
+
+
 def run_args() -> list[str]:
     """The docker run equivalent of the docker-compose.yml service, bound to localhost only."""
     return [
@@ -54,18 +72,88 @@ def run_args() -> list[str]:
     ]
 
 
+def _docker_desktop_exe() -> Path | None:
+    """Path to the Docker Desktop launcher, if installed."""
+    if sys.platform == "darwin":
+        app = Path("/Applications/Docker.app")
+        return app if app.exists() else None
+    if sys.platform == "win32":
+        pf = os.environ.get("ProgramFiles", r"C:\Program Files")
+        exe = Path(pf, "Docker", "Docker", "Docker Desktop.exe")
+        return exe if exe.is_file() else None
+    return None
+
+
+def _docker_bin() -> str:
+    """The docker CLI command to spawn.
+
+    Windows: return the bare name so PATHEXT resolves docker.EXE — NOT the extensionless 'docker'
+    file shutil.which reports (that's the WSL/Linux CLI and CreateProcess rejects it, WinError 193).
+    Only fall back to the explicit docker.exe path when it isn't on PATH at all.
+    macOS: proc.find_executable covers the app's minimal PATH + the Docker.app bundle."""
+    import shutil
+
+    if sys.platform == "win32":
+        if not shutil.which("docker.exe"):
+            pf = os.environ.get("ProgramFiles", r"C:\Program Files")
+            cand = Path(pf, "Docker", "Docker", "resources", "bin", "docker.exe")
+            if cand.is_file():
+                return str(cand)
+        return "docker"
+    return proc.find_executable("docker") or "docker"
+
+
+def _docker_installed() -> bool:
+    """Docker present on disk — CLI on PATH OR the Docker Desktop app — even if the engine is down."""
+    return proc.find_executable("docker") is not None or _docker_desktop_exe() is not None or (
+        sys.platform == "win32"
+        and Path(os.environ.get("ProgramFiles", r"C:\Program Files"),
+                 "Docker", "Docker", "resources", "bin", "docker.exe").is_file()
+    )
+
+
+def start_docker_desktop() -> bool:
+    """Launch Docker Desktop if it's installed. Returns True if a launch was attempted."""
+    try:
+        if sys.platform == "darwin":
+            if _docker_desktop_exe() is None:
+                return False
+            proc.popen(["open", "-a", "Docker"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            return True
+        exe = _docker_desktop_exe()
+        if exe is not None:
+            proc.popen([str(exe)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            return True
+    except Exception:  # noqa: BLE001 — best effort; caller falls back to the setup dialog
+        log.warning("could not launch Docker Desktop", exc_info=True)
+    return False
+
+
+def wait_docker_ready(timeout_s: int = 150) -> bool:
+    """Poll `docker info` until the engine answers (Docker Desktop can take a minute to boot)."""
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        try:
+            if _docker("info", timeout=10).returncode == 0:
+                return True
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+        time.sleep(3)
+    return False
+
+
 def _docker(*args: str, timeout: int = _RUN_TIMEOUT) -> subprocess.CompletedProcess:
     return proc.run(
-        ["docker", *args], capture_output=True, text=True, timeout=timeout, check=False
+        [_docker_bin(), *args], capture_output=True, text=True, timeout=timeout, check=False
     )
 
 
 def docker_state() -> str:
-    """"ready" (daemon answering), "stopped" (CLI present, daemon down), or "missing".
+    """"ready" (engine answering), "stopped" (Docker installed, engine down), or "missing".
 
-    find_executable (not bare which) — a packaged macOS app's minimal PATH can't see docker,
-    which made Orrery ask users to install Docker they already had."""
-    if proc.find_executable("docker") is None:
+    Detects Docker Desktop on disk, not just the CLI on PATH — a packaged app's minimal PATH
+    (and a not-yet-started engine) otherwise made Orrery ask users to install Docker they had."""
+    if not _docker_installed():
         return "missing"
     try:
         probe = _docker("info")
@@ -105,8 +193,13 @@ def provision() -> str | None:
         print(f"{MARKER_DOCKER_MISSING} Docker Desktop is not installed; cannot start the bundled database.", flush=True)
         return None
     if state == "stopped":
-        print(f"{MARKER_DOCKER_STOPPED} Docker Desktop is installed but not running; start it and reopen Orrery.", flush=True)
-        return None
+        # Docker Desktop is installed but the engine is down — START it and wait, per "if it
+        # exists, start and run it", instead of asking the user to do it and reopen Orrery.
+        log.info("Docker engine is down; starting Docker Desktop and waiting for it to be ready")
+        print("Starting Docker Desktop and waiting for it to be ready (first start can take a minute)...", flush=True)
+        if not start_docker_desktop() or not wait_docker_ready():
+            print(f"{MARKER_DOCKER_STOPPED} Docker Desktop is installed but could not be started automatically; start it and reopen Orrery.", flush=True)
+            return None
 
     try:
         if _container_exists():

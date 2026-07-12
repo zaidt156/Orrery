@@ -2459,6 +2459,37 @@ v0.1.0-preview tag to this commit so the Windows installer and both macOS DMGs r
 same public download links (the landing site's pinned links keep resolving), with the cloud-Mac
 smoke test chained after the macOS build.
 
+## Step 142 - The installed app now brings its own database up (July 12, 2026)
+
+The released executables were failing to open with "Orrery setup failed" whenever Docker wasn't
+already running — the app worked only if the user had started Docker themselves first. The user's
+long-standing ask was: if Docker/the database isn't there, guide me; if it IS there, just start it
+and run. This step makes that real.
+
+- **The app auto-starts Docker when it's installed but stopped.** provision() no longer gives up
+  on the "Docker installed, engine down" state — it launches Docker Desktop, waits for the engine
+  to come up (polling, up to ~2.5 min), then starts the bundled database. Only if Docker truly
+  isn't installed, or can't be started, does it fall back to the actionable Install/Start dialog.
+- **A saved connection no longer bypasses this.** Before, once a URL was stored (from a prior
+  run), the app skipped the Docker logic entirely and just tried to connect — so reopening with
+  Docker stopped failed outright. Now Orrery ensures the bundled local database is up whenever the
+  URL it would use IS that local database (fresh install OR returning user); a user's own external
+  Postgres URL is still left untouched.
+- **Fixed a Windows regression before it shipped.** Resolving the docker binary to a full path
+  picked up the extensionless WSL 'docker' file shutil.which reports, which CreateProcess rejects
+  (WinError 193) — it made a running Docker look "stopped". The Windows path now uses the bare
+  name so PATHEXT resolves docker.exe, with an explicit docker.exe fallback only when it's off PATH.
+- **Detection is disk-based, not PATH-based.** Docker Desktop is recognized by its app/exe on
+  disk, so a not-yet-started engine or a packaged app's minimal PATH no longer reads as "missing".
+- **Two smaller fixes the user flagged:** the installer's subtitle was the internal "Electron
+  shell for Orrery desktop." — now "Orrery — your local-first AI workspace."; and a new idempotent
+  scripts/start-orrery.sh brings Docker + the database + the app up and is safe to re-run (anything
+  already running is left alone).
+
+Verified: 432 backend tests pass (incl. new should_ensure_local cases); docker_state reads "ready"
+correctly on a live Docker; the app boots end to end through provision() (starts the existing
+container, connects, opens). Released by moving the v0.1.0-preview tag so both installers rebuild.
+
 ## The plan from here (user direction, July 11)
 
 1. **Architecture hardening for scale** - re-plan and secure the foundations so Orrery stays

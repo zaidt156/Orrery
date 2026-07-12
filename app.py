@@ -118,10 +118,19 @@ def ensure_connection() -> str:
 
     url = database.resolve_database_url()
     has_console = bool(sys.stdin) and sys.stdin.isatty()
-    if dockerboot.should_autoprovision(url, stdin_isatty=has_console):
-        url = dockerboot.provision()
-        if url:
+    # Bring the bundled local database up automatically — starting Docker if it's installed but
+    # not running — whenever Orrery would actually use it: a fresh install (no URL) OR a returning
+    # user whose SAVED URL is that same local DB (the previous code skipped this when a URL existed,
+    # so reopening with Docker stopped just failed). A user's own external Postgres URL is untouched.
+    if dockerboot.should_ensure_local(url, stdin_isatty=has_console):
+        provisioned = dockerboot.provision()
+        if provisioned:
+            url = provisioned
             database.save_database_url(url)
+        elif not has_console:
+            # provision() already printed the ORRERY_SETUP:* marker the desktop shell turns into
+            # the actionable Install/Start-Docker dialog; exit so that dialog is shown.
+            raise SystemExit("Orrery could not start its local database (see the setup dialog).")
     if not url:
         if not has_console:
             raise SystemExit(
