@@ -21,7 +21,7 @@ import {
 import Toggle from "../components/Toggle.jsx";
 import PageHero from "../components/PageHero.jsx";
 import { useAppearance } from "../components/AppearanceProvider.jsx";
-import { describeOfficePreviewStatus } from "../lib/officePreview.js";
+import { describeOfficePreviewStatus, officePreviewInstallAction } from "../lib/officePreview.js";
 import {
   addCustomModel,
   approveLifeProposal,
@@ -36,6 +36,7 @@ import {
   getLifeHistory,
   getAppUpdate,
   getFilePreviewStatus,
+  installOfficePreview,
   getPrivacy,
   setPrivacy,
   getDatabase,
@@ -947,13 +948,13 @@ function UpdatesSection() {
   );
 }
 
-function OfficePreviewSection() {
+function OfficePreviewSection({ canManage }) {
   const [status, setStatus] = useState(null);
   const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState("");
 
   async function check() {
-    setBusy(true);
+    setBusy("check");
     setError("");
     try {
       setStatus(await getFilePreviewStatus());
@@ -961,13 +962,26 @@ function OfficePreviewSection() {
       setStatus(null);
       setError(String(e.message || e));
     } finally {
-      setBusy(false);
+      setBusy("");
+    }
+  }
+
+  async function install() {
+    setBusy("install");
+    setError("");
+    try {
+      setStatus(await installOfficePreview());
+    } catch (e) {
+      setError(String(e.message || e));
+    } finally {
+      setBusy("");
     }
   }
 
   useEffect(() => { check(); }, []);
 
   const display = status ? describeOfficePreviewStatus(status) : null;
+  const installAction = officePreviewInstallAction(status, canManage);
   return (
     <>
       <div className="section-label">Office preview engine</div>
@@ -986,8 +1000,13 @@ function OfficePreviewSection() {
             {display && <div className="mode-hint">{display.detail}</div>}
           </div>
           <div className="mode-actions">
-            <button className="btn ghost icon-text-btn" disabled={busy} onClick={check}>
-              <RefreshCw className={busy ? "spin" : ""} />
+            {installAction && (
+              <button className="btn primary icon-text-btn" disabled={!!busy} onClick={install}>
+                <Download /> {busy === "install" ? "Installingâ€¦" : installAction.label}
+              </button>
+            )}
+            <button className="btn ghost icon-text-btn" disabled={!!busy} onClick={check}>
+              <RefreshCw className={busy === "check" ? "spin" : ""} />
               Check again
             </button>
           </div>
@@ -1479,7 +1498,7 @@ export default function Settings() {
     previews: (
       <>
         <SettingsPanelHeader title="File previews" description="See how Orrery renders PowerPoint, Word, and Excel files on this computer." />
-        <OfficePreviewSection />
+        <OfficePreviewSection canManage={canManage} />
       </>
     ),
     models: (

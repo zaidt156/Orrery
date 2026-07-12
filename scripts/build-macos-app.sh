@@ -22,6 +22,14 @@ assert_exists() {
   fi
 }
 
+assert_qtpdf_renderer() {
+  local root="$1"
+  if ! find "$root" -type f \( -name 'QtPdf*.so' -o -name 'QtPdf*.dylib' \) -print -quit | grep -q .; then
+    echo "Bundled PDF preview renderer is missing under: $root" >&2
+    exit 1
+  fi
+}
+
 remove_in_repo() {
   local relative="$1"
   local target="$REPO_ROOT/$relative"
@@ -128,6 +136,13 @@ PYINSTALLER_ARGS=(
   --collect-data procrastinate
   --copy-metadata procrastinate
   --copy-metadata pywebview
+  --copy-metadata PySide6
+  --copy-metadata PySide6_Addons
+  --copy-metadata PySide6_Essentials
+  --copy-metadata shiboken6
+  --hidden-import PySide6.QtCore
+  --hidden-import PySide6.QtGui
+  --hidden-import PySide6.QtPdf
   --collect-submodules keyring.backends
 )
 if [[ -n "$ICON_FILE" ]]; then
@@ -145,6 +160,7 @@ echo "Validating PyInstaller output..."
 assert_exists "$DIST_APP" "PyInstaller app bundle was not created"
 assert_exists "$DIST_BIN" "PyInstaller app executable was not created"
 assert_exists "$DIST_APP/Contents/Info.plist" "PyInstaller Info.plist is missing"
+assert_qtpdf_renderer "$DIST_APP"
 run "$DIST_BIN" --packaging-probe
 
 echo "Creating release folder..."
@@ -161,6 +177,7 @@ chmod +x "$RELEASE_ROOT/setup-orrery.command" "$RELEASE_ROOT/run-orrery.command"
 echo "Validating release folder..."
 assert_exists "$RELEASE_ROOT/Orrery.app" "Release app bundle is missing"
 assert_exists "$RELEASE_ROOT/Orrery.app/Contents/MacOS/Orrery" "Release app executable is missing"
+assert_qtpdf_renderer "$RELEASE_ROOT/Orrery.app"
 assert_exists "$RELEASE_ROOT/docker-compose.yml" "Release docker-compose.yml is missing"
 assert_exists "$RELEASE_ROOT/.env.example" "Release .env.example is missing"
 assert_exists "$RELEASE_ROOT/sandbox/Dockerfile" "Release sandbox Dockerfile is missing"

@@ -78,9 +78,14 @@ Invoke-Checked ".venv\Scripts\pyinstaller.exe" `
     "--collect-data" "procrastinate" `
     "--copy-metadata" "procrastinate" `
     "--copy-metadata" "pywebview" `
+    "--copy-metadata" "PySide6" `
+    "--copy-metadata" "PySide6_Addons" `
+    "--copy-metadata" "PySide6_Essentials" `
+    "--copy-metadata" "shiboken6" `
     "--copy-metadata" "python-pptx" `
-    "--exclude-module" "PySide6" `
-    "--exclude-module" "shiboken6" `
+    "--hidden-import" "PySide6.QtCore" `
+    "--hidden-import" "PySide6.QtGui" `
+    "--hidden-import" "PySide6.QtPdf" `
     "--exclude-module" "qtpy" `
     "--exclude-module" "PyQt5" `
     "--exclude-module" "webview.platforms.winforms" `
@@ -100,6 +105,8 @@ Invoke-Checked ".venv\Scripts\pyinstaller.exe" `
 Assert-Exists "dist\OrreryBackend\OrreryBackend.exe" "Backend executable was not created"
 Assert-Exists "dist\OrreryBackend\_internal\ui\dist" "Bundled frontend build is missing"
 Assert-Exists "dist\OrreryBackend\_internal\procrastinate\sql\queries.sql" "Bundled Procrastinate SQL is missing"
+Assert-Exists "dist\OrreryBackend\_internal\PySide6\QtPdf.pyd" "Bundled PDF preview renderer extension is missing"
+Assert-Exists "dist\OrreryBackend\_internal\PySide6\Qt6Pdf.dll" "Bundled PDF preview renderer library is missing"
 
 Write-Host "Running backend packaging probe..."
 & "dist\OrreryBackend\OrreryBackend.exe" "--packaging-probe" "--backend-only"

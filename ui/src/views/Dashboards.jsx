@@ -7,12 +7,47 @@ import {
   listDataConnections, listDataModels, listWorkspaces, reviseDashboard, rollbackDashboard,
   runDashboard, setDashboardLayout, setDashboardTransforms,
 } from "../lib/api.js";
+import {
+  DASHBOARD_REFRESH_OPTIONS,
+  createDashboardLayoutPersistence,
+  createSerialDashboardQueue,
+  dashboardSourceEntries,
+  dashboardSummary,
+  filterDashboards,
+  normalizeDashboardRefreshMs,
+  reconcileDashboardWidgets,
+  reorderDashboardWidgets,
+  resolveDashboardWidgetDrop,
+  shouldRunScheduledDashboardRefresh,
+} from "../lib/dashboardPresentation.js";
 
 // Dashboards: the AI is the designer, not the renderer. The user describes the dashboard and picks
 // the model + data connection(s); the model writes each widget's SQL (validated read-only) and picks
 // chart types. Opening/refreshing re-runs the SAVED SQL — no model call. Every widget's SQL is
 // viewable (security.md §3: AI-written SQL is shown, never hidden).
 const CHART_COLORS = ["#f2b14e", "#82ade8", "#54c08a", "#e06666", "#b58ee8", "#5fc4c9", "#e8a2c0"];
+const DASHBOARD_REFRESH_STORAGE_PREFIX = "orrery:dashboard-refresh:";
+
+function storedDashboardRefreshMs(dashboardId) {
+  if (!dashboardId || typeof window === "undefined") return 0;
+  try {
+    return normalizeDashboardRefreshMs(window.localStorage.getItem(`${DASHBOARD_REFRESH_STORAGE_PREFIX}${encodeURIComponent(dashboardId)}`));
+  } catch {
+    return 0;
+  }
+}
+
+function persistDashboardRefreshMs(dashboardId, milliseconds) {
+  if (!dashboardId || typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(
+      `${DASHBOARD_REFRESH_STORAGE_PREFIX}${encodeURIComponent(dashboardId)}`,
+      String(normalizeDashboardRefreshMs(milliseconds)),
+    );
+  } catch {
+    // Storage can be unavailable in hardened webviews. The current session still keeps the choice.
+  }
+}
 
 function chartOption(widget) {
   const cols = widget.columns || [];
@@ -98,7 +133,13 @@ function Widget({ widget }) {
       <div className="dash-widget-head">
         <span className="dash-widget-title">{widget.title}</span>
         <span className="dash-widget-src" title={`Queries: ${widget.connection || "database"}`}><Database />{widget.connection || ""}</span>
-        <button className={`icon-btn${showSql ? " on" : ""}`} title="Show the SQL this widget runs" onClick={() => setShowSql((v) => !v)}>
+        <button
+          className={`icon-btn${showSql ? " on" : ""}`}
+          aria-label={`${showSql ? "Hide" : "Show"} SQL for ${widget.title}`}
+          aria-pressed={showSql}
+          title={`${showSql ? "Hide" : "Show"} the SQL this widget runs`}
+          onClick={() => setShowSql((v) => !v)}
+        >
           <Code2 />
         </button>
       </div>
@@ -118,6 +159,7 @@ function Widget({ widget }) {
 
 export default function Dashboards() {
   const [items, setItems] = useState([]);
+  const [dashFilter, setDashFilter] = useState("");
   const [activeId, setActiveId] = useState("");
   const [board, setBoard] = useState(null); // run result (widgets with live data)
   const [models, setModels] = useState([]);
@@ -129,6 +171,12 @@ export default function Dashboards() {
   const [selectedConns, setSelectedConns] = useState([]);
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [autoRefreshing, setAutoRefreshing] = useState(false);
+  const [refreshMs, setRefreshMs] = useState(0);
+  const [lastRefreshedAt, setLastRefreshedAt] = useState(null);
+  const [refreshState, setRefreshState] = useState({ status: "idle", attemptedAt: null, succeededAt: null, error: "" });
+  const [layoutStatus, setLayoutStatus] = useState("saved");
+  const [layoutError, setLayoutError] = useState("");
   const [err, setErr] = useState("");
   const [reviseText, setReviseText] = useState("");
   const [connectOpen, setConnectOpen] = useState(false);
@@ -149,13 +197,70 @@ export default function Dashboards() {
   const [tableFilter, setTableFilter] = useState("");
   const [editTransforms, setEditTransforms] = useState(null); // working copy while editing
   const dragIndex = useRef(null);
+  const activeIdRef = useRef("");
+  const boardRequestRef = useRef(0);
+  const boardRef = useRef(null);
+  const runQueueRef = useRef(null);
+  const layoutPersistenceRef = useRef(null);
+  const layoutIntentVersionRef = useRef(0);
+  const layoutStatusRef = useRef("saved");
+  const specMutationPendingRef = useRef(0);
+  const pendingFocusRef = useRef(null);
+  const widgetNodesRef = useRef(new Map());
+  if (!runQueueRef.current) runQueueRef.current = createSerialDashboardQueue();
+  if (!layoutPersistenceRef.current) {
+    layoutPersistenceRef.current = createDashboardLayoutPersistence({
+      saveLayout: setDashboardLayout,
+      loadAuthoritative: async (dashboardId) => {
+        const next = await runDashboard(dashboardId);
+        const currentWidgets = boardRef.current?.id === dashboardId ? boardRef.current.widgets : [];
+        const widgets = reconcileDashboardWidgets(next?.widgets, currentWidgets, false);
+        return { ...next, widgets, keys: widgets.map((widget) => widget._clientKey) };
+      },
+    });
+  }
+
+  function commitBoard(next) {
+    boardRef.current = next;
+    setBoard(next);
+  }
+
+  function updateLayoutStatus(status) {
+    layoutStatusRef.current = status;
+    setLayoutStatus(status);
+  }
+
+  async function enqueueDashboardMutation(task) {
+    specMutationPendingRef.current += 1;
+    try {
+      return await runQueueRef.current.enqueue(task);
+    } finally {
+      specMutationPendingRef.current -= 1;
+    }
+  }
+
+  function clearActiveBoard() {
+    boardRequestRef.current += 1;
+    layoutIntentVersionRef.current += 1;
+    dragIndex.current = null;
+    activeIdRef.current = "";
+    boardRef.current = null;
+    setActiveId("");
+    setBoard(null);
+    setLoading(false);
+    setAutoRefreshing(false);
+    setLastRefreshedAt(null);
+    setRefreshState({ status: "idle", attemptedAt: null, succeededAt: null, error: "" });
+    updateLayoutStatus("saved");
+    setLayoutError("");
+  }
 
   async function load(nextActive) {
     const d = await listDashboards();
     setItems(d.dashboards || []);
     const chosen = nextActive ?? (d.dashboards?.[0]?.id || "");
     if (chosen) await openBoard(chosen);
-    else { setActiveId(""); setBoard(null); }
+    else clearActiveBoard();
   }
 
   useEffect(() => {
@@ -164,6 +269,35 @@ export default function Dashboards() {
     listDataConnections().then((c) => setConnections(c.connections || [])).catch(() => {});
     listWorkspaces().then((w) => { setWorkspaces(w.workspaces || []); setWsId((w.workspaces || [])[0]?.id || ""); }).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    activeIdRef.current = activeId;
+    setAutoRefreshing(false);
+    if (!activeId) {
+      boardRequestRef.current += 1;
+      setLoading(false);
+    }
+  }, [activeId]);
+
+  useEffect(() => {
+    if (!activeId || !refreshMs) return undefined;
+    const refreshDashboard = () => {
+      if (!shouldRunScheduledDashboardRefresh(document.visibilityState, runQueueRef.current.isBusy())) return;
+      requestDashboardRun(activeId, { automatic: true, preserveLayout: true });
+    };
+    const interval = window.setInterval(refreshDashboard, refreshMs);
+    return () => window.clearInterval(interval);
+  }, [activeId, refreshMs]);
+
+  useEffect(() => {
+    const pending = pendingFocusRef.current;
+    if (!pending) return;
+    const node = widgetNodesRef.current.get(pending.widgetKey);
+    const preferred = node?.querySelector(`[data-reorder-action="${pending.action}"]:not(:disabled)`);
+    const fallback = node?.querySelector("[data-reorder-action]:not(:disabled)");
+    (preferred || fallback)?.focus();
+    pendingFocusRef.current = null;
+  }, [board?.widgets]);
 
   async function openModelEditor(cid) {
     setModelConn(cid); setModelsOpen(true); setErr("");
@@ -248,36 +382,188 @@ export default function Dashboards() {
   }
 
   async function saveTransforms() {
+    const dashboardId = activeId;
+    const transforms = editTransforms;
     setBusy(true); setErr("");
     try {
-      await setDashboardTransforms(activeId, editTransforms);
+      await enqueueDashboardMutation(() => setDashboardTransforms(dashboardId, transforms));
       setEditTransforms(null);
-      await openBoard(activeId);
+      await openBoard(dashboardId);
     } catch (e) { setErr(String(e.message || e)); } finally { setBusy(false); }
   }
 
-  async function onWidgetDrop(target) {
-    const from = dragIndex.current;
+  async function moveWidget(from, target, focusAction = null) {
+    if (specMutationPendingRef.current > 0) return;
+    const current = boardRef.current;
+    const next = reorderDashboardWidgets(current?.widgets, from, target);
+    if (!next) return;
+    const dashboardId = activeIdRef.current;
+    if (layoutPersistenceRef.current.isBlocked(dashboardId)) {
+      updateLayoutStatus("unsaved");
+      setLayoutError("Layout is not saved. Refresh the dashboard before rearranging again.");
+      return;
+    }
+    const intentVersion = ++layoutIntentVersionRef.current;
+    const desiredKeys = next.widgets.map((widget) => widget._clientKey);
+    if (focusAction) {
+      pendingFocusRef.current = { widgetKey: current.widgets[from]._clientKey, action: focusAction };
+    }
+    updateLayoutStatus("saving");
+    setLayoutError("");
+    commitBoard({ ...current, widgets: next.widgets });
+    const outcome = await runQueueRef.current.enqueue(
+      () => layoutPersistenceRef.current.save(dashboardId, desiredKeys),
+    );
+    if (activeIdRef.current !== dashboardId || layoutIntentVersionRef.current !== intentVersion) return;
+
+    if (outcome.status === "saved") {
+      if (outcome.authoritative) {
+        const { keys: _keys, ...authoritativeBoard } = outcome.authoritative;
+        commitBoard(authoritativeBoard);
+      }
+      updateLayoutStatus("saved");
+      setLayoutError("");
+      return;
+    }
+    if (outcome.status === "recovered") {
+      const { keys: _keys, ...authoritativeBoard } = outcome.authoritative;
+      commitBoard(authoritativeBoard);
+      const recoveredAt = Date.now();
+      setLastRefreshedAt(recoveredAt);
+      setRefreshState({ status: "fresh", attemptedAt: recoveredAt, succeededAt: recoveredAt, error: "" });
+      updateLayoutStatus("saved");
+      setLayoutError("");
+      return;
+    }
+    if (outcome.status === "conflict") {
+      const snapshot = outcome.authoritative;
+      if (snapshot) {
+        const { keys: _keys, ...authoritativeBoard } = snapshot;
+        commitBoard(authoritativeBoard);
+      }
+      updateLayoutStatus(snapshot ? "error" : "unsaved");
+      setLayoutError("Layout was not saved because the dashboard changed. Refresh before rearranging again.");
+      return;
+    }
+
+    const refreshMessage = String(outcome.refreshError?.message || outcome.refreshError || "authoritative refresh required");
+    updateLayoutStatus("unsaved");
+    setLayoutError(`Layout could not be confirmed: ${refreshMessage}`);
+    const attemptedAt = Date.now();
+    setRefreshState((previous) => ({
+      status: "failed",
+      attemptedAt,
+      succeededAt: previous.succeededAt,
+      error: `Authoritative layout refresh failed: ${refreshMessage}`,
+    }));
+  }
+
+  async function onWidgetDrop(targetKey) {
+    const dragState = dragIndex.current;
     dragIndex.current = null;
-    if (from === null || from === target || !board) return;
-    const order = board.widgets.map((_w, i) => i);
-    order.splice(target, 0, order.splice(from, 1)[0]);
-    setBoard((b) => ({ ...b, widgets: order.map((i) => b.widgets[i]) }));  // instant, then persist
-    try { await setDashboardLayout(activeId, order); } catch (e) { setErr(String(e.message || e)); }
+    const current = boardRef.current;
+    const move = resolveDashboardWidgetDrop(current?.widgets, dragState, targetKey, activeIdRef.current);
+    if (move) await moveWidget(move.from, move.target);
+  }
+
+  async function requestDashboardRun(id, { automatic = false, preserveLayout = true } = {}) {
+    if (!id) return;
+    const request = ++boardRequestRef.current;
+    const attemptedAt = Date.now();
+    setRefreshState((previous) => ({
+      status: "refreshing",
+      attemptedAt,
+      succeededAt: previous.succeededAt,
+      error: "",
+    }));
+    if (automatic) setAutoRefreshing(true);
+    else {
+      setAutoRefreshing(false);
+      setLoading(true);
+    }
+    try {
+      const result = await runQueueRef.current.enqueue(async () => {
+        const next = await runDashboard(id);
+        const currentWidgets = boardRef.current?.id === id ? boardRef.current.widgets : [];
+        const serverWidgets = reconcileDashboardWidgets(next?.widgets, currentWidgets, false);
+        layoutPersistenceRef.current.seed(id, {
+          ...next,
+          widgets: serverWidgets,
+          keys: serverWidgets.map((widget) => widget._clientKey),
+        });
+        return { next, serverWidgets };
+      });
+      if (request === boardRequestRef.current && activeIdRef.current === id) {
+        const shouldPreserveLayout = preserveLayout && layoutStatusRef.current !== "unsaved";
+        const currentWidgets = shouldPreserveLayout && boardRef.current?.id === id
+          ? boardRef.current.widgets
+          : [];
+        const widgets = shouldPreserveLayout
+          ? reconcileDashboardWidgets(result.serverWidgets, currentWidgets)
+          : result.serverWidgets;
+        commitBoard({ ...result.next, widgets });
+        const succeededAt = Date.now();
+        setLastRefreshedAt(succeededAt);
+        setRefreshState({ status: "fresh", attemptedAt, succeededAt, error: "" });
+        if (layoutStatusRef.current !== "saving") {
+          updateLayoutStatus("saved");
+          setLayoutError("");
+        }
+      }
+    } catch (e) {
+      if (request === boardRequestRef.current && activeIdRef.current === id) {
+        const message = `${automatic ? "Scheduled refresh failed: " : "Refresh failed: "}${String(e.message || e)}`;
+        setRefreshState((previous) => ({
+          status: "failed",
+          attemptedAt,
+          succeededAt: previous.succeededAt,
+          error: message,
+        }));
+      }
+    } finally {
+      if (request === boardRequestRef.current && activeIdRef.current === id) {
+        if (automatic) setAutoRefreshing(false);
+        else setLoading(false);
+      }
+    }
   }
 
   async function openBoard(id) {
-    setErr(""); setActiveId(id); setCreating(false); setLoading(true); setBoard(null);
-    try { setBoard(await runDashboard(id)); }
-    catch (e) { setErr(String(e.message || e)); }
-    finally { setLoading(false); }
+    layoutIntentVersionRef.current += 1;
+    dragIndex.current = null;
+    activeIdRef.current = id;
+    boardRef.current = null;
+    setErr(""); setActiveId(id); setCreating(false); setBoard(null);
+    setRefreshMs(storedDashboardRefreshMs(id));
+    setLastRefreshedAt(null);
+    setRefreshState({ status: "idle", attemptedAt: null, succeededAt: null, error: "" });
+    updateLayoutStatus("saved");
+    setLayoutError("");
+    await requestDashboardRun(id, { preserveLayout: false });
+  }
+
+  async function refreshBoard() {
+    await requestDashboardRun(activeIdRef.current, { preserveLayout: true });
+  }
+
+  function updateRefreshSchedule(event) {
+    const next = normalizeDashboardRefreshMs(event.target.value);
+    setRefreshMs(next);
+    persistDashboardRefreshMs(activeId, next);
+  }
+
+  function beginCreate() {
+    clearActiveBoard();
+    setCreating(true);
+    setStep(1);
+    setErr("");
   }
 
   async function build() {
     if (!desc.trim() || !model || selectedConns.length === 0) return;
     setBusy(true); setErr("");
     try {
-      const d = await createDashboard(model, selectedConns, desc.trim());
+      const d = await enqueueDashboardMutation(() => createDashboard(model, selectedConns, desc.trim()));
       setDesc(""); setCreating(false);
       await load(d.id);
     } catch (e) { setErr(String(e.message || e)); } finally { setBusy(false); }
@@ -285,24 +571,36 @@ export default function Dashboards() {
 
   async function revise() {
     if (!reviseText.trim() || !activeId || !model) return;
+    const dashboardId = activeId;
+    const instruction = reviseText.trim();
     setBusy(true); setErr("");
     try {
-      await reviseDashboard(activeId, model, reviseText.trim());
+      await enqueueDashboardMutation(() => reviseDashboard(dashboardId, model, instruction));
       setReviseText("");
-      await load(activeId);
+      await load(dashboardId);
     } catch (e) { setErr(String(e.message || e)); } finally { setBusy(false); }
   }
 
   async function rollback() {
     if (!activeId) return;
+    const dashboardId = activeId;
     setBusy(true); setErr("");
-    try { await rollbackDashboard(activeId); await load(activeId); }
+    try {
+      await enqueueDashboardMutation(() => rollbackDashboard(dashboardId));
+      await load(dashboardId);
+    }
     catch (e) { setErr(String(e.message || e)); } finally { setBusy(false); }
   }
 
   async function remove() {
     if (!activeId || !window.confirm("Delete this dashboard?")) return;
-    try { await deleteDashboard(activeId); await load(""); } catch (e) { setErr(String(e.message || e)); }
+    const dashboardId = activeId;
+    setBusy(true); setErr("");
+    try {
+      await enqueueDashboardMutation(() => deleteDashboard(dashboardId));
+      await load("");
+    } catch (e) { setErr(String(e.message || e)); }
+    finally { setBusy(false); }
   }
 
   function toggleConn(id) {
@@ -381,18 +679,45 @@ export default function Dashboards() {
     return table.toLowerCase().includes(q) || (schemaMap[table] || []).some((col) => col.toLowerCase().includes(q));
   });
   const currentModelConnection = connections.find((c) => c.id === modelConn);
+  const visibleDashboards = filterDashboards(items, dashFilter);
+  const summary = dashboardSummary(board, refreshState);
+  const boardSources = dashboardSourceEntries(board, connections);
+  const layoutLabel = {
+    saved: "Saved",
+    saving: "Saving…",
+    error: "Save failed",
+    unsaved: "Unsaved",
+  }[layoutStatus] || "Saved";
 
   return (
-    <section className="view projects-view">
-      <aside className="project-side">
-        <button className="btn primary project-new" onClick={() => { setCreating(true); setStep(1); setActiveId(""); setBoard(null); setErr(""); }}>
+    <section className="view projects-view dashboard-view">
+      <aside className="project-side dashboard-side" aria-label="Saved dashboards">
+        <div className="dash-library-head">
+          <span className="dash-eyebrow"><LayoutDashboard /> AI dashboards</span>
+          <h1>Dashboards</h1>
+          <p>{items.length} saved {items.length === 1 ? "view" : "views"}</p>
+        </div>
+        <button className="btn primary project-new" onClick={beginCreate} disabled={busy}>
           <Plus /> New dashboard
         </button>
+        <label className="dash-library-search">
+          <Search aria-hidden="true" />
+          <input
+            type="search"
+            aria-label="Search saved dashboards"
+            placeholder="Search dashboards"
+            value={dashFilter}
+            onChange={(event) => setDashFilter(event.target.value)}
+          />
+        </label>
         <div className="project-list project-tree">
           {items.length === 0 && !creating && <div className="convo-empty">Describe a dashboard and a model builds it from your data.</div>}
-          {items.map((d) => (
+          {items.length > 0 && visibleDashboards.length === 0 && (
+            <div className="convo-empty" role="status">No dashboards match “{dashFilter.trim()}”.</div>
+          )}
+          {visibleDashboards.map((d) => (
             <div key={d.id} className={`project-node${d.id === activeId ? " active" : ""}`}>
-              <button className="project-item" onClick={() => openBoard(d.id)}>
+              <button className="project-item" aria-current={d.id === activeId ? "page" : undefined} onClick={() => openBoard(d.id)} disabled={busy}>
                 <LayoutDashboard />
                 <span>
                   <b>{d.name}</b>
@@ -404,15 +729,21 @@ export default function Dashboards() {
         </div>
       </aside>
 
-      <main className="project-main">
+      <main className="project-main dashboard-main">
         {showCreate ? (
           <div className="dash-create">
-            <h2><WandSparkles /> New dashboard</h2>
+            <header className="dash-builder-intro">
+              <span className="dash-eyebrow"><WandSparkles /> Dashboard builder</span>
+              <h2>Build from your live data</h2>
+              <p>Select data sources, describe the questions, and choose a model for the dashboard.</p>
+            </header>
             <div className="wiz-steps">
               {[[1, "Data sets"], [2, "Requirements"], [3, "Data model"], [4, "Build"]].map(([n, label]) => (
                 <button
                   key={n}
                   className={`wiz-step${step === n ? " on" : ""}${step > n ? " done" : ""}`}
+                  aria-current={step === n ? "step" : undefined}
+                  disabled={n > step}
                   onClick={() => { if (n < step) setStep(n); }}
                 >
                   <span className="wiz-num">{step > n ? "\u2713" : n}</span> {label}
@@ -675,8 +1006,7 @@ export default function Dashboards() {
                 <select value={model} onChange={(e) => setModel(e.target.value)}>
                   {models.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
                 </select>
-                <p className="wiz-hint">The model designs every widget from your requirements and models. All SQL stays
-                  visible per widget, and refreshes re-run the saved queries with no model cost.</p>
+                <p className="wiz-hint">Review the selected sources, requirements, and model before building.</p>
                 <div className="wiz-nav">
                   <button className="btn ghost" onClick={() => setStep(3)}>Back</button>
                   <button className="btn primary" onClick={build} disabled={busy || !desc.trim() || !model || !selectedConns.length}>
@@ -689,23 +1019,59 @@ export default function Dashboards() {
           </div>
         ) : (
           <>
-            <div className="project-head">
-              <span className="dash-title">{board?.name || active?.name || ""}</span>
-              <small className="dash-by">built by {((board?.model || active?.model) || "").split("/").pop()}</small>
+            <header className="project-head dashboard-commandbar">
+              <div className="dash-heading">
+                <span className="dash-eyebrow">AI dashboard <em className={`dash-live ${summary.tone}`}>{summary.status}</em></span>
+                <div>
+                  <h2 className="dash-title">{board?.name || active?.name || ""}</h2>
+                  <small className="dash-by">built by {((board?.model || active?.model) || "").split("/").pop()}</small>
+                </div>
+              </div>
               <div className="grow" />
-              <button className="btn" onClick={() => openBoard(activeId)} disabled={loading}><RefreshCw /> Refresh</button>
+              <div className="dash-refresh-tools">
+                <label className="dash-refresh-control">
+                  <span>Auto refresh</span>
+                  <select value={refreshMs} onChange={updateRefreshSchedule} aria-label="Automatic dashboard refresh schedule">
+                    {DASHBOARD_REFRESH_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </label>
+                <small role="status" aria-live="polite">
+                  {refreshState.status === "refreshing"
+                    ? "Refreshing now…"
+                    : refreshState.status === "failed" && refreshState.attemptedAt
+                      ? `Failed ${new Date(refreshState.attemptedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`
+                    : lastRefreshedAt
+                      ? `Last run ${new Date(lastRefreshedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`
+                      : "Not run yet"}
+                </small>
+              </div>
+              <button className="btn" onClick={refreshBoard} disabled={busy || loading || autoRefreshing}>
+                <RefreshCw className={loading || autoRefreshing ? "spin" : ""} /> {loading ? "Refreshing…" : "Refresh"}
+              </button>
               {(board?.versions || 0) > 0 && (
                 <button className="btn ghost" onClick={rollback} disabled={busy} title="Restore the previous version"><Undo2 /> Roll back</button>
               )}
-              <button className="btn ghost" onClick={remove} disabled={busy}><Trash2 /></button>
-            </div>
+              <button className="btn ghost" aria-label="Delete dashboard" title="Delete dashboard" onClick={remove} disabled={busy}><Trash2 /></button>
+            </header>
 
             {err && <div className="chat-banner">{err}</div>}
+            {layoutError && <div className="chat-banner">{layoutError}</div>}
+            {refreshState.status === "failed" && refreshState.error && <div className="chat-banner">{refreshState.error}</div>}
             {loading && <div className="project-muted" style={{ padding: "18px 4px" }}>Running the saved queries…</div>}
 
             {board && (
-              <div className="dash-transforms">
-                <button className="dash-transforms-head" onClick={() => setShowTransforms((v) => !v)}>
+              <div className="dash-workspace">
+                <div className="dash-canvas">
+                  <div className="dash-summary-strip" aria-label="Dashboard summary">
+                    <span><b>{summary.widgetCount}</b><small>live widgets</small></span>
+                    <span><b>{summary.sourceCount}</b><small>data sources</small></span>
+                    <span><b>{summary.transformCount}</b><small>transforms</small></span>
+                    <span className={`dash-layout-summary ${layoutStatus}`}><b>{layoutLabel}</b><small>layout</small></span>
+                  </div>
+                  <div className="dash-transforms">
+                <button className="dash-transforms-head" aria-expanded={showTransforms} onClick={() => setShowTransforms((v) => !v)}>
                   <Layers /> Transforms ({(board.transforms || []).length}) — prepared datasets widgets build on
                   <span className="pill-caret">{showTransforms ? "▴" : "▾"}</span>
                 </button>
@@ -752,24 +1118,59 @@ export default function Dashboards() {
                     </div>
                   </div>
                 )}
-              </div>
-            )}
-
-            {board && (
-              <div className="dash-grid2">
+                  </div>
+                  <div className="dash-grid2">
                 {board.widgets.map((w, i) => (
                   <div
-                    key={`${w.title}-${i}`}
-                    className="dash-drag"
-                    draggable
-                    onDragStart={() => { dragIndex.current = i; }}
-                    onDragOver={(e) => e.preventDefault()}
-                    onDrop={() => onWidgetDrop(i)}
-                    title="Drag to rearrange — the layout is saved"
+                    key={w._clientKey}
+                    className={`dash-drag dash-${w.type}`}
+                    ref={(node) => {
+                      if (node) widgetNodesRef.current.set(w._clientKey, node);
+                      else widgetNodesRef.current.delete(w._clientKey);
+                    }}
+                    draggable={!busy}
+                    onDragStart={(event) => {
+                      if (busy) return;
+                      dragIndex.current = { dashboardId: activeIdRef.current, widgetKey: w._clientKey };
+                      event.dataTransfer.effectAllowed = "move";
+                    }}
+                    onDragEnd={() => { dragIndex.current = null; }}
+                    onDragOver={(event) => {
+                      if (dragIndex.current?.dashboardId === activeIdRef.current) event.preventDefault();
+                    }}
+                    onDrop={(event) => { event.preventDefault(); onWidgetDrop(w._clientKey); }}
+                    title="Drag to rearrange widgets"
                   >
+                    <div className="dash-drag-controls" role="group" aria-label={`Reorder ${w.title}`}>
+                      <button type="button" data-reorder-action="earlier" aria-label={`Move ${w.title} earlier`} title="Move earlier" disabled={busy || i === 0} onClick={() => moveWidget(i, i - 1, "earlier")}>↑</button>
+                      <button type="button" data-reorder-action="later" aria-label={`Move ${w.title} later`} title="Move later" disabled={busy || i === board.widgets.length - 1} onClick={() => moveWidget(i, i + 1, "later")}>↓</button>
+                    </div>
                     <Widget widget={w} />
                   </div>
                 ))}
+                  </div>
+                </div>
+                <aside className="dash-insights" aria-label="Dashboard details">
+                  <header>
+                    <span className="dash-eyebrow"><WandSparkles /> Run overview</span>
+                    <h2>Dashboard pulse</h2>
+                  </header>
+                  <div className={`dash-insight-status ${summary.tone}`} role="status">
+                    <span aria-hidden="true" />
+                    <div>
+                      <b>{summary.status}</b>
+                      <small>{summary.detail}</small>
+                    </div>
+                  </div>
+                  <section>
+                    <h3><Database /> Data sources</h3>
+                    <div className="dash-source-list">
+                      {boardSources.length
+                        ? boardSources.map((source) => <span key={source.id}>{source.name}</span>)
+                        : <small>No named sources reported.</small>}
+                    </div>
+                  </section>
+                </aside>
               </div>
             )}
 

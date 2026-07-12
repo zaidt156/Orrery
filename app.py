@@ -252,6 +252,10 @@ def _packaging_probe() -> None:
     missing = [str(path) for path in required if not path.exists()]
     if missing:
         raise RuntimeError("Packaged resource check failed. Missing: " + ", ".join(missing))
+    from backend.features.filepreview import pdf_renderer_available
+
+    if not pdf_renderer_available():
+        raise RuntimeError("PDF preview renderer is missing from the packaged runtime.")
     # Backend-only bundles (the Electron installer's OrreryBackend) ship no GUI runtime — Electron
     # owns the window — so skip the desktop-webview checks for them.
     backend_only = "--backend-only" in sys.argv or os.environ.get("ORRERY_BACKEND_ONLY") == "1"

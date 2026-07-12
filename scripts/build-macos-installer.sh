@@ -30,6 +30,14 @@ assert_exists() {
   fi
 }
 
+assert_qtpdf_renderer() {
+  local root="$1"
+  if ! find "$root" -type f \( -name 'QtPdf*.so' -o -name 'QtPdf*.dylib' \) -print -quit | grep -q .; then
+    echo "Bundled PDF preview renderer is missing under: $root" >&2
+    exit 1
+  fi
+}
+
 python_cmd() {
   if command -v python3.12 >/dev/null 2>&1; then
     command -v python3.12
@@ -98,7 +106,14 @@ PYINSTALLER_ARGS=(
   --collect-data procrastinate
   --copy-metadata procrastinate
   --copy-metadata pywebview
+  --copy-metadata PySide6
+  --copy-metadata PySide6_Addons
+  --copy-metadata PySide6_Essentials
+  --copy-metadata shiboken6
   --copy-metadata python-pptx
+  --hidden-import PySide6.QtCore
+  --hidden-import PySide6.QtGui
+  --hidden-import PySide6.QtPdf
   --exclude-module webview.platforms.cocoa
   --exclude-module webview.platforms.qt
   --exclude-module webview.platforms.gtk
@@ -107,7 +122,6 @@ PYINSTALLER_ARGS=(
   --exclude-module webview.platforms.mshtml
   --exclude-module webview.platforms.android
   --exclude-module webview.platforms.cef
-  --exclude-module PySide6
   --exclude-module qtpy
   --collect-submodules keyring.backends
 )
@@ -116,6 +130,7 @@ run "$PY" -m PyInstaller "${PYINSTALLER_ARGS[@]}" app.py
 assert_exists "dist/OrreryBackend/OrreryBackend" "Backend executable was not created"
 assert_exists "dist/OrreryBackend/_internal/ui/dist" "Bundled frontend build is missing"
 assert_exists "dist/OrreryBackend/_internal/procrastinate/sql/queries.sql" "Bundled Procrastinate SQL is missing"
+assert_qtpdf_renderer "dist/OrreryBackend"
 
 echo "Running backend packaging probe..."
 run "dist/OrreryBackend/OrreryBackend" --packaging-probe --backend-only

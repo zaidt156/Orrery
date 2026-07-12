@@ -363,6 +363,8 @@ export async function createArtifact(html) {
 // generated files (from the code-execution pipeline): download by id, preview by id
 export const downloadGeneratedFile = (fileId, name) => apiDownload(`/api/files/${fileId}`, name || "file");
 export const getFilePreviewStatus = () => apiGet("/api/file-preview/status");
+export const installOfficePreview = () =>
+  apiSend("/api/file-preview/install", "POST", { acknowledged: true });
 export async function previewGeneratedFile(fileId) {
   const data = await apiGet(`/api/files/${fileId}/preview`);
   return { ...data, url: `${API_BASE}${data.url}` };

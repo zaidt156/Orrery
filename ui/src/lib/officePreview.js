@@ -1,6 +1,10 @@
 const READY_DETAIL = "PowerPoint, Word, and Excel files are converted to PDF locally for accurate layout and images.";
 const FALLBACK_DETAIL = "Install LibreOffice on this computer for previews that preserve slide, document, and spreadsheet layout.";
 
+export function previewFrameSandbox(interactive = false) {
+  return interactive ? "allow-scripts allow-forms allow-modals" : "";
+}
+
 export function describeOfficePreviewStatus(status) {
   if (status?.available && status.officePreview === "pdf") {
     return {
@@ -18,9 +22,21 @@ export function describeOfficePreviewStatus(status) {
   };
 }
 
+export function officePreviewInstallAction(status, canManage) {
+  if (status?.available || !status?.canInstall || !canManage) return null;
+  return { label: "Install & enable", enabled: true };
+}
+
 export function previewNotice(preview) {
   if (preview?.renderer === "libreoffice") {
     return { state: "ready", label: "Faithful Office preview" };
+  }
+  if (preview?.renderer === "libreoffice-partial") {
+    return {
+      state: "fallback",
+      label: "Partial Office preview",
+      hint: preview.hint || "The safe preview limit was reached.",
+    };
   }
   if (preview?.renderer === "html-fallback") {
     return {

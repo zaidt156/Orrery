@@ -4,7 +4,7 @@ import asyncio
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 
-from backend.api.deps import _require_conversation_access, _sse, _sse_run
+from backend.api.deps import _require_admin_access, _require_conversation_access, _sse, _sse_run
 from backend.api.schemas import *  # noqa: F401,F403 — request models
 from backend.core import appconfig, database
 from backend.core.config import settings
@@ -19,6 +19,15 @@ router = APIRouter()
 @router.get("/file-preview/status")
 async def file_preview_status() -> dict:
     return filepreview.office_preview_status()
+
+
+@router.post("/file-preview/install")
+async def install_file_preview(body: PlanConnection) -> dict:
+    await _require_admin_access()
+    try:
+        return await asyncio.to_thread(filepreview.install_office_preview, body.acknowledged)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
 
 @router.get("/conversations/{cid}/messages/{mid}/export/{export_format}")
 async def export_reply(cid: str, mid: str, export_format: str) -> Response:
@@ -53,8 +62,14 @@ async def preview_reply(cid: str, mid: str, export_format: str) -> dict:
         raise HTTPException(status_code=413, detail=str(exc)) from None
     except ValueError as exc:  # malformed/borderline spec — don't 500 the preview
         raise HTTPException(status_code=422, detail=str(exc)[:200]) from None
-    artifact_id = artifacts.register(result.content, result.media_type)
-    return {"url": f"/artifacts/{artifact_id}", "kind": export_format}
+    content, media = await asyncio.to_thread(
+        filepreview.to_preview,
+        result.filename,
+        result.media_type,
+        result.content,
+    )
+    artifact_id = artifacts.register(content, media)
+    return {"url": f"/artifacts/{artifact_id}", "kind": export_format, "mime": media}
 
 @router.get("/files/{file_id}")
 async def download_file(file_id: str) -> Response:
@@ -79,21 +94,34 @@ async def preview_file(file_id: str) -> dict:
     meta, data = item
     office_file = filepreview.is_office_file(meta["name"])
     cache_path = file_library.office_preview_cache_path(file_id, data) if office_file else None
-    content, media = filepreview.to_preview(
+    content, media = await asyncio.to_thread(
+        filepreview.to_preview,
         meta["name"],
         meta["mime"],
         data,
         cache_path=cache_path,
     )
     artifact_id = artifacts.register(content, media)
-    faithful = office_file and media == "application/pdf"
+    rendered_pdf = office_file and b'data-renderer="qt-pdf"' in content
+    partial = rendered_pdf and b'data-preview-complete="false"' in content
+    faithful = rendered_pdf and not partial
     hint = None
-    if office_file and not faithful:
+    if partial:
+        hint = "The Office preview is partial because the safe page or byte limit was reached."
+    elif office_file and not faithful:
         hint = "LibreOffice is unavailable or conversion failed; showing the HTML fallback."
     return {
         "url": f"/artifacts/{artifact_id}",
         "mime": media,
-        "renderer": "libreoffice" if faithful else "html-fallback" if office_file else "native",
+        "renderer": (
+            "libreoffice"
+            if faithful
+            else "libreoffice-partial"
+            if partial
+            else "html-fallback"
+            if office_file
+            else "native"
+        ),
         "hint": hint,
     }
 

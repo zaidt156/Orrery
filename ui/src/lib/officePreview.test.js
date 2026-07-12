@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { describeOfficePreviewStatus, previewNotice } from "./officePreview.js";
+import {
+  describeOfficePreviewStatus,
+  officePreviewInstallAction,
+  previewFrameSandbox,
+  previewNotice,
+} from "./officePreview.js";
 
 test("available LibreOffice status describes faithful local PDF previews", () => {
   assert.deepEqual(
@@ -42,6 +47,16 @@ test("malformed status responses stay conservative", () => {
   assert.match(describeOfficePreviewStatus({ available: false }).message, /HTML fallback/);
 });
 
+test("missing LibreOffice exposes an install action only to admins with a package manager", () => {
+  assert.deepEqual(officePreviewInstallAction({ available: false, canInstall: true }, true), {
+    label: "Install & enable",
+    enabled: true,
+  });
+  assert.equal(officePreviewInstallAction({ available: false, canInstall: false }, true), null);
+  assert.equal(officePreviewInstallAction({ available: false, canInstall: true }, false), null);
+  assert.equal(officePreviewInstallAction({ available: true, canInstall: false }, true), null);
+});
+
 test("generated Office previews expose renderer-specific notices", () => {
   assert.deepEqual(previewNotice({ renderer: "libreoffice" }), {
     state: "ready",
@@ -59,4 +74,16 @@ test("generated Office previews expose renderer-specific notices", () => {
     },
   );
   assert.equal(previewNotice({ renderer: "native" }), null);
+  assert.deepEqual(previewNotice({ renderer: "libreoffice-partial", hint: "Partial preview." }), {
+    state: "fallback",
+    label: "Partial Office preview",
+    hint: "Partial preview.",
+  });
+});
+
+test("preview iframes deny capabilities by default and only opt in for interactive apps", () => {
+  assert.equal(previewFrameSandbox(), "");
+  assert.equal(previewFrameSandbox(false), "");
+  assert.equal(previewFrameSandbox(true), "allow-scripts allow-forms allow-modals");
+  assert.doesNotMatch(previewFrameSandbox(true), /allow-same-origin|allow-popups/);
 });

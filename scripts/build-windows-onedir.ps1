@@ -150,6 +150,9 @@ Invoke-Checked ".venv\Scripts\pyinstaller.exe" `
     "--copy-metadata" "shiboken6" `
     "--copy-metadata" "qtpy" `
     "--copy-metadata" "python-pptx" `
+    "--hidden-import" "PySide6.QtCore" `
+    "--hidden-import" "PySide6.QtGui" `
+    "--hidden-import" "PySide6.QtPdf" `
     "--hidden-import" "PySide6.QtWebEngineWidgets" `
     "--hidden-import" "PySide6.QtWebEngineCore" `
     "--hidden-import" "PySide6.QtWebChannel" `
@@ -181,6 +184,8 @@ Assert-Exists "$DistRoot\_internal\procrastinate\sql\queries.sql" "Bundled Procr
 Assert-Matches "$DistRoot\_internal\procrastinate-*.dist-info\METADATA" "Bundled Procrastinate package metadata is missing"
 Assert-Exists "$DistRoot\_internal\PySide6" "Bundled Qt/PySide runtime is missing"
 Assert-Exists "$DistRoot\_internal\PySide6\QtWebEngineProcess.exe" "Bundled Qt WebEngine process is missing"
+Assert-Exists "$DistRoot\_internal\PySide6\QtPdf.pyd" "Bundled PDF preview renderer extension is missing"
+Assert-Exists "$DistRoot\_internal\PySide6\Qt6Pdf.dll" "Bundled PDF preview renderer library is missing"
 Assert-Exists "$DistRoot\_internal\pptx" "Bundled python-pptx package is missing"
 Assert-Matches "$DistRoot\_internal\pyside6-*.dist-info\METADATA" "Bundled PySide6 package metadata is missing"
 Assert-Matches "$DistRoot\_internal\QtPy-*.dist-info\METADATA" "Bundled QtPy package metadata is missing"
@@ -206,6 +211,8 @@ Assert-Exists "$ReleaseRoot\_internal\procrastinate\sql\queries.sql" "Release Pr
 Assert-Matches "$ReleaseRoot\_internal\procrastinate-*.dist-info\METADATA" "Release Procrastinate package metadata is missing"
 Assert-Exists "$ReleaseRoot\_internal\PySide6" "Release Qt/PySide runtime is missing"
 Assert-Exists "$ReleaseRoot\_internal\PySide6\QtWebEngineProcess.exe" "Release Qt WebEngine process is missing"
+Assert-Exists "$ReleaseRoot\_internal\PySide6\QtPdf.pyd" "Release PDF preview renderer extension is missing"
+Assert-Exists "$ReleaseRoot\_internal\PySide6\Qt6Pdf.dll" "Release PDF preview renderer library is missing"
 Assert-Exists "$ReleaseRoot\_internal\pptx" "Release python-pptx package is missing"
 Assert-Matches "$ReleaseRoot\_internal\pyside6-*.dist-info\METADATA" "Release PySide6 package metadata is missing"
 Assert-Matches "$ReleaseRoot\_internal\QtPy-*.dist-info\METADATA" "Release QtPy package metadata is missing"

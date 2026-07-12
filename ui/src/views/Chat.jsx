@@ -21,7 +21,7 @@ import { AttachIcon, SendIcon } from "../components/icons.jsx";
 import Markdown from "../components/Markdown.jsx";
 import { isCodeImagePrompt } from "../lib/chatCommands.js";
 import { copyTextResult } from "../lib/clipboard.js";
-import { previewNotice } from "../lib/officePreview.js";
+import { previewFrameSandbox, previewNotice } from "../lib/officePreview.js";
 import {
   getModels, listCollections, listConversations, getConversation, createConversation,
   updateConversation, deleteConversation, streamMessage, regenerateMessage,
@@ -142,12 +142,12 @@ export default function Chat() {
   const [projects, setProjects] = useState([]);
   const [projectId, setProjectId] = useState("");
   const [effort, setEffort] = useState("");
-  const [artifact, setArtifact] = useState(null); // { url, title, sandbox } for the preview sidebar
+  const [artifact, setArtifact] = useState(null); // preview sidebar state; iframe capabilities deny by default
 
   async function openHtmlPreview(html, title) {
     try {
       const url = await createArtifact(html);
-      setArtifact({ url, title: title || "Preview", sandbox: true });
+      setArtifact({ url, title: title || "Preview", frameSandbox: previewFrameSandbox(true) });
     } catch (e) {
       setBanner(String(e.message || e));
     }
@@ -162,7 +162,7 @@ export default function Chat() {
       setArtifact({
         url: preview.url,
         title: title || `${label} preview`,
-        sandbox: preview.kind !== "pdf",
+        frameSandbox: previewFrameSandbox(false),
       });
     } catch (e) {
       setBanner(String(e.message || e));
@@ -181,7 +181,7 @@ export default function Chat() {
     if (m.startsWith("image/")) setArtifact({ image: url, title: name, notice });
     else if (m.startsWith("video/")) setArtifact({ media: url, mediaType: "video", title: name, notice });
     else if (m.startsWith("audio/")) setArtifact({ media: url, mediaType: "audio", title: name, notice });
-    else setArtifact({ url, title: name, sandbox: m.startsWith("text/html"), notice });
+    else setArtifact({ url, title: name, frameSandbox: previewFrameSandbox(false), notice });
   }
 
   async function openGeneratedPreview(file) {
@@ -702,12 +702,12 @@ export default function Chat() {
       }
       if (a.kind === "text" && a.content != null) {
         const url = URL.createObjectURL(new Blob([a.content], { type: "text/plain;charset=utf-8" }));
-        setArtifact({ url, title: a.name });
+        setArtifact({ url, title: a.name, frameSandbox: previewFrameSandbox(false) });
         return;
       }
       const r = await getAttachmentText(activeId, a.name);
       const url = URL.createObjectURL(new Blob([r.text], { type: "text/plain;charset=utf-8" }));
-      setArtifact({ url, title: a.name });
+      setArtifact({ url, title: a.name, frameSandbox: previewFrameSandbox(false) });
     } catch {
       setBanner(`No stored preview for ${a.name} — it may not have been saved.`);
     }
@@ -1164,15 +1164,13 @@ export default function Chat() {
             <div className="artifact-frame artifact-media"><video src={artifact.media} controls playsInline /></div>
           ) : artifact.mediaType === "audio" ? (
             <div className="artifact-frame artifact-media"><audio src={artifact.media} controls /></div>
-          ) : artifact.sandbox ? (
+          ) : (
             <iframe
               className="artifact-frame"
               src={artifact.url}
-              title="HTML preview"
-              sandbox="allow-scripts allow-popups allow-forms allow-modals"
+              title={artifact.frameSandbox ? "Interactive HTML preview" : "File preview"}
+              sandbox={artifact.frameSandbox ?? previewFrameSandbox(false)}
             />
-          ) : (
-            <iframe className="artifact-frame" src={artifact.url} title="File preview" />
           )}
         </aside>
       )}
