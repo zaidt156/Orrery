@@ -5,6 +5,7 @@ import {
   Cpu,
   Database,
   Download,
+  FileText,
   ImagePlus,
   KeyRound,
   LogIn,
@@ -20,6 +21,7 @@ import {
 import Toggle from "../components/Toggle.jsx";
 import PageHero from "../components/PageHero.jsx";
 import { useAppearance } from "../components/AppearanceProvider.jsx";
+import { describeOfficePreviewStatus } from "../lib/officePreview.js";
 import {
   addCustomModel,
   approveLifeProposal,
@@ -33,6 +35,7 @@ import {
   getLife,
   getLifeHistory,
   getAppUpdate,
+  getFilePreviewStatus,
   getPrivacy,
   setPrivacy,
   getDatabase,
@@ -85,6 +88,7 @@ const SETTINGS_SECTIONS = [
   { id: "memory", label: "Life Memory", Icon: BookOpen },
   { id: "accounts", label: "Accounts", Icon: KeyRound },
   { id: "database", label: "Database", Icon: Database },
+  { id: "previews", label: "File previews", Icon: FileText },
   { id: "models", label: "Models", Icon: Cpu },
   { id: "usage", label: "Usage", Icon: WalletCards },
   { id: "updates", label: "Updates", Icon: Download },
@@ -943,6 +947,59 @@ function UpdatesSection() {
   );
 }
 
+function OfficePreviewSection() {
+  const [status, setStatus] = useState(null);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function check() {
+    setBusy(true);
+    setError("");
+    try {
+      setStatus(await getFilePreviewStatus());
+    } catch (e) {
+      setStatus(null);
+      setError(String(e.message || e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  useEffect(() => { check(); }, []);
+
+  const display = status ? describeOfficePreviewStatus(status) : null;
+  return (
+    <>
+      <div className="section-label">Office preview engine</div>
+      <div className="provider-block office-preview-status" aria-live="polite">
+        <div className="mode-row">
+          <div className="mode-main">
+            <div className="mode-name">
+              <span className={`preview-status-dot ${display?.state || "checking"}`} aria-hidden="true" />
+              {display?.title || (error ? "Preview status unavailable" : "Checking preview support…")}
+            </div>
+            <div className="mode-sub">
+              {error
+                ? `Orrery could not check this computer: ${error}`
+                : display?.message || "Looking for LibreOffice on this computer."}
+            </div>
+            {display && <div className="mode-hint">{display.detail}</div>}
+          </div>
+          <div className="mode-actions">
+            <button className="btn ghost icon-text-btn" disabled={busy} onClick={check}>
+              <RefreshCw className={busy ? "spin" : ""} />
+              Check again
+            </button>
+          </div>
+        </div>
+      </div>
+      <p className="preview-privacy-note">
+        Preview conversion runs on this computer. Files are not uploaded to a preview service.
+      </p>
+    </>
+  );
+}
+
 const FEEDBACK_CATS = [["general", "General"], ["bug", "Bug"], ["idea", "Idea"], ["praise", "Praise"]];
 
 function FeedbackSection() {
@@ -1417,6 +1474,12 @@ export default function Settings() {
       <>
         <SettingsPanelHeader title="Database" description="Connect Orrery to your own PostgreSQL server." />
         <DatabaseSection canManage={canManage} />
+      </>
+    ),
+    previews: (
+      <>
+        <SettingsPanelHeader title="File previews" description="See how Orrery renders PowerPoint, Word, and Excel files on this computer." />
+        <OfficePreviewSection />
       </>
     ),
     models: (

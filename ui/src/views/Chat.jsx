@@ -21,6 +21,7 @@ import { AttachIcon, SendIcon } from "../components/icons.jsx";
 import Markdown from "../components/Markdown.jsx";
 import { isCodeImagePrompt } from "../lib/chatCommands.js";
 import { copyTextResult } from "../lib/clipboard.js";
+import { previewNotice } from "../lib/officePreview.js";
 import {
   getModels, listCollections, listConversations, getConversation, createConversation,
   updateConversation, deleteConversation, streamMessage, regenerateMessage,
@@ -174,19 +175,20 @@ export default function Chat() {
 
   // Render a real file in the preview pane by its type: image → <img>, av → player, html → sandboxed
   // iframe, everything else (PDF, Office, text) → a plain iframe that shows the file as-is.
-  function showFileArtifact(url, mime, name) {
+  function showFileArtifact(url, mime, name, preview = null) {
     const m = mime || "";
-    if (m.startsWith("image/")) setArtifact({ image: url, title: name });
-    else if (m.startsWith("video/")) setArtifact({ media: url, mediaType: "video", title: name });
-    else if (m.startsWith("audio/")) setArtifact({ media: url, mediaType: "audio", title: name });
-    else setArtifact({ url, title: name, sandbox: m.startsWith("text/html") });
+    const notice = previewNotice(preview);
+    if (m.startsWith("image/")) setArtifact({ image: url, title: name, notice });
+    else if (m.startsWith("video/")) setArtifact({ media: url, mediaType: "video", title: name, notice });
+    else if (m.startsWith("audio/")) setArtifact({ media: url, mediaType: "audio", title: name, notice });
+    else setArtifact({ url, title: name, sandbox: m.startsWith("text/html"), notice });
   }
 
   async function openGeneratedPreview(file) {
     setBanner(null);
     try {
-      const { url, mime } = await previewGeneratedFile(file.id);
-      showFileArtifact(url, mime, file.name);
+      const preview = await previewGeneratedFile(file.id);
+      showFileArtifact(preview.url, preview.mime, file.name, preview);
     } catch (e) {
       setBanner(String(e.message || e));
     }
@@ -689,8 +691,8 @@ export default function Chat() {
   async function openAttachment(a) {
     try {
       if (a.file_id) {
-        const { url, mime } = await previewGeneratedFile(a.file_id);
-        showFileArtifact(url, mime || a.mime, a.name);
+        const preview = await previewGeneratedFile(a.file_id);
+        showFileArtifact(preview.url, preview.mime || a.mime, a.name, preview);
         return;
       }
       if (typeof a.content === "string" && a.content.startsWith("data:")) {
@@ -1150,6 +1152,12 @@ export default function Chat() {
               <button className="artifact-btn" title="Close preview" aria-label="Close preview" onClick={() => setArtifact(null)}><X /></button>
             </div>
           </div>
+          {artifact.notice && (
+            <div className={`artifact-preview-notice ${artifact.notice.state}`} role="status">
+              <strong>{artifact.notice.label}</strong>
+              {artifact.notice.hint && <span>{artifact.notice.hint}</span>}
+            </div>
+          )}
           {artifact.image ? (
             <div className="artifact-frame artifact-image"><img src={artifact.image} alt="SVG preview" /></div>
           ) : artifact.mediaType === "video" ? (

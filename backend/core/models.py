@@ -361,6 +361,7 @@ class Collection(Base):
     kind: Mapped[str] = mapped_column(String(20), default="collection")
     connected: Mapped[bool] = mapped_column(default=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    owner_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     chunks: Mapped[list["Chunk"]] = relationship(back_populates="collection", cascade="all, delete-orphan")

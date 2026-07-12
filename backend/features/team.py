@@ -23,7 +23,7 @@ import uuid
 from sqlalchemy import func, select, update
 
 from backend.core.database import get_sessionmaker
-from backend.core.models import Conversation, Project, TeamUser
+from backend.core.models import Collection, Conversation, Project, TeamUser
 from backend.security import secrets
 
 _UNLOCK_KEY = "team_access_key"  # keychain entry: this client's own access key
@@ -176,6 +176,9 @@ async def setup_team(admin_name: str) -> dict:
         admin_id = str(row.id)
         await s.execute(update(Conversation).where(Conversation.owner_id.is_(None)).values(owner_id=admin_id))
         await s.execute(update(Project).where(Project.owner_id.is_(None)).values(owner_id=admin_id))
+        # Pre-team collections belonged to the founding local user. Stamp them before teammates
+        # can connect so data and standing ontologies never become workspace-global by accident.
+        await s.execute(update(Collection).where(Collection.owner_id.is_(None)).values(owner_id=admin_id))
         await s.commit()
     secrets.set_secret(_UNLOCK_KEY, key)  # the founder's client is now unlocked
     _invalidate_request_cache()

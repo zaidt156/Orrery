@@ -154,6 +154,50 @@ async def test_risky_call_suspends_then_owner_approval_resumes(monkeypatch):
 
 
 @pytest.mark.anyio
+async def test_cancelling_suspended_run_rejects_approval_and_prevents_tool_execution(monkeypatch):
+    from backend import tools as tool_registry
+    from backend.providers import ai
+
+    agent_id = await _make_agent(
+        tool_grants=[{"tool": "web_search", "actions": ["execute"], "approval": "always"}],
+    )
+    try:
+        _inline_dispatch(monkeypatch)
+        executed = []
+
+        async def fake_run_tool(key, args=None, *, allowed=None, grant=None):
+            executed.append(key)
+            return {"ok": True}
+
+        monkeypatch.setattr(tool_registry, "run_tool", fake_run_tool)
+        monkeypatch.setattr(ai, "stream_chat", _fake_model([
+            '```orrery-tool\n{"tool": "web_search", "args": {"query": "q"}}\n```',
+        ]))
+
+        started = await agent_runs.start_run(agent_id, owner_id=None)
+        pending = [
+            item for item in await agent_runs.list_pending_approvals(owner_id=None)
+            if item["run_id"] == started["run_id"]
+        ]
+        assert len(pending) == 1
+
+        assert await agent_runs.cancel_run(started["run_id"], owner_id=None)
+        cancelled = await agent_runs.get_run(started["run_id"], owner_id=None)
+        assert cancelled["status"] == "cancelled"
+        assert pending[0]["id"] not in {
+            item["id"] for item in await agent_runs.list_pending_approvals(owner_id=None)
+        }
+
+        decided = await agent_runs.decide_approval(
+            pending[0]["id"], approve=True, owner_id=None
+        )
+        assert decided["status"] == "rejected"
+        assert executed == []
+    finally:
+        await _delete_agent(agent_id)
+
+
+@pytest.mark.anyio
 async def test_step_budget_stops_a_looping_agent(monkeypatch):
     from backend import tools as tool_registry
     from backend.providers import ai

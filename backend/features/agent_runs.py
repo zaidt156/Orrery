@@ -432,6 +432,20 @@ async def cancel_run(run_id: str, *, owner_id: str | None) -> bool:
         if run.status in ("queued", "awaiting_approval"):
             run.status = "cancelled"
             run.finished_at = _now()
+            pending = (await s.execute(select(AgentApproval).where(
+                AgentApproval.run_id == run.id,
+                AgentApproval.status == "pending",
+            ).with_for_update())).scalars().all()
+            rejected_at = _now()
+            for approval in pending:
+                approval.status = "rejected"
+                approval.decided_at = rejected_at
+                approval.decided_by = owner_id or "system:run-cancelled"
+                step = (await s.execute(select(AgentRunStep).where(
+                    AgentRunStep.approval_id == approval.id
+                ))).scalar_one_or_none()
+                if step is not None:
+                    step.status = "rejected"
         else:
             run.cancel_requested = True
         await s.commit()

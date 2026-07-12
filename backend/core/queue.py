@@ -42,10 +42,10 @@ async def _agent_schedule_tick(timestamp: int) -> None:
     await schedule_tick(timestamp)
 
 
-async def _ingest_documents(cid: str, spool: str) -> None:
+async def _ingest_documents(cid: str, spool: str, owner_id: str | None = None) -> None:
     from backend.features.rag import run_ingest
 
-    await run_ingest(cid, spool)
+    await run_ingest(cid, spool, owner_id=owner_id)
 
 
 @lru_cache(maxsize=1)

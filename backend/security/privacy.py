@@ -51,3 +51,23 @@ def prepare_messages_for_model(messages: list[dict], *, is_local: bool, mode: st
             copied["content"] = blocks
         prepared.append(copied)
     return prepared
+
+
+def prepare_request_for_model(
+    messages: list[dict],
+    system_prompt: str | None,
+    *,
+    is_local: bool,
+    mode: str = "basic",
+) -> tuple[list[dict], str | None]:
+    """Apply one privacy policy to every text layer crossing the provider boundary.
+
+    Trusted project context and untrusted RAG context are both assembled into the system prompt,
+    so redacting only message bodies leaves those layers exposed. Keeping this operation at the
+    final provider boundary also makes the user's off/basic/strict selection consistent.
+    """
+    if is_local or mode not in ("basic", "strict"):
+        return messages, system_prompt
+    return prepare_messages_for_model(messages, is_local=False, mode=mode), (
+        redact(system_prompt) if system_prompt is not None else None
+    )

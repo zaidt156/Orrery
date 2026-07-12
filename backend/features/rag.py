@@ -10,11 +10,33 @@ from sqlalchemy import func, select, text
 
 from backend.core.database import get_sessionmaker
 from backend.core.models import Chunk, Collection
+from backend.features import team
 
 log = logging.getLogger("orrery.rag")
 
 EMBED_MODEL = "BAAI/bge-small-en-v1.5"  # local, 384-dim, runs on-device
 _embedder = None
+_CURRENT_OWNER = object()
+
+
+async def _require_collection_access(
+    cid: str, *, owner_id: str | None | object = _CURRENT_OWNER
+) -> str | None:
+    """Return the effective owner after proving this client can access the collection.
+
+    Team-mode equality deliberately excludes legacy NULL-owner rows. Solo mode has no owner filter,
+    preserving the existing local workspace behavior. Callers may pass an already authenticated
+    owner to a background job so authorization does not depend on another machine's keychain.
+    """
+    owner = await team.current_owner_id() if owner_id is _CURRENT_OWNER else owner_id
+    filters = [Collection.id == uuid.UUID(cid)]
+    if owner is not None:
+        filters.append(Collection.owner_id == owner)
+    async with get_sessionmaker()() as s:
+        found = (await s.execute(select(Collection.id).where(*filters))).scalar_one_or_none()
+    if found is None:
+        raise PermissionError("Collection not found.")
+    return owner  # type: ignore[return-value]
 
 
 def _get_embedder():
@@ -130,9 +152,13 @@ def _collection_dict(c: Collection, chunks: int) -> dict:
 
 async def list_collections(kind: str = "collection") -> list[dict]:
     """List collections of a given kind ('collection' for the Data tab, 'ontology' for the Ontology tab)."""
+    owner = await team.current_owner_id()
+    filters = [Collection.kind == kind]
+    if owner is not None:
+        filters.append(Collection.owner_id == owner)
     async with get_sessionmaker()() as s:
         rows = (await s.execute(
-            select(Collection).where(Collection.kind == kind).order_by(Collection.created_at)
+            select(Collection).where(*filters).order_by(Collection.created_at)
         )).scalars().all()
         # One grouped query for all chunk counts instead of a COUNT(*) per collection (N+1).
         counts = dict(
@@ -146,8 +172,12 @@ async def list_collections(kind: str = "collection") -> list[dict]:
 
 
 async def create_collection(name: str, kind: str = "collection", description: str | None = None) -> dict:
+    owner = await team.current_owner_id()
     async with get_sessionmaker()() as s:
-        c = Collection(name=(name.strip() or "documents"), embed_model=EMBED_MODEL, kind=kind, description=(description or None))
+        c = Collection(
+            name=(name.strip() or "documents"), embed_model=EMBED_MODEL, kind=kind,
+            description=(description or None), owner_id=owner,
+        )
         s.add(c)
         await s.commit()
         await s.refresh(c)
@@ -156,8 +186,12 @@ async def create_collection(name: str, kind: str = "collection", description: st
 
 async def set_connected(cid: str, connected: bool) -> bool:
     """Connect/disconnect an ontology so its knowledge is (or isn't) used as context in every chat."""
+    owner = await team.current_owner_id()
+    filters = [Collection.id == uuid.UUID(cid), Collection.kind == "ontology"]
+    if owner is not None:
+        filters.append(Collection.owner_id == owner)
     async with get_sessionmaker()() as s:
-        c = await s.get(Collection, uuid.UUID(cid))
+        c = (await s.execute(select(Collection).where(*filters))).scalar_one_or_none()
         if c is None:
             return False
         c.connected = bool(connected)
@@ -166,8 +200,12 @@ async def set_connected(cid: str, connected: bool) -> bool:
 
 
 async def update_collection(cid: str, name: str | None = None, description: str | None = None) -> bool:
+    owner = await team.current_owner_id()
+    filters = [Collection.id == uuid.UUID(cid)]
+    if owner is not None:
+        filters.append(Collection.owner_id == owner)
     async with get_sessionmaker()() as s:
-        c = await s.get(Collection, uuid.UUID(cid))
+        c = (await s.execute(select(Collection).where(*filters))).scalar_one_or_none()
         if c is None:
             return False
         if name is not None and name.strip():
@@ -179,15 +217,23 @@ async def update_collection(cid: str, name: str | None = None, description: str 
 
 
 async def connected_collection_ids() -> list[str]:
-    """Collection ids of all connected ontologies — searched as context in every chat."""
+    """The current owner's connected ontologies; solo mode remains workspace-wide."""
+    owner = await team.current_owner_id()
+    filters = [Collection.kind == "ontology", Collection.connected.is_(True)]
+    if owner is not None:
+        filters.append(Collection.owner_id == owner)
     async with get_sessionmaker()() as s:
-        rows = (await s.execute(select(Collection.id).where(Collection.connected.is_(True)))).scalars().all()
+        rows = (await s.execute(select(Collection.id).where(*filters))).scalars().all()
         return [str(r) for r in rows]
 
 
 async def delete_collection(cid: str) -> bool:
+    owner = await team.current_owner_id()
+    filters = [Collection.id == uuid.UUID(cid)]
+    if owner is not None:
+        filters.append(Collection.owner_id == owner)
     async with get_sessionmaker()() as s:
-        c = await s.get(Collection, uuid.UUID(cid))
+        c = (await s.execute(select(Collection).where(*filters))).scalar_one_or_none()
         if c is None:
             return False
         await s.delete(c)
@@ -195,9 +241,12 @@ async def delete_collection(cid: str) -> bool:
         return True
 
 
-async def add_documents(cid: str, files: list[dict]) -> int:
+async def add_documents(
+    cid: str, files: list[dict], *, owner_id: str | None | object = _CURRENT_OWNER
+) -> int:
     from sqlalchemy import delete as sa_delete
 
+    await _require_collection_access(cid, owner_id=owner_id)
     items: list[tuple[str, int, str]] = []
     for f in files:
         for i, ch in enumerate(chunk_text(_extract(f))):
@@ -237,6 +286,7 @@ async def enqueue_ingest(cid: str, files: list[dict]) -> dict:
     from backend.core.paths import user_data_dir
 
     safe_cid = str(uuid.UUID(cid))  # normalize before it touches a filename
+    owner = await _require_collection_access(safe_cid)
     spool_dir = user_data_dir() / "tmp" / "ingest"
     spool_dir.mkdir(parents=True, exist_ok=True)
     spool = spool_dir / f"{safe_cid}-{uuid.uuid4().hex}.json"
@@ -247,14 +297,14 @@ async def enqueue_ingest(cid: str, files: list[dict]) -> dict:
 
     try:
         await get_queue_app().configure_task(name="ingest_documents").defer_async(
-            cid=safe_cid, spool=str(spool))
+            cid=safe_cid, spool=str(spool), owner_id=owner)
     except Exception:  # noqa: BLE001 — queue down (tests/dev): index inline so uploads still work
         log.warning("ingest defer failed; running inline for %s", safe_cid)
-        await run_ingest(safe_cid, str(spool))
+        await run_ingest(safe_cid, str(spool), owner_id=owner)
     return {"queued": True, "files_queued": len(files)}
 
 
-async def run_ingest(cid: str, spool: str) -> None:
+async def run_ingest(cid: str, spool: str, owner_id: str | None = None) -> None:
     """Index one spool file with per-file transactions (progress is visible file by file)."""
     import json as _json
     from pathlib import Path
@@ -266,7 +316,7 @@ async def run_ingest(cid: str, spool: str) -> None:
         files = _json.loads(Path(spool).read_text(encoding="utf-8"))
         progress["total_files"] = len(files)
         for payload in files:
-            added = await add_documents(cid, [payload])
+            added = await add_documents(cid, [payload], owner_id=owner_id)
             progress["done_files"] += 1
             progress["chunks"] += added
         progress["state"] = "done"
@@ -283,6 +333,7 @@ async def run_ingest(cid: str, spool: str) -> None:
 
 async def documents(cid: str) -> list[dict]:
     """Distinct source files in a collection, with their chunk counts."""
+    await _require_collection_access(cid)
     async with get_sessionmaker()() as s:
         rows = (await s.execute(
             select(Chunk.source, func.count())
@@ -295,6 +346,7 @@ async def documents(cid: str) -> list[dict]:
 
 async def document_text(cid: str, source: str, max_chars: int = 60_000) -> str:
     """The extracted text of one indexed file, re-joined from its chunks (attachment preview)."""
+    await _require_collection_access(cid)
     async with get_sessionmaker()() as s:
         rows = (await s.execute(
             select(Chunk.content)
@@ -307,6 +359,7 @@ async def document_text(cid: str, source: str, max_chars: int = 60_000) -> str:
 async def delete_source(cid: str, source: str) -> int:
     """Remove all chunks for one source file from a collection."""
     from sqlalchemy import delete
+    await _require_collection_access(cid)
     async with get_sessionmaker()() as s:
         result = await s.execute(
             delete(Chunk).where(Chunk.collection_id == uuid.UUID(cid), Chunk.source == source)
@@ -329,6 +382,7 @@ async def search(cid: str, query: str, k: int = 5, query_vector: list[float] | N
 
     Pass `query_vector` (from embed_query) to reuse one embedding across several collections in a
     single turn instead of re-embedding the same query per collection."""
+    await _require_collection_access(cid)
     qv = _vec(query_vector if query_vector is not None else await embed_query(query))
     async with get_sessionmaker()() as s:
         vec = (await s.execute(

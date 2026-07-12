@@ -1,4 +1,6 @@
-from backend.providers import ai
+import pytest
+
+from backend.providers import accounts, ai, catalog
 
 
 def test_model_provider_mapping():
@@ -123,3 +125,213 @@ def test_sanitize_scrubs_google_style_key():
 def test_sanitize_quota_is_friendly():
     msg = ai._sanitize(Exception("RateLimitError - you exceeded your current quota, check billing"))
     assert "credit" in msg.lower()
+
+
+def test_provider_limit_normalization_covers_api_429_but_not_context_errors():
+    limited = ai._provider_limit_error("openai/gpt-5.5", Exception("HTTP 429: too many requests"))
+    assert isinstance(limited, ai.ProviderLimitError)
+    assert limited.provider == "openai"
+    assert ai._provider_limit_error(
+        "openai/gpt-5.5", Exception("maximum context length limit exceeded")
+    ) is None
+
+
+@pytest.mark.anyio
+async def test_stream_chat_falls_back_to_enabled_provider_on_plan_limit(monkeypatch):
+    calls = []
+
+    async def limited_claude(*_args, **_kwargs):
+        calls.append("claude")
+        raise accounts.ClaudePlanUnavailable(
+            "Claude plan: You've hit your monthly spend limit - raise it in Settings."
+        )
+        yield  # pragma: no cover - makes this an async generator
+
+    async def working_chatgpt(*_args, **_kwargs):
+        calls.append("chatgpt")
+        yield "fallback answer"
+
+    async def active_models():
+        return [
+            {"id": "claude_plan/opus", "label": "Claude Opus", "provider": "claude_plan"},
+            {"id": "chatgpt_plan/default", "label": "ChatGPT", "provider": "chatgpt_plan"},
+        ]
+
+    monkeypatch.setattr(accounts, "stream_claude_plan", limited_claude)
+    monkeypatch.setattr(accounts, "stream_chatgpt_plan", working_chatgpt)
+    monkeypatch.setattr(accounts, "chatgpt_plan_mode_status", lambda: {"configured": True, "available": True})
+    monkeypatch.setattr(catalog, "list_active", active_models)
+
+    result = [
+        delta
+        async for delta in ai.stream_chat(
+            "claude_plan/opus",
+            [{"role": "user", "content": "create a song file"}],
+        )
+    ]
+
+    assert result == ["fallback answer"]
+    assert calls == ["claude", "chatgpt"]
+
+
+@pytest.mark.anyio
+async def test_stream_chat_does_not_fallback_after_any_output(monkeypatch):
+    calls = []
+
+    async def partial_claude(*_args, **_kwargs):
+        calls.append("claude")
+        yield "partial answer"
+        raise accounts.ClaudePlanUnavailable("You've hit your session limit - resets at 01:10.")
+
+    async def unexpected_chatgpt(*_args, **_kwargs):
+        calls.append("chatgpt")
+        yield "duplicate answer"
+
+    async def active_models():
+        return [
+            {"id": "claude_plan/opus", "label": "Claude Opus", "provider": "claude_plan"},
+            {"id": "chatgpt_plan/default", "label": "ChatGPT", "provider": "chatgpt_plan"},
+        ]
+
+    monkeypatch.setattr(accounts, "stream_claude_plan", partial_claude)
+    monkeypatch.setattr(accounts, "stream_chatgpt_plan", unexpected_chatgpt)
+    monkeypatch.setattr(accounts, "chatgpt_plan_mode_status", lambda: {"configured": True, "available": True})
+    monkeypatch.setattr(catalog, "list_active", active_models)
+
+    seen = []
+    with pytest.raises(ai.ProviderLimitError, match="session limit"):
+        async for delta in ai.stream_chat("claude_plan/opus", [{"role": "user", "content": "hello"}]):
+            seen.append(delta)
+
+    assert seen == ["partial answer"]
+    assert calls == ["claude"]
+
+
+@pytest.mark.anyio
+async def test_stream_chat_preserves_limit_failure_without_available_fallback(monkeypatch):
+    async def limited_claude(*_args, **_kwargs):
+        raise accounts.ClaudePlanUnavailable("You've hit your monthly spend limit.")
+        yield
+
+    async def active_models():
+        return [
+            {"id": "claude_plan/opus", "label": "Claude Opus", "provider": "claude_plan"},
+            {"id": "openai/gpt-5.5", "label": "GPT", "provider": "openai"},
+        ]
+
+    monkeypatch.setattr(accounts, "stream_claude_plan", limited_claude)
+    monkeypatch.setattr(catalog, "list_active", active_models)
+    monkeypatch.setattr(ai.secrets, "get_provider_key", lambda _provider: None)
+
+    with pytest.raises(ai.ProviderLimitError, match="monthly spend limit"):
+        async for _ in ai.stream_chat("claude_plan/opus", [{"role": "user", "content": "hello"}]):
+            pass
+
+
+@pytest.mark.anyio
+async def test_stream_chat_retries_only_one_fallback_provider(monkeypatch):
+    calls = []
+
+    async def limited_claude(*_args, **_kwargs):
+        calls.append("claude")
+        raise accounts.ClaudePlanUnavailable("You've hit your monthly spend limit.")
+        yield
+
+    async def limited_chatgpt(*_args, **_kwargs):
+        calls.append("chatgpt")
+        raise accounts.CliRouteUnavailable("Rate limit reached by ChatGPT plan.")
+        yield
+
+    async def unexpected_gemini(*_args, **_kwargs):
+        calls.append("gemini")
+        yield "third route"
+
+    async def active_models():
+        return [
+            {"id": "claude_plan/opus", "label": "Claude Opus", "provider": "claude_plan"},
+            {"id": "chatgpt_plan/default", "label": "ChatGPT", "provider": "chatgpt_plan"},
+            {"id": "gemini_plan/default", "label": "Gemini", "provider": "gemini_plan"},
+        ]
+
+    monkeypatch.setattr(accounts, "stream_claude_plan", limited_claude)
+    monkeypatch.setattr(accounts, "stream_chatgpt_plan", limited_chatgpt)
+    monkeypatch.setattr(accounts, "stream_gemini_plan", unexpected_gemini)
+    monkeypatch.setattr(accounts, "chatgpt_plan_mode_status", lambda: {"configured": True, "available": True})
+    monkeypatch.setattr(accounts, "gemini_plan_mode_status", lambda: {"configured": True, "available": True})
+    monkeypatch.setattr(catalog, "list_active", active_models)
+
+    with pytest.raises(ai.ProviderLimitError, match="Rate limit"):
+        async for _ in ai.stream_chat("claude_plan/opus", [{"role": "user", "content": "hello"}]):
+            pass
+
+    assert calls == ["claude", "chatgpt"]
+
+
+@pytest.mark.anyio
+async def test_stream_chat_does_not_cross_provider_for_media_input(monkeypatch):
+    calls = []
+
+    async def limited_claude(*_args, **_kwargs):
+        calls.append("claude")
+        raise accounts.ClaudePlanUnavailable("You've hit your monthly spend limit.")
+        yield
+
+    async def unexpected_chatgpt(*_args, **_kwargs):
+        calls.append("chatgpt")
+        yield "fallback"
+
+    async def active_models():
+        return [
+            {"id": "claude_plan/opus", "label": "Claude Opus", "provider": "claude_plan"},
+            {"id": "chatgpt_plan/default", "label": "ChatGPT", "provider": "chatgpt_plan"},
+        ]
+
+    monkeypatch.setattr(accounts, "stream_claude_plan", limited_claude)
+    monkeypatch.setattr(accounts, "stream_chatgpt_plan", unexpected_chatgpt)
+    monkeypatch.setattr(accounts, "chatgpt_plan_mode_status", lambda: {"configured": True, "available": True})
+    monkeypatch.setattr(catalog, "list_active", active_models)
+    messages = [{
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "what is this?"},
+            {"type": "image_url", "image_url": {"url": "data:image/png;base64,AAAA"}},
+        ],
+    }]
+
+    with pytest.raises(ai.ProviderLimitError, match="monthly spend limit"):
+        async for _ in ai.stream_chat("claude_plan/opus", messages):
+            pass
+
+    assert calls == ["claude"]
+
+
+@pytest.mark.anyio
+async def test_stream_chat_skips_fallback_that_cannot_fit_the_input(monkeypatch):
+    calls = []
+
+    async def limited_claude(*_args, **_kwargs):
+        calls.append("claude")
+        raise accounts.ClaudePlanUnavailable("You've hit your monthly spend limit.")
+        yield
+
+    async def undersized_chatgpt(*_args, **_kwargs):
+        calls.append("chatgpt")
+        yield "truncated fallback"
+
+    async def active_models():
+        return [
+            {"id": "claude_plan/opus", "label": "Claude Opus", "provider": "claude_plan"},
+            {"id": "chatgpt_plan/default", "label": "ChatGPT", "provider": "chatgpt_plan"},
+        ]
+
+    monkeypatch.setattr(accounts, "stream_claude_plan", limited_claude)
+    monkeypatch.setattr(accounts, "stream_chatgpt_plan", undersized_chatgpt)
+    monkeypatch.setattr(accounts, "chatgpt_plan_mode_status", lambda: {"configured": True, "available": True})
+    monkeypatch.setattr(catalog, "list_active", active_models)
+    monkeypatch.setattr(ai, "model_context_window", lambda _model: 1_024)
+
+    with pytest.raises(ai.ProviderLimitError, match="monthly spend limit"):
+        async for _ in ai.stream_chat("claude_plan/opus", [{"role": "user", "content": "hello"}]):
+            pass
+
+    assert calls == ["claude"]

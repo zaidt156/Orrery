@@ -7,11 +7,13 @@ the serving route stays self-describing.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import re
 import time
 import uuid
+from pathlib import Path
 
 from backend.core.config import settings
 from backend.core.paths import user_data_dir
@@ -21,6 +23,7 @@ log = logging.getLogger("orrery.files")
 _DIR = user_data_dir() / "tmp" / "generated"
 _SAFE = re.compile(r"[^A-Za-z0-9._-]+")
 MAX_FILE_BYTES = 25_000_000
+_MAX_OFFICE_PREVIEW_CACHE_ITEMS = 40
 
 
 def _safe_name(name: str) -> str:
@@ -54,6 +57,36 @@ def load(file_id: str) -> tuple[dict, bytes] | None:
     except (OSError, json.JSONDecodeError):
         return None
     return meta, blob.read_bytes()
+
+
+def office_preview_cache_path(file_id: str, data: bytes) -> Path:
+    """Return the content-addressed PDF sidecar path, removing stale variants for this artifact."""
+    if not re.fullmatch(r"[0-9a-f]{32}", file_id or ""):
+        raise ValueError("Invalid generated file id.")
+    _DIR.mkdir(parents=True, exist_ok=True)
+    digest = hashlib.sha256(data).hexdigest()[:20]
+    target = _DIR / f"{file_id}.{digest}.preview.pdf"
+    for stale in _DIR.glob(f"{file_id}.*.preview.pdf"):
+        if stale != target:
+            try:
+                stale.unlink()
+            except OSError:
+                pass
+    other_previews = [path for path in _DIR.glob("*.preview.pdf") if path != target]
+    excess = len(other_previews) - max(0, _MAX_OFFICE_PREVIEW_CACHE_ITEMS - 1)
+    if excess > 0:
+        dated = []
+        for path in other_previews:
+            try:
+                dated.append((path.stat().st_mtime, path))
+            except OSError:
+                continue
+        for _mtime, stale in sorted(dated, key=lambda item: item[0])[:excess]:
+            try:
+                stale.unlink()
+            except OSError:
+                pass
+    return target
 
 
 def cleanup(ttl_hours: int | None = None) -> int:

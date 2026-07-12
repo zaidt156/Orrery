@@ -15,6 +15,11 @@ from backend.security import secrets
 
 router = APIRouter()
 
+
+@router.get("/file-preview/status")
+async def file_preview_status() -> dict:
+    return filepreview.office_preview_status()
+
 @router.get("/conversations/{cid}/messages/{mid}/export/{export_format}")
 async def export_reply(cid: str, mid: str, export_format: str) -> Response:
     await _require_conversation_access(cid)
@@ -72,9 +77,25 @@ async def preview_file(file_id: str) -> dict:
     if item is None:
         raise HTTPException(status_code=404, detail="File not found or expired")
     meta, data = item
-    content, media = filepreview.to_preview(meta["name"], meta["mime"], data)
+    office_file = filepreview.is_office_file(meta["name"])
+    cache_path = file_library.office_preview_cache_path(file_id, data) if office_file else None
+    content, media = filepreview.to_preview(
+        meta["name"],
+        meta["mime"],
+        data,
+        cache_path=cache_path,
+    )
     artifact_id = artifacts.register(content, media)
-    return {"url": f"/artifacts/{artifact_id}", "mime": media}
+    faithful = office_file and media == "application/pdf"
+    hint = None
+    if office_file and not faithful:
+        hint = "LibreOffice is unavailable or conversion failed; showing the HTML fallback."
+    return {
+        "url": f"/artifacts/{artifact_id}",
+        "mime": media,
+        "renderer": "libreoffice" if faithful else "html-fallback" if office_file else "native",
+        "hint": hint,
+    }
 
 @router.post("/artifacts")
 async def create_artifact(body: NewArtifact) -> dict:

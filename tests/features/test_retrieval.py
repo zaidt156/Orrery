@@ -112,3 +112,23 @@ async def test_query_is_embedded_once_across_many_collections(monkeypatch):
     assert embeds["n"] == 1                       # embedded once, not four times
     assert seen_vectors == [[0.42]] * 4           # the same vector reused for each collection
     assert len(sources) == 4
+
+
+@pytest.mark.anyio
+async def test_rag_context_defers_privacy_redaction_to_provider_boundary(monkeypatch):
+    """Retrieval must not apply a second, unconditional cloud policy.
+
+    The provider boundary owns the user's off/basic/strict choice and covers all prompt layers.
+    Keeping the original text here lets mode=off work as advertised while basic/strict still redact
+    immediately before the request leaves the machine.
+    """
+    async def fake_search(cid, query, k=5, query_vector=None):
+        return [{"source": "contacts.txt", "content": "Owner: alice@example.com", "dist": 0.1}]
+
+    monkeypatch.setattr(retrieval.rag, "embed_query", _fake_embed_query)
+    monkeypatch.setattr(retrieval.rag, "search", fake_search)
+
+    block, _ = await retrieval._gather_rag("openai/gpt", ["contacts"], "find the owner email")
+
+    assert block is not None
+    assert "alice@example.com" in block

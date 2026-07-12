@@ -75,3 +75,27 @@ def test_privacy_boundary_handles_multimodal_blocks():
     out = privacy.prepare_messages_for_model(msgs, is_local=False, mode="basic")
     assert out[0]["content"][0]["text"] == "mail [email]"
     assert out[0]["content"][1] == msgs[0]["content"][1]  # non-text block untouched
+
+
+def test_privacy_boundary_redacts_system_prompt_context_too():
+    messages = [{"role": "user", "content": "hello from user@example.com"}]
+    system_prompt = "# TRUSTED CONTEXT\nProject owner: owner@example.com"
+
+    prepared, prepared_system = privacy.prepare_request_for_model(
+        messages, system_prompt, is_local=False, mode="basic"
+    )
+
+    assert prepared[0]["content"] == "hello from [email]"
+    assert prepared_system == "# TRUSTED CONTEXT\nProject owner: [email]"
+
+
+def test_privacy_boundary_honors_off_for_every_prompt_layer():
+    messages = [{"role": "user", "content": "hello from user@example.com"}]
+    system_prompt = "# TRUSTED CONTEXT\nProject owner: owner@example.com"
+
+    prepared, prepared_system = privacy.prepare_request_for_model(
+        messages, system_prompt, is_local=False, mode="off"
+    )
+
+    assert prepared is messages
+    assert prepared_system is system_prompt

@@ -62,6 +62,14 @@ class MissingKeyError(Exception):
         super().__init__(f"No API key configured for {provider}.")
 
 
+class ProviderLimitError(RuntimeError):
+    """A provider/session/quota limit that may be retried on another enabled route."""
+
+    def __init__(self, provider: str, message: str):
+        self.provider = provider
+        super().__init__(message)
+
+
 class ReasoningDelta(str):
     """A streamed reasoning/'thinking' token — kept separate from the final answer text."""
 
@@ -576,7 +584,116 @@ def _sanitize(exc: Exception) -> str:
     return f"{name}: {clean[:200]}"
 
 
-async def stream_chat(
+_LIMIT_MARKERS = (
+    "monthly spend limit",
+    "session limit",
+    "usage limit",
+    "insufficient_quota",
+    "quota",
+    "rate limit",
+    "ratelimit",
+    "too many requests",
+    "api spend cap reached",
+    "out of api credit",
+    "credit balance",
+)
+
+
+def _provider_limit_error(model_id: str, exc: Exception) -> ProviderLimitError | None:
+    """Normalize provider-specific limit failures without treating auth/context errors as retryable."""
+    if isinstance(exc, ProviderLimitError):
+        return exc
+    message = str(exc)
+    low = message.lower()
+    if not any(marker in low for marker in _LIMIT_MARKERS) and not re.search(r"\b429\b", low):
+        return None
+    # Preserve useful plan reset/spend guidance, but run every message through the central scrubber.
+    safe = _scrub_secrets(message).strip()[:240]
+    if "quota" in low or "out of api credit" in low or "credit balance" in low:
+        safe = _sanitize(exc)
+    return ProviderLimitError(model_provider(model_id), safe)
+
+
+def _text_only_messages(messages: list[dict]) -> bool:
+    """Cross-provider fallback is compatible only when no provider-specific media blocks are present."""
+    for message in messages:
+        content = message.get("content")
+        if isinstance(content, str) or content is None:
+            continue
+        if not isinstance(content, list):
+            return False
+        for block in content:
+            if not isinstance(block, dict) or block.get("type") not in ("text", "input_text"):
+                return False
+    return True
+
+
+async def _fallback_route_available(model_id: str) -> bool:
+    """Check local configuration only; active-but-disconnected routes are not valid fallbacks."""
+    provider = model_provider(model_id)
+    try:
+        if provider in PROVIDERS:
+            if PROVIDERS[provider].get("needs_key"):
+                return bool(secrets.get_provider_key(provider))
+            if provider == "ollama":
+                from backend.features import local_models
+                return await local_models.is_running()
+            return True
+        if provider == "claude_plan":
+            status = await asyncio.to_thread(accounts.claude_plan_mode_status)
+            return bool(status.get("configured") and status.get("available", True))
+        if provider == "chatgpt_plan":
+            status = await asyncio.to_thread(accounts.chatgpt_plan_mode_status)
+            return bool(status.get("configured") and status.get("available", True))
+        if provider == "gemini_plan":
+            status = await asyncio.to_thread(accounts.gemini_plan_mode_status)
+            return bool(status.get("configured") and status.get("available", True))
+        if provider == "custom":
+            from backend.providers import catalog
+            custom_id = model_id.split("/", 1)[1]
+            return bool(await catalog.get_custom_model(custom_id) and catalog.custom_model_key(custom_id))
+    except Exception:  # noqa: BLE001 - an uncertain route is not safe to select automatically
+        return False
+    return False
+
+
+def _estimated_input_tokens(messages: list[dict], system_prompt: str | None) -> int:
+    """Conservative text estimate plus output headroom; used only to reject undersized fallbacks."""
+    chars = len(system_prompt or "")
+    for message in messages:
+        content = message.get("content")
+        if isinstance(content, str):
+            chars += len(content)
+        elif isinstance(content, list):
+            chars += sum(len(str(block.get("text") or "")) for block in content if isinstance(block, dict))
+    return (chars + 3) // 4 + 4_096
+
+
+async def _select_fallback_model(
+    model_id: str, messages: list[dict], system_prompt: str | None = None
+) -> str | None:
+    """Choose the first enabled, configured model on a different provider for text-only input."""
+    if not _text_only_messages(messages):
+        return None
+    from backend.providers import catalog
+    try:
+        active = await catalog.list_active()
+    except Exception:  # noqa: BLE001 - preserve the original provider failure if catalog lookup fails
+        return None
+    failed_provider = model_provider(model_id)
+    required_tokens = _estimated_input_tokens(messages, system_prompt)
+    for item in active:
+        candidate = str(item.get("id") or "")
+        if not candidate or candidate == model_id or model_provider(candidate) == failed_provider:
+            continue
+        if model_context_window(candidate) < required_tokens:
+            continue
+        if await _fallback_route_available(candidate):
+            return candidate
+    return None
+
+
+async def _stream_chat_once(
     model_id: str,
     messages: list[dict],
     system_prompt: str | None = None,
@@ -601,7 +718,9 @@ async def stream_chat(
             mode = await appconfig.get_setting("privacy_mode", "basic") or "basic"
         except Exception:  # noqa: BLE001 — a settings read failure must not break the chat; redact by default
             mode = "basic"
-        messages = privacy.prepare_messages_for_model(messages, is_local=False, mode=mode)
+        messages, system_prompt = privacy.prepare_request_for_model(
+            messages, system_prompt, is_local=False, mode=mode
+        )
 
     if provider == "claude_plan":
         try:
@@ -722,3 +841,56 @@ async def stream_chat(
             "provider": provider, "model": model_id, "tokens_in": tin, "tokens_out": tout,
             "cost": cost, "pricing_known": pricing_known,
         })
+
+
+async def stream_chat(
+    model_id: str,
+    messages: list[dict],
+    system_prompt: str | None = None,
+    effort: str | None = None,
+    usage_out: dict | None = None,
+) -> AsyncIterator[str]:
+    """Stream one route, retrying one enabled cross-provider route on an early limit failure.
+
+    Fallback is deliberately fail-closed after the first emitted delta. At that point callers may
+    already have shown output or begun deriving work from it, so replaying on another model could
+    duplicate visible output or side effects. A failed fallback is surfaced honestly; there is no
+    provider cascade.
+    """
+    emitted = False
+    try:
+        async for delta in _stream_chat_once(model_id, messages, system_prompt, effort, usage_out):
+            emitted = True
+            yield delta
+        return
+    except MissingKeyError:
+        raise
+    except Exception as exc:  # noqa: BLE001 - normalize only known provider-limit failures
+        limit_error = _provider_limit_error(model_id, exc)
+        if limit_error is None:
+            raise
+        if emitted:
+            raise limit_error from None
+
+    fallback_model = await _select_fallback_model(model_id, messages, system_prompt)
+    if fallback_model is None:
+        raise limit_error from None
+
+    log.warning(
+        "Model route limit reached; retrying one enabled fallback (%s -> %s)",
+        model_provider(model_id),
+        model_provider(fallback_model),
+    )
+    if usage_out is not None:
+        usage_out.clear()
+        usage_out.update({"fallback_from": model_id, "fallback_to": fallback_model})
+    try:
+        async for delta in _stream_chat_once(fallback_model, messages, system_prompt, effort, usage_out):
+            yield delta
+    except MissingKeyError:
+        raise
+    except Exception as exc:  # noqa: BLE001 - one fallback only; never cascade to a third route
+        fallback_limit = _provider_limit_error(fallback_model, exc)
+        if fallback_limit is not None:
+            raise fallback_limit from None
+        raise

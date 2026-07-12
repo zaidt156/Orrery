@@ -2427,6 +2427,38 @@ a decider that takes context and, before acting, asks the model how to handle th
   decision parsing, chat-skips-the-model, model-overrides-a-false-audio-route, real-file
   confirmed, failure-falls-back, disabled-flag).
 
+## Step 141 - Security-review fixes, real Office previews, and a fresh release (July 12, 2026)
+
+This step lands the parallel session's implementation of the security re-review findings plus the
+real file-preview feature, verifies the whole tree is releasable, and rebuilds the release for
+both platforms. Everything below was gated on the full suite, a clean UI build, an additive
+migration, and a clean boot before shipping.
+
+- **The cross-user data-leak class is closed (E3).** Collections now carry an owner_id (additive
+  migration 0007, backfilled from a collection's parent chat/project only when unambiguous; legacy
+  standalone rows stay owner-less and are invisible in team mode until an admin claims them). A
+  member can no longer list, search, connect, or delete another member's collections, and a
+  client-supplied collection id is validated against the owner before it is searched.
+- **The privacy boundary now covers every channel (E1/E2).** prepare_request_for_model applies the
+  user's privacy mode (off/basic/strict) to the SYSTEM-PROMPT channel too - trusted project
+  context, user preferences, and RAG evidence - not just the messages array, so personal data in
+  those layers is masked before a cloud model on every route (chat, Deep Research, file gen).
+- **Real Office previews (the "PPTX shows only text" report).** filepreview renders pptx/xlsx/docx
+  to a faithful preview through the local converter when present, with the HTML rendering as the
+  fallback; a small officePreview helper drives the UI. New backend + UI tests.
+- **Provider-limit handling groundwork.** ai.py raises a typed ProviderLimitError and estimates
+  input tokens against the model's window, so a quota/limit failure is a clean, catchable signal
+  (the base for cross-model failover) instead of a raw dump.
+- **Team authorization tests** (Step 108 / plan Task 5c): locked clients fail closed on the newer
+  private surfaces, and cross-owner isolation on agents/runs/approvals is verified.
+
+Verified before release: full backend suite 431 passing (incl. the new rag-security, privacy-
+boundary, team-authz, filepreview, file-preview-api, and datasets suites); UI build clean;
+migration 0007 additive/idempotent and applied cleanly on a live boot. Released by moving the
+v0.1.0-preview tag to this commit so the Windows installer and both macOS DMGs rebuild under the
+same public download links (the landing site's pinned links keep resolving), with the cloud-Mac
+smoke test chained after the macOS build.
+
 ## The plan from here (user direction, July 11)
 
 1. **Architecture hardening for scale** - re-plan and secure the foundations so Orrery stays

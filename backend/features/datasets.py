@@ -282,18 +282,41 @@ async def _register(name: str, kind: str, source: str, header: list, rows: list[
     if len(rows) > MAX_ROWS:
         rows = rows[:MAX_ROWS]
     schema = await _workspace_schema(workspace_id)
+    stored_name = (name.strip() or "dataset")[:120]
+    stored_source = (source or "")[:500] or None
     base = _slug(name, prefix="ds_")
     table = base
+    existing_id = None
     async with get_sessionmaker()() as s:
-        n = 2
-        while (await s.execute(select(Dataset).where(Dataset.table_name == table))).scalars().first():
-            table = f"{base}_{n}"
-            n += 1
+        # A file's exact source name inside one workspace is its re-upload identity. Keep the
+        # registry id/table stable instead of adding another catalog entry. Display names alone
+        # are deliberately not identities: distinct files may legitimately share one label.
+        if kind == "file" and stored_source:
+            existing = (await s.execute(
+                select(Dataset).where(
+                    Dataset.db_schema == schema,
+                    Dataset.kind == "file",
+                    Dataset.source == stored_source,
+                ).order_by(Dataset.created_at)
+            )).scalars().first()
+            if existing is not None:
+                existing_id = existing.id
+                table = existing.table_name
+        if existing_id is None:
+            n = 2
+            while (await s.execute(select(Dataset).where(Dataset.table_name == table))).scalars().first():
+                table = f"{base}_{n}"
+                n += 1
     count = await _materialize(table, header, rows, schema=schema)
     async with get_sessionmaker()() as s:
-        row = Dataset(name=(name.strip() or "dataset")[:120], table_name=table, kind=kind,
-                      db_schema=schema, source=(source or "")[:500] or None, row_count=count)
-        s.add(row)
+        row = await s.get(Dataset, existing_id) if existing_id is not None else None
+        if row is None:
+            row = Dataset(name=stored_name, table_name=table, kind=kind,
+                          db_schema=schema, source=stored_source, row_count=count)
+            s.add(row)
+        else:
+            row.name = stored_name
+            row.row_count = count
         await s.commit()
         await s.refresh(row)
         return _dict(row)

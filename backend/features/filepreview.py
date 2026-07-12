@@ -13,7 +13,12 @@ import io
 import shutil
 import subprocess
 import tempfile
+import uuid
 from pathlib import Path
+
+from backend.core import proc
+
+_MAX_CACHED_OFFICE_PDF_BYTES = 8_000_000
 
 _PAGE_CSS = """
 *{box-sizing:border-box} body{background:#1b2030;margin:0;padding:24px 20px 56px;
@@ -37,8 +42,6 @@ th{background:#26314f;color:#fff}
 
 
 def _find_soffice() -> str | None:
-    from backend.core import proc
-
     found = proc.find_executable("soffice") or shutil.which("libreoffice")
     if found:
         return found
@@ -52,7 +55,33 @@ def _find_soffice() -> str | None:
     return None
 
 
-def _office_pdf(name: str, data: bytes) -> bytes | None:
+def office_preview_status() -> dict:
+    """Return a safe live probe result; never expose the executable path."""
+    if _find_soffice():
+        return {
+            "available": True,
+            "engine": "libreoffice",
+            "officePreview": "pdf",
+            "message": "Faithful Office previews are available.",
+        }
+    return {
+        "available": False,
+        "engine": "libreoffice",
+        "officePreview": "html",
+        "message": "LibreOffice is not installed; Office files use the HTML fallback.",
+    }
+
+
+def is_office_file(name: str) -> bool:
+    return Path(name).suffix.lower() in {".pptx", ".docx", ".xlsx", ".xlsm"}
+
+
+def _office_pdf(name: str, data: bytes, *, cache_path: Path | None = None) -> bytes | None:
+    if cache_path is not None and cache_path.is_file():
+        try:
+            return cache_path.read_bytes()
+        except OSError:
+            pass
     soffice = _find_soffice()
     if not soffice:
         return None
@@ -62,7 +91,7 @@ def _office_pdf(name: str, data: bytes) -> bytes | None:
         source = tmp_path / f"input{suffix}"
         source.write_bytes(data)
         try:
-            subprocess.run(
+            proc.run(
                 [
                     soffice,
                     "--headless",
@@ -82,7 +111,23 @@ def _office_pdf(name: str, data: bytes) -> bytes | None:
         except Exception:  # noqa: BLE001
             return None
         pdf = source.with_suffix(".pdf")
-        return pdf.read_bytes() if pdf.is_file() else None
+        if not pdf.is_file():
+            return None
+        converted = pdf.read_bytes()
+        if cache_path is not None and len(converted) <= _MAX_CACHED_OFFICE_PDF_BYTES:
+            cache_path.parent.mkdir(parents=True, exist_ok=True)
+            temporary = cache_path.with_name(f"{cache_path.name}.{uuid.uuid4().hex}.tmp")
+            try:
+                temporary.write_bytes(converted)
+                temporary.replace(cache_path)
+            except OSError:
+                pass
+            finally:
+                try:
+                    temporary.unlink(missing_ok=True)
+                except OSError:
+                    pass
+        return converted
 
 
 def _page(title: str, body: str) -> bytes:
@@ -194,11 +239,17 @@ def _source_html(name: str, data: bytes) -> bytes:
     return _page(name, body)
 
 
-def to_preview(name: str, mime: str, data: bytes) -> tuple[bytes, str]:
+def to_preview(
+    name: str,
+    mime: str,
+    data: bytes,
+    *,
+    cache_path: Path | None = None,
+) -> tuple[bytes, str]:
     """(content, media_type) for inline preview. Office → HTML; everything else served as-is."""
     ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
     if ext in ("pptx", "docx", "xlsx", "xlsm"):
-        pdf = _office_pdf(name, data)
+        pdf = _office_pdf(name, data, cache_path=cache_path)
         if pdf:
             return pdf, "application/pdf"
     try:

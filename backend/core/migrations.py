@@ -86,6 +86,24 @@ _VERSIONED_MIGRATIONS: list[tuple[str, list[str]]] = [
         "CREATE INDEX IF NOT EXISTS ix_conversations_updated_at ON conversations (updated_at DESC)",
         "CREATE INDEX IF NOT EXISTS ix_messages_conversation_created ON messages (conversation_id, created_at)",
     ]),
+    ("0007_collection_owner_backfill", [
+        # Existing project/chat collections have a provable owner through their parent. Backfill
+        # only when every parent agrees; standalone legacy Data/Ontology rows remain NULL and are
+        # intentionally invisible in team mode until an administrator chooses an owner.
+        "UPDATE collections c SET owner_id = owned.owner_id "
+        "FROM ("
+        "  SELECT collection_id, MIN(owner_id) AS owner_id "
+        "  FROM ("
+        "    SELECT collection_id, owner_id FROM conversations "
+        "    WHERE collection_id IS NOT NULL AND owner_id IS NOT NULL "
+        "    UNION ALL "
+        "    SELECT collection_id, owner_id FROM projects "
+        "    WHERE collection_id IS NOT NULL AND owner_id IS NOT NULL"
+        "  ) links "
+        "  GROUP BY collection_id HAVING COUNT(DISTINCT owner_id) = 1"
+        ") owned "
+        "WHERE c.id = owned.collection_id AND c.owner_id IS NULL",
+    ]),
 ]
 
 
@@ -168,6 +186,8 @@ async def run_migrations() -> None:
         await conn.execute(text("ALTER TABLE collections ADD COLUMN IF NOT EXISTS kind VARCHAR(20) NOT NULL DEFAULT 'collection'"))
         await conn.execute(text("ALTER TABLE collections ADD COLUMN IF NOT EXISTS connected BOOLEAN NOT NULL DEFAULT FALSE"))
         await conn.execute(text("ALTER TABLE collections ADD COLUMN IF NOT EXISTS description TEXT"))
+        await conn.execute(text("ALTER TABLE collections ADD COLUMN IF NOT EXISTS owner_id VARCHAR(36)"))
+        await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_collections_owner_id ON collections (owner_id)"))
         await conn.execute(text("ALTER TABLE mcp_servers ADD COLUMN IF NOT EXISTS tools TEXT"))
         # Team mode: chats/projects are private to their owner (null = single-user / legacy)
         await conn.execute(text("ALTER TABLE conversations ADD COLUMN IF NOT EXISTS owner_id VARCHAR(36)"))

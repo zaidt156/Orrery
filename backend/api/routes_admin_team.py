@@ -21,14 +21,17 @@ async def admin_status() -> dict:
 
 @router.post("/admin/token")
 async def admin_set_token(body: AdminToken) -> dict:
+    if await team.team_mode():
+        await _require_admin_access()
     if not admin.set_admin_token(body.token, body.current):
         raise HTTPException(status_code=403, detail="Could not set token (wrong current token, or empty).")
     return {"ok": True}
 
 @router.put("/admin/features")
 async def admin_set_features(body: AdminFlags) -> dict:
-    # In team mode an admin *user* is authorized by their role; otherwise fall back to the token.
-    if await team.is_admin():
+    # Team mode is role-authorized. Never let the legacy solo-admin token elevate a member.
+    if await team.team_mode():
+        await _require_admin_access()
         await admin.apply_flags(body.flags)
     elif not await admin.set_flags(body.flags, body.token):
         raise HTTPException(status_code=403, detail="Admin token required to change features.")
