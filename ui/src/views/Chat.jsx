@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import {
   Check,
   ChevronLeft,
@@ -21,6 +21,13 @@ import { AttachIcon, SendIcon } from "../components/icons.jsx";
 import Markdown from "../components/Markdown.jsx";
 import { isCodeImagePrompt } from "../lib/chatCommands.js";
 import { copyTextResult } from "../lib/clipboard.js";
+import {
+  appendDeltaToThread,
+  createClientMessage,
+  ensureStreamingAssistant,
+  messageKey,
+  messageRowPropsEqual,
+} from "../lib/chatThread.js";
 import { previewFrameSandbox, previewNotice } from "../lib/officePreview.js";
 import {
   getModels, listCollections, listConversations, getConversation, createConversation,
@@ -30,7 +37,7 @@ import {
   getDefaults, readFileAsAttachment, getAttachmentText, activateMessageVersion,
 } from "../lib/api.js";
 import {
-  EXPORT_FORMATS, requestedFileFormats, precedingUserText, isFileFailureNote,
+  EXPORT_FORMATS, requestedFileFormats, isFileFailureNote,
   extractHtml, stripDocSpec, specFormats, extractSvgs,
 } from "./chatHelpers.jsx";
 import {
@@ -134,6 +141,7 @@ export default function Chat() {
   const activeIdRef = useRef(null);
   const fileRef = useRef(null);
   const composerRef = useRef(null);
+  const messageActionsRef = useRef({});
   const [attachments, setAttachments] = useState([]);
   const [useData, setUseData] = useState(false);
   const [researchMode, setResearchMode] = useState(false);
@@ -431,13 +439,15 @@ export default function Chat() {
     const ctrl = new AbortController();
     abortRef.current = ctrl;
     const isActive = () => activeIdRef.current === cid;
-    if (isActive()) setMessages((p) => [...p, { role: "assistant", content: "", streaming: true }]);
+    if (isActive()) {
+      setMessages((p) => [...p, createClientMessage({ role: "assistant", content: "", streaming: true })]);
+    }
     const setLast = (patch) => {
       if (!isActive()) return;
       setMessages((p) => {
         const a = [...p];
         if (!a.length || a[a.length - 1].role !== "assistant" || !a[a.length - 1].streaming) {
-          a.push({ role: "assistant", content: "", streaming: true });
+          a.push(createClientMessage({ role: "assistant", content: "", streaming: true }));
         }
         a[a.length - 1] = { ...a[a.length - 1], ...patch };
         return a;
@@ -606,7 +616,7 @@ export default function Chat() {
         return at >= 0 ? p.slice(0, at) : p;
       });
     }
-    setMessages((p) => [...p, { role: "user", content, attachments: atts }]);
+    setMessages((p) => [...p, createClientMessage({ role: "user", content, attachments: atts })]);
     await runStream(cid, (onEvent, signal) =>
       codeImage
         ? streamCodeImage(cid, content, onEvent, signal)
@@ -747,6 +757,46 @@ export default function Chat() {
   const noKey = !!model && !current;
   const prefix = model.includes("/") ? model.split("/")[0] : "";
   const provider = PROVIDER_NAME[prefix] || "this provider";
+
+  Object.assign(messageActionsRef.current, {
+    copy,
+    editPrompt,
+    fileIcon,
+    openAttachment,
+    openFilePreview,
+    openGeneratedPreview,
+    openHtmlPreview,
+    openSvgPreview,
+    regen,
+    resubmitPrompt,
+    rewritePrompt,
+    setBanner,
+    setEvalFor,
+    switchVersion,
+  });
+
+  let nearestUserMessage = null;
+  const messageRows = messages.map((message, index) => {
+    const precedingPrompt = nearestUserMessage?.content || "";
+    const lastPrompt = nearestUserMessage;
+    if (message.role === "user") nearestUserMessage = message;
+    const copyPrefix = message.role === "user" ? "p" : "r";
+    return (
+      <ChatMessageRow
+        key={messageKey(message, index)}
+        message={message}
+        index={index}
+        isLast={index === messages.length - 1}
+        sending={sending}
+        copied={copiedKey === `${copyPrefix}${index}`}
+        activeId={activeId}
+        activeTitle={title}
+        precedingPrompt={precedingPrompt}
+        lastPrompt={lastPrompt}
+        actions={messageActionsRef}
+      />
+    );
+  });
 
   return (
     <section className="view">
@@ -896,184 +946,7 @@ export default function Chat() {
               <div className="constellation">✦ &nbsp; · &nbsp; ✦ &nbsp;· &nbsp;✦</div>
             </div>
           )}
-          {messages.map((m, i) => {
-            // attachments: fresh sends carry full content; reloaded messages carry metadata in artifacts
-            const atts = m.role === "user"
-              ? (m.attachments?.length
-                ? m.attachments
-                : (m.artifacts || []).filter((a) => a.kind === "attachment").map((a) => ({ name: a.name, kind: a.att || "file", mime: a.mime, file_id: a.file_id })))
-              : [];
-            const promptText = (m.content || "").replace(/\n*📎 .*$/s, "");  // strip legacy baked-in note
-            return m.role === "user" ? (
-              <div className="msg user" key={i}>
-                {promptText && <div className="prompt-text"><Markdown plain>{promptText}</Markdown></div>}
-                {atts.length > 0 && (
-                  <div className="msg-attach">
-                    {atts.map((a, k) =>
-                      a.kind === "image" && a.content
-                        ? (
-                          <figure key={k} className="msg-thumb-fig" onClick={() => openAttachment(a)} title="Click to view full size">
-                            <img src={a.content} alt={a.name} className="msg-thumb" />
-                            <figcaption>{a.name}</figcaption>
-                          </figure>
-                        )
-                        : a.kind === "image" && a.file_id
-                        ? <LazyAttachmentImg key={k} fileId={a.file_id} name={a.name} onClick={() => openAttachment(a)} />
-                        : (
-                          <button key={k} className="attach-chip" onClick={() => openAttachment(a)} title="Click to see what's inside">
-                            {fileIcon(a.kind)} {a.name}
-                          </button>
-                        )
-                    )}
-                  </div>
-                )}
-                <div className="prompt-actions">
-                  <VersionSwitch m={m} disabled={sending} onSwitch={switchVersion} />
-                  <button type="button" title="Copy prompt" aria-label="Copy prompt" className={copiedKey === `p${i}` ? "copied-pop" : ""} onClick={(e) => copy(promptText || "", `p${i}`, e)}>
-                    {copiedKey === `p${i}` ? <Check /> : <Copy />}
-                  </button>
-                  <button title="Edit prompt" aria-label="Edit prompt" onClick={() => editPrompt(promptText)}>
-                    <Pencil />
-                  </button>
-                  <button
-                    title="Resubmit prompt"
-                    aria-label="Resubmit prompt"
-                    disabled={sending}
-                    onClick={() => resubmitPrompt(m)}
-                  >
-                    <Repeat2 />
-                  </button>
-                  <button
-                    title="Rewrite prompt"
-                    aria-label="Rewrite prompt"
-                    disabled={sending || !m.content?.trim()}
-                    onClick={() => rewritePrompt(m.content)}
-                  >
-                    <WandSparkles />
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className={`msg ai${m.error ? " err" : ""}`} key={i}>
-                <div className="who">
-                  Orrery
-                  {tokenLabel(m) && <span className="token-chip" title="Exact for API models; estimated otherwise">{tokenLabel(m)}</span>}
-                </div>
-                {(() => {
-                  const derived = deriveAiView(m);
-                  const { thinking: inlineThinking, body, svgs, cleaned } = derived;
-                  const rawThinking = m.thinking || inlineThinking;
-                  const svgTitle = convos.find((c) => c.id === activeId)?.title;
-                  return (
-                    <>
-                      {m.streaming && !body && <ThinkingPulse />}
-                      {(m.trace?.length || m.summary || m.outer || m.sources?.length || rawThinking) && (
-                        <ReasoningPanel outer={m.outer} trace={m.trace} thinking={rawThinking} summary={m.summary} sources={m.sources} streaming={m.streaming} />
-                      )}
-                      <div className="ai-text">
-                        {m.streaming
-                          ? (body ? <div className="stream-live">{body}</div> : null)
-                          : (cleaned ? <Markdown>{cleaned}</Markdown> : null)}
-                        {m.streaming && body && <span className="caret" />}
-                      </div>
-                      {svgs.map((svg, si) => (
-                        <InlineSvg
-                          key={si}
-                          svg={svg}
-                          onPreview={() => openSvgPreview(svg, svgTitle)}
-                          onError={(e) => setBanner(String(e.message || e))}
-                        />
-                      ))}
-                    </>
-                  );
-                })()}
-                {m.artifacts?.map((artifact, artifactIndex) => (
-                  artifact.kind === "file" ? (
-                    <GeneratedFileCard
-                      key={`${artifact.id}-${artifactIndex}`}
-                      file={artifact}
-                      onPreview={() => openGeneratedPreview(artifact)}
-                      onDownload={() => downloadGeneratedFile(artifact.id, artifact.name).catch((e) => setBanner(String(e.message || e)))}
-                    />
-                  ) : (
-                    <CodeImageArtifact
-                      key={`${artifact.name}-${artifactIndex}`}
-                      artifact={artifact}
-                      onPreview={(svg) => openSvgPreview(svg, convos.find((c) => c.id === activeId)?.title)}
-                      onError={(e) => setBanner(String(e.message || e))}
-                    />
-                  )
-                ))}
-                {m.artifacts?.filter((a) => a.kind === "file").length > 1 && (
-                  <button
-                    className="file-downloadall"
-                    onClick={() => m.artifacts.filter((a) => a.kind === "file").forEach((a) =>
-                      downloadGeneratedFile(a.id, a.name).catch((e) => setBanner(String(e.message || e))))}
-                  >
-                    <Download /> Download all
-                  </button>
-                )}
-                {!m.streaming && !m.error && (
-                  <div className="msg-actions">
-                    <VersionSwitch m={m} disabled={sending} onSwitch={switchVersion} />
-                    <button type="button" title="Copy reply" aria-label="Copy reply" className={copiedKey === `r${i}` ? "copied-pop" : ""} onClick={(e) => copy(m.content, `r${i}`, e)}>
-                      {copiedKey === `r${i}` ? <Check /> : <Copy />}
-                    </button>
-                    {extractHtml(m.content) && (
-                      <button
-                        title="Open the HTML in a live preview"
-                        aria-label="Preview HTML"
-                        onClick={() => openHtmlPreview(extractHtml(m.content), convos.find((c) => c.id === activeId)?.title)}
-                      >
-                        <Eye />
-                      </button>
-                    )}
-                    {i === messages.length - 1 && !sending && (
-                      <button title="Regenerate reply" aria-label="Regenerate reply" onClick={regen}>
-                        <RefreshCw />
-                      </button>
-                    )}
-                    {i === messages.length - 1 && !sending && (
-                      <button
-                        title="Resubmit last prompt"
-                        aria-label="Resubmit last prompt"
-                        onClick={() => {
-                          const lastPrompt = [...messages].slice(0, i).reverse().find((x) => x.role === "user");
-                          if (lastPrompt) resubmitPrompt(lastPrompt);
-                        }}
-                      >
-                        <Repeat2 />
-                      </button>
-                    )}
-                    {m.id && !sending && (
-                      <button
-                        title="Evaluate answers — compare candidates from other models and pick the best"
-                        aria-label="Evaluate answers"
-                        onClick={() => setEvalFor({ messageId: m.id, content: m.content })}
-                      >
-                        <Scale />
-                      </button>
-                    )}
-                  </div>
-                )}
-                {m.id && !m.streaming && !m.error && (() => {
-                  if (m.artifacts?.some((artifact) => artifact.kind === "file")) return null;
-                  if (isFileFailureNote(m.content)) return null; // no phantom export on a failed/refused file
-                  const formats = requestedFileFormats(precedingUserText(messages, i));
-                  const shown = formats.length ? formats : specFormats(m.content);
-                  if (!shown.length) return null;
-                  const previewTitle = convos.find((c) => c.id === activeId)?.title;
-                  return (
-                    <ReplyFiles
-                      formats={shown}
-                      onPreview={(format) => openFilePreview(m.id, format, previewTitle)}
-                      onDownload={(format) => downloadMessageExport(activeId, m.id, format).catch((e) => setBanner(String(e.message || e)))}
-                    />
-                  );
-                })()}
-              </div>
-            );
-          })}
+          {messageRows}
         </div>
 
         <div className="composer">
@@ -1192,6 +1065,252 @@ export default function Chat() {
   );
 }
 
+
+const ChatMessageRow = memo(function ChatMessageRow(props) {
+  return props.message.role === "user"
+    ? <UserMessageRow {...props} />
+    : <AssistantMessageRow {...props} />;
+}, messageRowPropsEqual);
+
+
+function UserMessageRow({ message, index, sending, copied, actions }) {
+  const current = actions.current;
+  const attachments = message.attachments?.length
+    ? message.attachments
+    : (message.artifacts || [])
+      .filter((artifact) => artifact.kind === "attachment")
+      .map((artifact) => ({
+        name: artifact.name,
+        kind: artifact.att || "file",
+        mime: artifact.mime,
+        file_id: artifact.file_id,
+      }));
+  const promptText = (message.content || "").replace(/\n*📎 .*$/s, "");
+  const copyKey = `p${index}`;
+
+  return (
+    <div className="msg user">
+      {promptText && <div className="prompt-text"><Markdown plain>{promptText}</Markdown></div>}
+      {attachments.length > 0 && (
+        <div className="msg-attach">
+          {attachments.map((attachment, attachmentIndex) => (
+            attachment.kind === "image" && attachment.content
+              ? (
+                <figure
+                  key={attachmentIndex}
+                  className="msg-thumb-fig"
+                  onClick={() => current.openAttachment(attachment)}
+                  title="Click to view full size"
+                >
+                  <img src={attachment.content} alt={attachment.name} className="msg-thumb" />
+                  <figcaption>{attachment.name}</figcaption>
+                </figure>
+              )
+              : attachment.kind === "image" && attachment.file_id
+                ? (
+                  <LazyAttachmentImg
+                    key={attachmentIndex}
+                    fileId={attachment.file_id}
+                    name={attachment.name}
+                    onClick={() => current.openAttachment(attachment)}
+                  />
+                )
+                : (
+                  <button
+                    key={attachmentIndex}
+                    className="attach-chip"
+                    onClick={() => current.openAttachment(attachment)}
+                    title="Click to see what's inside"
+                  >
+                    {current.fileIcon(attachment.kind)} {attachment.name}
+                  </button>
+                )
+          ))}
+        </div>
+      )}
+      <div className="prompt-actions">
+        <VersionSwitch m={message} disabled={sending} onSwitch={current.switchVersion} />
+        <button
+          type="button"
+          title="Copy prompt"
+          aria-label="Copy prompt"
+          className={copied ? "copied-pop" : ""}
+          onClick={(event) => current.copy(promptText || "", copyKey, event)}
+        >
+          {copied ? <Check /> : <Copy />}
+        </button>
+        <button title="Edit prompt" aria-label="Edit prompt" onClick={() => current.editPrompt(promptText)}>
+          <Pencil />
+        </button>
+        <button
+          title="Resubmit prompt"
+          aria-label="Resubmit prompt"
+          disabled={sending}
+          onClick={() => current.resubmitPrompt(message)}
+        >
+          <Repeat2 />
+        </button>
+        <button
+          title="Rewrite prompt"
+          aria-label="Rewrite prompt"
+          disabled={sending || !message.content?.trim()}
+          onClick={() => current.rewritePrompt(message.content)}
+        >
+          <WandSparkles />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+
+function AssistantMessageRow({
+  message,
+  index,
+  isLast,
+  sending,
+  copied,
+  activeId,
+  activeTitle,
+  precedingPrompt,
+  lastPrompt,
+  actions,
+}) {
+  const current = actions.current;
+  const { thinking: inlineThinking, body, svgs, cleaned } = deriveAiView(message);
+  const rawThinking = message.thinking || inlineThinking;
+  const copyKey = `r${index}`;
+  const fileArtifacts = (message.artifacts || []).filter((artifact) => artifact.kind === "file");
+
+  return (
+    <div className={`msg ai${message.error ? " err" : ""}`}>
+      <div className="who">
+        Orrery
+        {tokenLabel(message) && (
+          <span className="token-chip" title="Exact for API models; estimated otherwise">
+            {tokenLabel(message)}
+          </span>
+        )}
+      </div>
+      {message.streaming && !body && <ThinkingPulse />}
+      {(message.trace?.length || message.summary || message.outer || message.sources?.length || rawThinking) && (
+        <ReasoningPanel
+          outer={message.outer}
+          trace={message.trace}
+          thinking={rawThinking}
+          summary={message.summary}
+          sources={message.sources}
+          streaming={message.streaming}
+        />
+      )}
+      <div className="ai-text">
+        {message.streaming
+          ? (body ? <div className="stream-live">{body}</div> : null)
+          : (cleaned ? <Markdown>{cleaned}</Markdown> : null)}
+        {message.streaming && body && <span className="caret" />}
+      </div>
+      {svgs.map((svg, svgIndex) => (
+        <InlineSvg
+          key={svgIndex}
+          svg={svg}
+          onPreview={() => current.openSvgPreview(svg, activeTitle)}
+          onError={(error) => current.setBanner(String(error.message || error))}
+        />
+      ))}
+      {message.artifacts?.map((artifact, artifactIndex) => (
+        artifact.kind === "file" ? (
+          <GeneratedFileCard
+            key={`${artifact.id}-${artifactIndex}`}
+            file={artifact}
+            onPreview={() => current.openGeneratedPreview(artifact)}
+            onDownload={() => downloadGeneratedFile(artifact.id, artifact.name)
+              .catch((error) => current.setBanner(String(error.message || error)))}
+          />
+        ) : (
+          <CodeImageArtifact
+            key={`${artifact.name}-${artifactIndex}`}
+            artifact={artifact}
+            onPreview={(svg) => current.openSvgPreview(svg, activeTitle)}
+            onError={(error) => current.setBanner(String(error.message || error))}
+          />
+        )
+      ))}
+      {fileArtifacts.length > 1 && (
+        <button
+          className="file-downloadall"
+          onClick={() => fileArtifacts.forEach((artifact) => (
+            downloadGeneratedFile(artifact.id, artifact.name)
+              .catch((error) => current.setBanner(String(error.message || error)))
+          ))}
+        >
+          <Download /> Download all
+        </button>
+      )}
+      {!message.streaming && !message.error && (
+        <div className="msg-actions">
+          <VersionSwitch m={message} disabled={sending} onSwitch={current.switchVersion} />
+          <button
+            type="button"
+            title="Copy reply"
+            aria-label="Copy reply"
+            className={copied ? "copied-pop" : ""}
+            onClick={(event) => current.copy(message.content, copyKey, event)}
+          >
+            {copied ? <Check /> : <Copy />}
+          </button>
+          {extractHtml(message.content) && (
+            <button
+              title="Open the HTML in a live preview"
+              aria-label="Preview HTML"
+              onClick={() => current.openHtmlPreview(extractHtml(message.content), activeTitle)}
+            >
+              <Eye />
+            </button>
+          )}
+          {isLast && !sending && (
+            <button title="Regenerate reply" aria-label="Regenerate reply" onClick={current.regen}>
+              <RefreshCw />
+            </button>
+          )}
+          {isLast && !sending && (
+            <button
+              title="Resubmit last prompt"
+              aria-label="Resubmit last prompt"
+              onClick={() => { if (lastPrompt) current.resubmitPrompt(lastPrompt); }}
+            >
+              <Repeat2 />
+            </button>
+          )}
+          {message.id && !sending && (
+            <button
+              title="Evaluate answers — compare candidates from other models and pick the best"
+              aria-label="Evaluate answers"
+              onClick={() => current.setEvalFor({ messageId: message.id, content: message.content })}
+            >
+              <Scale />
+            </button>
+          )}
+        </div>
+      )}
+      {message.id && !message.streaming && !message.error && (() => {
+        if (fileArtifacts.length) return null;
+        if (isFileFailureNote(message.content)) return null;
+        const formats = requestedFileFormats(precedingPrompt);
+        const shown = formats.length ? formats : specFormats(message.content);
+        if (!shown.length) return null;
+        return (
+          <ReplyFiles
+            formats={shown}
+            onPreview={(format) => current.openFilePreview(message.id, format, activeTitle)}
+            onDownload={(format) => downloadMessageExport(activeId, message.id, format)
+              .catch((error) => current.setBanner(String(error.message || error)))}
+          />
+        );
+      })()}
+    </div>
+  );
+}
+
 // Token count for an assistant message: exact when the provider reported usage (API/custom),
 // otherwise a live ~estimate from the streamed text (~4 chars/token) so every model shows one.
 function tokenLabel(m) {
@@ -1203,14 +1322,6 @@ function tokenLabel(m) {
   const chars = (m.content || "").length;
   if (!chars) return null;
   return `≈${Math.max(1, Math.round(chars / 4))} tokens`;
-}
-
-function ensureStreamingAssistant(messages) {
-  const a = [...messages];
-  if (!a.length || a[a.length - 1].role !== "assistant" || !a[a.length - 1].streaming) {
-    a.push({ role: "assistant", content: "", streaming: true });
-  }
-  return a;
 }
 
 // Per-message view derivation (strip docspec, split think, extract SVGs). Completed messages
@@ -1229,12 +1340,7 @@ function deriveAiView(m) {
 
 // Append a streamed delta to the active assistant message.
 function appendDelta(setMessages, delta) {
-  setMessages((p) => {
-    const a = ensureStreamingAssistant(p);
-    const last = a[a.length - 1];
-    a[a.length - 1] = { ...last, content: (last.content || "") + delta };
-    return a;
-  });
+  setMessages((messages) => appendDeltaToThread(messages, delta));
 }
 
 // Accumulate a progress step into the last assistant message's activity timeline.
