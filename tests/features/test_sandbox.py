@@ -1,6 +1,8 @@
 """Sandbox readiness and containment invariants."""
 from types import SimpleNamespace
 
+import pytest
+
 from backend.features import sandbox
 
 
@@ -93,11 +95,38 @@ def test_run_code_applies_the_locked_down_container_contract(monkeypatch):
     }
 
 
-def test_collect_outputs_returns_at_most_twelve_files(tmp_path):
+def test_collect_outputs_rejects_more_than_twelve_files(tmp_path):
     for index in range(15):
         (tmp_path / f"result-{index:02d}.txt").write_text(str(index), encoding="utf-8")
 
+    with pytest.raises(sandbox.SandboxError, match="too many"):
+        sandbox._collect_outputs(tmp_path)
+
+
+def test_collect_outputs_preserves_safe_relative_paths(tmp_path):
+    first = tmp_path / "app" / "assets" / "logo.svg"
+    second = tmp_path / "app" / "icons" / "logo.svg"
+    first.parent.mkdir(parents=True)
+    second.parent.mkdir(parents=True)
+    first.write_bytes(b"first")
+    second.write_bytes(b"second")
+
     outputs = sandbox._collect_outputs(tmp_path)
 
-    assert len(outputs) == 12
-    assert [item.name for item in outputs] == [f"result-{index:02d}.txt" for index in range(12)]
+    assert [(item.name, item.data) for item in outputs] == [
+        ("app/assets/logo.svg", b"first"),
+        ("app/icons/logo.svg", b"second"),
+    ]
+
+
+def test_collect_outputs_rejects_symbolic_links(tmp_path):
+    target = tmp_path / "target.txt"
+    target.write_text("do not collect through a link", encoding="utf-8")
+    link = tmp_path / "linked.txt"
+    try:
+        link.symlink_to(target)
+    except OSError:
+        pytest.skip("Symbolic links are unavailable on this platform")
+
+    with pytest.raises(sandbox.SandboxError, match="symbolic link"):
+        sandbox._collect_outputs(tmp_path)

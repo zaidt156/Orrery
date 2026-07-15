@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import stat
 import subprocess
 import tempfile
 import time
@@ -100,18 +101,47 @@ def image_ready(*, refresh: bool = False) -> bool:
 
 
 def _collect_outputs(out_dir: Path) -> list[SandboxFile]:
+    """Collect regular files without following model-created links or truncating a bundle."""
+    root = out_dir.resolve(strict=True)
     files: list[SandboxFile] = []
     total = 0
-    for path in sorted(out_dir.rglob("*")):
-        if not path.is_file():
-            continue
-        size = path.stat().st_size
-        if size == 0 or size > _MAX_FILE_BYTES:
-            continue
-        if len(files) >= _MAX_OUTPUT_FILES or total + size > _MAX_TOTAL_OUTPUT_BYTES:
-            break
-        files.append(SandboxFile(name=path.name, data=path.read_bytes()))
-        total += size
+
+    def is_link_like(path: Path) -> bool:
+        is_junction = getattr(os.path, "isjunction", lambda _path: False)
+        return path.is_symlink() or bool(is_junction(path))
+
+    for current, directories, names in os.walk(root, topdown=True, followlinks=False):
+        current_path = Path(current)
+        directories.sort()
+        names.sort()
+        for directory in list(directories):
+            if is_link_like(current_path / directory):
+                raise SandboxError("Sandbox output contains a symbolic link or junction.")
+
+        for name in names:
+            path = current_path / name
+            if is_link_like(path):
+                raise SandboxError("Sandbox output contains a symbolic link or junction.")
+            try:
+                metadata = path.lstat()
+                resolved = path.resolve(strict=True)
+            except OSError as exc:
+                raise SandboxError("Sandbox output could not be read safely.") from exc
+            if not stat.S_ISREG(metadata.st_mode):
+                continue
+            if not resolved.is_relative_to(root):
+                raise SandboxError("Sandbox output escaped the output directory.")
+            size = metadata.st_size
+            if size == 0:
+                continue
+            if size > _MAX_FILE_BYTES:
+                raise SandboxError("Sandbox output contains a file over the size limit.")
+            if len(files) >= _MAX_OUTPUT_FILES:
+                raise SandboxError("Sandbox output contains too many files.")
+            if total + size > _MAX_TOTAL_OUTPUT_BYTES:
+                raise SandboxError("Sandbox output exceeds the total size limit.")
+            files.append(SandboxFile(name=path.relative_to(root).as_posix(), data=path.read_bytes()))
+            total += size
     return files
 
 
@@ -211,12 +241,17 @@ def _run_entry(entry_content: str, entry_name: str, argv: list[str]) -> SandboxR
         shutil.rmtree(workdir, ignore_errors=True)
         raise SandboxError("Docker was not found. Is Docker Desktop installed and running?") from exc
 
+    output_error = ""
     try:
         files = _collect_outputs(out_dir)
+    except SandboxError as exc:
+        files = []
+        output_error = str(exc)
+        stderr = (stderr.rstrip() + "\n" + output_error).strip()[:_MAX_LOG_CHARS]
     finally:
         shutil.rmtree(workdir, ignore_errors=True)
 
-    ok = exit_code == 0 and not timed_out
+    ok = exit_code == 0 and not timed_out and not output_error
     return SandboxResult(
         ok=ok,
         stdout=stdout,

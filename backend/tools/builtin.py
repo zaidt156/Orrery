@@ -176,7 +176,9 @@ class FileGenerateTool(Tool):
                 result = event["result"]
         if not result or not result.get("ok"):
             raise RuntimeError((result or {}).get("error") or "File generation did not produce an approved file.")
-        artifacts = _store_sandbox_files(result.get("files") or [])
+        from backend.features import files as file_library
+
+        artifacts = await asyncio.to_thread(file_library.store_filegen_output, result)
         if not artifacts:
             raise RuntimeError("Generated files could not be stored.")
         return {

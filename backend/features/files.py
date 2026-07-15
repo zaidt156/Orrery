@@ -8,15 +8,20 @@ the serving route stays self-describing.
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import logging
+import mimetypes
 import re
+import shutil
 import time
 import uuid
-from pathlib import Path
+import zipfile
+from pathlib import Path, PurePosixPath
 
 from backend.core.config import settings
 from backend.core.paths import user_data_dir
+from backend.features.sandbox import SandboxFile
 
 log = logging.getLogger("orrery.files")
 
@@ -24,11 +29,132 @@ _DIR = user_data_dir() / "tmp" / "generated"
 _SAFE = re.compile(r"[^A-Za-z0-9._-]+")
 MAX_FILE_BYTES = 25_000_000
 _MAX_OFFICE_PREVIEW_CACHE_ITEMS = 40
+MAX_APP_BUNDLE_FILES = 12
+MAX_APP_BUNDLE_BYTES = 20_000_000
+_WINDOWS_DEVICE_NAMES = {
+    "con", "prn", "aux", "nul",
+    *(f"com{index}" for index in range(1, 10)),
+    *(f"lpt{index}" for index in range(1, 10)),
+}
+
+
+_INVALID_APP_PATH_CHARS = re.compile(r'[<>:"|?*\x00-\x1f]')
 
 
 def _safe_name(name: str) -> str:
     cleaned = _SAFE.sub("_", (name or "file").strip()).strip("._") or "file"
     return cleaned[:120]
+
+
+def safe_app_member_path(name: str) -> PurePosixPath:
+    """Revalidate model-produced paths at the host write boundary."""
+    if not name or len(name) > 240 or "\\" in name or "\x00" in name:
+        raise ValueError("App bundle contains an unsafe file path.")
+    path = PurePosixPath(name)
+    if path.is_absolute() or any(part in {"", ".", ".."} for part in path.parts):
+        raise ValueError("App bundle contains an unsafe file path.")
+    for part in path.parts:
+        stem = part.split(".", 1)[0].lower()
+        if (
+            _INVALID_APP_PATH_CHARS.search(part)
+            or part.endswith((" ", "."))
+            or stem in _WINDOWS_DEVICE_NAMES
+        ):
+            raise ValueError("App bundle contains an unsafe file path.")
+    return path
+
+
+def _app_zip(members: list[tuple[PurePosixPath, bytes]]) -> bytes:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6) as archive:
+        for path, data in sorted(members, key=lambda item: item[0].as_posix()):
+            info = zipfile.ZipInfo(path.as_posix(), date_time=(1980, 1, 1, 0, 0, 0))
+            info.compress_type = zipfile.ZIP_DEFLATED
+            info.external_attr = 0o100644 << 16
+            archive.writestr(info, data)
+    return buffer.getvalue()
+
+
+def store_app_bundle(name: str, files: list[SandboxFile]) -> dict:
+    """Persist one approved app as a ZIP plus a private extracted preview directory."""
+    if not files or len(files) > MAX_APP_BUNDLE_FILES:
+        raise ValueError("App bundle has an invalid number of files.")
+
+    parsed = [(safe_app_member_path(item.name), bytes(item.data)) for item in files]
+    folded = [path.as_posix().casefold() for path, _data in parsed]
+    if len(set(folded)) != len(folded):
+        raise ValueError("App bundle contains duplicate file paths.")
+    if "index.html" not in {path.as_posix() for path, _data in parsed}:
+        raise ValueError("App bundle is missing index.html.")
+    total_bytes = sum(len(data) for _path, data in parsed)
+    if total_bytes <= 0 or total_bytes > MAX_APP_BUNDLE_BYTES:
+        raise ValueError("App bundle exceeds the size limit.")
+
+    archive = _app_zip(parsed)
+    if len(archive) > MAX_FILE_BYTES:
+        raise ValueError("App bundle ZIP exceeds the size limit.")
+
+    _DIR.mkdir(parents=True, exist_ok=True)
+    app_root = _DIR / "apps"
+    app_root.mkdir(exist_ok=True)
+    file_id = uuid.uuid4().hex
+    staging = app_root / f".{file_id}.tmp"
+    preview = app_root / file_id
+    temp_blob = _DIR / f".{file_id}.blob.tmp"
+    blob = _DIR / file_id
+    temp_meta = _DIR / f".{file_id}.meta.tmp"
+    meta_path = _DIR / f"{file_id}.meta"
+    safe_name = _safe_name(name or "small-app.zip")
+    if not safe_name.lower().endswith(".zip"):
+        safe_name = f"{safe_name[:116]}.zip"
+    meta = {
+        "id": file_id,
+        "name": safe_name,
+        "mime": "application/zip",
+        "size": len(archive),
+        "artifact_type": "app_bundle",
+        "entrypoint": "index.html",
+        "member_count": len(parsed),
+    }
+
+    try:
+        staging.mkdir()
+        for member, data in parsed:
+            target = staging.joinpath(*member.parts)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(data)
+        temp_blob.write_bytes(archive)
+        temp_meta.write_text(json.dumps(meta), encoding="utf-8")
+        staging.replace(preview)
+        temp_blob.replace(blob)
+        temp_meta.replace(meta_path)
+    except Exception:
+        for partial in (temp_blob, blob, temp_meta, meta_path):
+            partial.unlink(missing_ok=True)
+        shutil.rmtree(staging, ignore_errors=True)
+        if preview.is_symlink():
+            preview.unlink(missing_ok=True)
+        else:
+            shutil.rmtree(preview, ignore_errors=True)
+        raise
+    return meta
+
+
+def store_filegen_output(result: dict) -> list[dict]:
+    """Store an approved file-generation result using its declared output kind."""
+    generated = result.get("files") or []
+    if result.get("kind") == "app":
+        stored = store_app_bundle(result.get("bundle_name") or "small-app.zip", generated)
+        return [{"kind": "file", **stored}]
+
+    produced: list[dict] = []
+    for item in generated:
+        mime = mimetypes.guess_type(item.name)[0] or "application/octet-stream"
+        try:
+            produced.append({"kind": "file", **store(item.name, mime, item.data)})
+        except ValueError:
+            continue
+    return produced
 
 
 def store(name: str, mime: str, data: bytes) -> dict:
@@ -90,23 +216,92 @@ def office_preview_cache_path(file_id: str, data: bytes) -> Path:
 
 
 def cleanup(ttl_hours: int | None = None) -> int:
-    """Delete generated files (and their .meta) older than the TTL so the dir can't grow forever.
-    Best-effort: returns the count removed; never raises."""
+    """Delete expired generated artifacts without leaving partial app bundles."""
     hours = settings.generated_file_ttl_hours if ttl_hours is None else ttl_hours
     if hours <= 0 or not _DIR.is_dir():
         return 0
     cutoff = time.time() - hours * 3600
     removed = 0
+    app_root = _DIR / "apps"
+    app_ids: set[str] = set()
+
+    def remove_path(path: Path) -> int:
+        try:
+            if path.is_symlink() or path.is_file():
+                path.unlink(missing_ok=True)
+                return 1
+            if path.is_dir():
+                shutil.rmtree(path)
+                return 1
+        except OSError:
+            return 0
+        return 0
+
+    if app_root.is_dir():
+        try:
+            for app_path in app_root.iterdir():
+                if re.fullmatch(r"[0-9a-f]{32}", app_path.name):
+                    app_ids.add(app_path.name)
+                    continue
+                if re.fullmatch(r"\.[0-9a-f]{32}\.tmp", app_path.name):
+                    try:
+                        if app_path.stat().st_mtime < cutoff:
+                            removed += remove_path(app_path)
+                    except OSError:
+                        continue
+        except OSError:
+            pass
+
+    try:
+        for meta_path in _DIR.glob("*.meta"):
+            try:
+                meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            artifact_id = str(meta.get("id") or "")
+            if meta.get("artifact_type") == "app_bundle" and re.fullmatch(r"[0-9a-f]{32}", artifact_id):
+                app_ids.add(artifact_id)
+    except OSError:
+        pass
+
+    managed_names = {name for artifact_id in app_ids for name in (artifact_id, f"{artifact_id}.meta")}
+
+    for artifact_id in app_ids:
+        blob = _DIR / artifact_id
+        meta_path = _DIR / f"{artifact_id}.meta"
+        preview = app_root / artifact_id
+        parts = (blob, meta_path, preview)
+        if not all(path.exists() or path.is_symlink() for path in parts):
+            for path in parts:
+                removed += remove_path(path)
+            continue
+        try:
+            expired = min(blob.stat().st_mtime, meta_path.stat().st_mtime) < cutoff
+        except OSError:
+            expired = True
+        if expired:
+            for path in parts:
+                removed += remove_path(path)
+
     try:
         for path in _DIR.iterdir():
+            if path.is_dir():
+                continue
+            if path.name in managed_names:
+                continue
             try:
-                if path.is_file() and path.stat().st_mtime < cutoff:
-                    path.unlink()
-                    removed += 1
+                if path.stat().st_mtime < cutoff:
+                    removed += remove_path(path)
             except OSError:
                 continue
     except OSError:
         return removed
+
+    if app_root.is_dir():
+        try:
+            app_root.rmdir()
+        except OSError:
+            pass
     if removed:
         log.info("cleaned %d expired generated file(s)", removed)
     return removed

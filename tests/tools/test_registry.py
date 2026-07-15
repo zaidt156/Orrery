@@ -100,3 +100,45 @@ def test_duplicate_keys_are_a_bug():
         @register_tool("_test_echo")
         class Duplicate(Tool):  # noqa: N801
             pass
+
+
+@pytest.mark.anyio
+async def test_file_generate_tool_stores_app_as_one_bundle(monkeypatch):
+    from backend.features import filegen, files, sandbox
+
+    async def fake_run(*args, **kwargs):
+        yield {
+            "result": {
+                "ok": True,
+                "kind": "app",
+                "bundle_name": "tiny.zip",
+                "summary": "Built the app.",
+                "files": [sandbox.SandboxFile("index.html", b"<html></html>")],
+                "manifest": [],
+                "sandbox_runs": [],
+            }
+        }
+
+    def fake_store(result):
+        assert result["kind"] == "app"
+        return [{
+            "kind": "file",
+            "id": "b" * 32,
+            "name": "tiny.zip",
+            "mime": "application/zip",
+            "artifact_type": "app_bundle",
+        }]
+
+    monkeypatch.setattr(filegen, "run", fake_run)
+    monkeypatch.setattr(files, "store_filegen_output", fake_store)
+
+    out = await run_tool(
+        "file_generate",
+        {"request": "Build me a small app", "model": "openai/gpt-test"},
+        allowed={"file_generate"},
+    )
+
+    assert out["ok"] is True
+    assert out["files"] == ["tiny.zip"]
+    assert len(out["artifacts"]) == 1
+    assert out["artifacts"][0]["artifact_type"] == "app_bundle"

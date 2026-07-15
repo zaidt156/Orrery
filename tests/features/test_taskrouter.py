@@ -60,3 +60,11 @@ def test_routes_project_workspace_requests():
 
     assert plan.route == "project"
     assert "project" in plan.skills
+
+
+def test_routes_described_small_app_to_sandbox_bundle():
+    plan = taskrouter.plan("Build me a small expense-splitter app")
+
+    assert plan.route == "file"
+    assert plan.output_mode == "file"
+    assert plan.uses_sandbox

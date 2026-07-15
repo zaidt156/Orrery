@@ -863,3 +863,119 @@ async def test_cancel_run_marks_detached_task_canceled(monkeypatch):
 
 async def _collect_async(source):
     return [event async for event in source]
+
+
+@pytest.mark.anyio
+async def test_app_route_stores_one_bundle_artifact_without_docspec(monkeypatch):
+    prompt = "Build me a small expense-splitter app"
+    stored_result = {}
+    outcomes = []
+
+    async def fake_filegen_run(*args, **kwargs):
+        yield stream_events.result({
+            "ok": True,
+            "kind": "app",
+            "bundle_name": "expense-splitter.zip",
+            "summary": "Built the app.",
+            "files": [chat.sandbox.SandboxFile("index.html", b"<html></html>")],
+        })
+
+    def fake_store(result):
+        stored_result.update(result)
+        return [{
+            "kind": "file",
+            "id": "a" * 32,
+            "name": "expense-splitter.zip",
+            "mime": "application/zip",
+            "artifact_type": "app_bundle",
+        }]
+
+    async def fake_persist(*args, **kwargs):
+        return "message-app"
+
+    async def fake_outcome(route_id, outcome, detail=None):
+        outcomes.append(outcome)
+
+    async def forbidden_docspec(*args, **kwargs):
+        raise AssertionError("app requests must not use document fallback")
+        yield
+
+    monkeypatch.setattr(chat.sandbox, "image_ready", lambda: True)
+    monkeypatch.setattr(chat.filegen, "run", fake_filegen_run)
+    monkeypatch.setattr(chat.router.file_library, "store_filegen_output", fake_store)
+    monkeypatch.setattr(chat.persistence, "_persist_assistant", fake_persist)
+    monkeypatch.setattr(chat.route_telemetry, "record_outcome", fake_outcome)
+    monkeypatch.setattr(chat.router, "_deliver_docspec", forbidden_docspec)
+
+    state = chat.router._RouteResult()
+    events = [
+        event
+        async for event in chat.router._route_file(
+            uuid.uuid4(),
+            "openai/gpt-test",
+            prompt,
+            None,
+            "low",
+            None,
+            None,
+            chat.router.taskrouter.plan(prompt),
+            chat.router.ReasoningTrace(),
+            "route-app",
+            state,
+        )
+    ]
+
+    assert stored_result["kind"] == "app"
+    file_events = [event["files"] for event in events if "files" in event]
+    assert len(file_events) == 1
+    assert len(file_events[0]) == 1
+    assert file_events[0][0]["artifact_type"] == "app_bundle"
+    assert state.handled and state.outcome == "sandbox_success"
+    assert outcomes == ["sandbox_success"]
+
+
+@pytest.mark.anyio
+async def test_app_route_validation_failure_never_uses_docspec(monkeypatch):
+    prompt = "Build me a small expense-splitter app"
+    outcomes = []
+
+    async def fake_filegen_run(*args, **kwargs):
+        yield stream_events.result({"ok": False, "error": "Bundle contains an external reference."})
+
+    async def fake_persist(*args, **kwargs):
+        return "message-failed-app"
+
+    async def fake_outcome(route_id, outcome, detail=None):
+        outcomes.append(outcome)
+
+    async def forbidden_docspec(*args, **kwargs):
+        raise AssertionError("app requests must not use document fallback")
+        yield
+
+    monkeypatch.setattr(chat.sandbox, "image_ready", lambda: True)
+    monkeypatch.setattr(chat.filegen, "run", fake_filegen_run)
+    monkeypatch.setattr(chat.persistence, "_persist_assistant", fake_persist)
+    monkeypatch.setattr(chat.route_telemetry, "record_outcome", fake_outcome)
+    monkeypatch.setattr(chat.router, "_deliver_docspec", forbidden_docspec)
+
+    state = chat.router._RouteResult()
+    events = [
+        event
+        async for event in chat.router._route_file(
+            uuid.uuid4(),
+            "openai/gpt-test",
+            prompt,
+            None,
+            "low",
+            None,
+            None,
+            chat.router.taskrouter.plan(prompt),
+            chat.router.ReasoningTrace(),
+            "route-app",
+            state,
+        )
+    ]
+
+    assert any("No app files were saved" in event.get("delta", "") for event in events)
+    assert state.handled and state.outcome == "app_failed"
+    assert outcomes == ["app_failed"]

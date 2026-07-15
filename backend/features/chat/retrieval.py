@@ -63,15 +63,25 @@ async def _gather_rag(
     blocks: list[str] = []
     sources: list[str] = []
     ordered_ids = list(dict.fromkeys(cid for cid in collection_ids if cid))  # dedupe, keep order
-    # Embed the query ONCE and reuse the vector across every collection, instead of re-embedding the
-    # same text per collection (a project chat searches data + project + chat + N ontologies).
-    query_vector: list[float] | None = None
+    # Embed the query ONCE with the default model and reuse that vector across every collection on the
+    # default model, instead of re-embedding the same text per collection (a project chat searches data
+    # + project + chat + N ontologies). Collections still on an older model (legacy English uploads) get
+    # query_vector=None so rag.search embeds the query with THAT collection's model — mixing spaces would
+    # silently break their retrieval.
+    default_model = rag.default_embed_model()
+    try:
+        model_map = await rag.embed_models(ordered_ids)
+    except Exception:  # noqa: BLE001 — no map → treat all as default (one embed, prior behavior)
+        model_map = {}
+    default_vector: list[float] | None = None
     if ordered_ids:
         try:
-            query_vector = await rag.embed_query(query)
+            default_vector = await rag.embed_query(query, default_model)
         except Exception:  # noqa: BLE001 — fall back to per-collection embedding inside rag.search
-            query_vector = None
+            default_vector = None
     for collection_id in ordered_ids:
+        on_default = model_map.get(collection_id, default_model) == default_model
+        query_vector = default_vector if (on_default and default_vector is not None) else None
         try:
             results = await rag.search(collection_id, query, k=settings.rag_top_k, query_vector=query_vector)
         except Exception:  # noqa: BLE001 — a retrieval failure on one collection shouldn't break the chat
