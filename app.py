@@ -117,7 +117,12 @@ def ensure_connection() -> str:
     from backend.core import dockerboot
 
     url = database.resolve_database_url()
-    has_console = bool(sys.stdin) and sys.stdin.isatty()
+    # Electron always starts the packaged backend with --backend-only and no usable prompt. A
+    # console-mode PyInstaller child can still report a hidden TTY on Windows, so isatty() alone
+    # is not enough: treating that hidden console as interactive skips Docker recovery and leaves
+    # the backend to time out against a stopped local database.
+    backend_only = "--backend-only" in sys.argv or os.environ.get("ORRERY_BACKEND_ONLY") == "1"
+    has_console = not backend_only and bool(sys.stdin) and sys.stdin.isatty()
     # Bring the bundled local database up automatically — starting Docker if it's installed but
     # not running — whenever Orrery would actually use it: a fresh install (no URL) OR a returning
     # user whose SAVED URL is that same local DB (the previous code skipped this when a URL existed,
