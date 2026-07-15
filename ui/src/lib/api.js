@@ -233,6 +233,7 @@ export const deleteDashboard = (id) => apiSend(`/api/dashboards/${id}`, "DELETE"
 export const listCollections = () => apiGet("/api/collections");
 export const createCollection = (name) => apiSend("/api/collections", "POST", { name });
 export const deleteCollection = (id) => apiSend(`/api/collections/${id}`, "DELETE");
+export const reindexCollection = (id) => apiSend(`/api/collections/${id}/reindex`, "POST", {});
 export const uploadDocuments = (id, files) => apiSend(`/api/collections/${id}/documents`, "POST", { files });
 
 // Ontologies — reusable knowledge bases the user builds from their own files; "connected" ones are

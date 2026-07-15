@@ -6,17 +6,26 @@ import io
 import logging
 import uuid
 
-from sqlalchemy import func, select, text
+from sqlalchemy import func, select, text, update
 
+from backend.core.config import settings
 from backend.core.database import get_sessionmaker
-from backend.core.models import Chunk, Collection
+from backend.core.models import EMBED_DIM, Chunk, Collection
 from backend.features import team
 
 log = logging.getLogger("orrery.rag")
 
-EMBED_MODEL = "BAAI/bge-small-en-v1.5"  # local, 384-dim, runs on-device
-_embedder = None
+# Multilingual by default (paraphrase-multilingual-MiniLM-L12-v2 covers ~50 languages) and 384-dim,
+# so it drops straight into the existing vector column. The old English-only bge-small model lives
+# on inside already-indexed collections, which are queried with their own recorded model (see search).
+FALLBACK_EMBED_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+_embedders: dict[str, object] = {}  # model name -> fastembed TextEmbedding (one per model, lazy)
 _CURRENT_OWNER = object()
+
+
+def default_embed_model() -> str:
+    """The model NEW collections are built with (configurable; multilingual by default)."""
+    return settings.embed_model or FALLBACK_EMBED_MODEL
 
 
 async def _require_collection_access(
@@ -39,29 +48,74 @@ async def _require_collection_access(
     return owner  # type: ignore[return-value]
 
 
-def _get_embedder():
-    global _embedder
-    if _embedder is None:
+def _model_dim(model_name: str) -> int | None:
+    """Declared dimension of a fastembed model, or None if the name isn't recognized."""
+    from fastembed import TextEmbedding
+
+    for m in TextEmbedding.list_supported_models():
+        if m.get("model") == model_name:
+            return m.get("dim")
+    return None
+
+
+def _get_embedder(model_name: str):
+    emb = _embedders.get(model_name)
+    if emb is None:
         from fastembed import TextEmbedding  # heavy import, deferred to first use
 
-        _embedder = TextEmbedding(model_name=EMBED_MODEL)
-    return _embedder
+        dim = _model_dim(model_name)
+        if dim is not None and dim != EMBED_DIM:
+            # The vector column is fixed at EMBED_DIM; a mismatched model would corrupt every row or
+            # silently break search. Fail loudly instead (conventions: accuracy over assumption).
+            raise ValueError(
+                f"Embedding model {model_name} is {dim}-dim, but the store is {EMBED_DIM}-dim. "
+                f"Choose a {EMBED_DIM}-dim model or migrate the vector column first."
+            )
+        emb = _embedders[model_name] = TextEmbedding(model_name=model_name)
+    return emb
 
 
-def _embed_docs(texts: list[str]) -> list[list[float]]:
-    return [v.tolist() for v in _get_embedder().embed(texts)]
+def _embed_docs(texts: list[str], model_name: str) -> list[list[float]]:
+    return [v.tolist() for v in _get_embedder(model_name).embed(texts)]
 
 
-def _embed_query(q: str) -> list[float]:
-    return list(_get_embedder().query_embed(q))[0].tolist()
+def _embed_query(q: str, model_name: str) -> list[float]:
+    return list(_get_embedder(model_name).query_embed(q))[0].tolist()
 
 
-async def embed_docs(texts: list[str]) -> list[list[float]]:
-    return await asyncio.to_thread(_embed_docs, texts)
+async def embed_docs(texts: list[str], model: str | None = None) -> list[list[float]]:
+    return await asyncio.to_thread(_embed_docs, texts, model or default_embed_model())
 
 
-async def embed_query(q: str) -> list[float]:
-    return await asyncio.to_thread(_embed_query, q)
+async def embed_query(q: str, model: str | None = None) -> list[float]:
+    return await asyncio.to_thread(_embed_query, q, model or default_embed_model())
+
+
+async def collection_embed_model(cid: str) -> str:
+    """The model a collection was built with (falls back to the current default if unknown)."""
+    async with get_sessionmaker()() as s:
+        m = (await s.execute(
+            select(Collection.embed_model).where(Collection.id == uuid.UUID(cid))
+        )).scalar_one_or_none()
+    return m or default_embed_model()
+
+
+async def embed_models(cids: list[str]) -> dict[str, str]:
+    """Map collection id -> its embedding model, so retrieval embeds the query with the right model
+    per collection (a legacy English collection and a new multilingual one both search correctly)."""
+    ids = []
+    for c in cids:
+        try:
+            ids.append(uuid.UUID(c))
+        except (ValueError, TypeError, AttributeError):
+            continue
+    if not ids:
+        return {}
+    async with get_sessionmaker()() as s:
+        rows = (await s.execute(
+            select(Collection.id, Collection.embed_model).where(Collection.id.in_(ids))
+        )).all()
+    return {str(cid): model for cid, model in rows}
 
 
 def _vec(v: list[float]) -> str:
@@ -145,6 +199,8 @@ def chunk_text(body: str, size: int = 900, overlap: int = 150) -> list[str]:
 def _collection_dict(c: Collection, chunks: int) -> dict:
     return {
         "id": str(c.id), "name": c.name, "embed_model": c.embed_model, "chunks": int(chunks or 0),
+        # True when built on an older model than the current default → the UI offers a one-click upgrade.
+        "embed_outdated": bool(c.embed_model and c.embed_model != default_embed_model()),
         "kind": getattr(c, "kind", "collection"), "connected": bool(getattr(c, "connected", False)),
         "description": getattr(c, "description", None),
     }
@@ -175,7 +231,7 @@ async def create_collection(name: str, kind: str = "collection", description: st
     owner = await team.current_owner_id()
     async with get_sessionmaker()() as s:
         c = Collection(
-            name=(name.strip() or "documents"), embed_model=EMBED_MODEL, kind=kind,
+            name=(name.strip() or "documents"), embed_model=default_embed_model(), kind=kind,
             description=(description or None), owner_id=owner,
         )
         s.add(c)
@@ -247,13 +303,14 @@ async def add_documents(
     from sqlalchemy import delete as sa_delete
 
     await _require_collection_access(cid, owner_id=owner_id)
+    model = await collection_embed_model(cid)  # stay on the collection's own model — never mix spaces
     items: list[tuple[str, int, str]] = []
     for f in files:
         for i, ch in enumerate(chunk_text(_extract(f))):
             items.append((f.get("name", "file"), i, ch))
     if not items:
         return 0
-    vecs = await embed_docs([c for _, _, c in items])
+    vecs = await embed_docs([c for _, _, c in items], model=model)
     replaced = {src for src, _, _ in items}
     async with get_sessionmaker()() as s:
         # Re-uploading a source REPLACES it — delete-then-insert in ONE transaction, so duplicates
@@ -368,6 +425,31 @@ async def delete_source(cid: str, source: str) -> int:
         return result.rowcount or 0
 
 
+async def reindex_collection(cid: str) -> int:
+    """Re-embed every chunk with the current default model and record the switch — the opt-in way to
+    upgrade a collection built on the old English-only model to the multilingual default, no re-upload.
+
+    Chunk text is already stored, so nothing is re-read from source files. The whole collection moves
+    to one model at once, so its vector space never ends up mixed."""
+    await _require_collection_access(cid)
+    model = default_embed_model()
+    async with get_sessionmaker()() as s:
+        rows = (await s.execute(
+            select(Chunk.id, Chunk.content)
+            .where(Chunk.collection_id == uuid.UUID(cid))
+            .order_by(Chunk.ordinal)
+        )).all()
+    vecs = await embed_docs([content for _, content in rows], model=model) if rows else []
+    async with get_sessionmaker()() as s:
+        for (chunk_id, _), v in zip(rows, vecs):
+            await s.execute(update(Chunk).where(Chunk.id == chunk_id).values(embedding=v))
+        await s.execute(
+            update(Collection).where(Collection.id == uuid.UUID(cid)).values(embed_model=model)
+        )
+        await s.commit()
+    return len(rows)
+
+
 # Above this cosine distance a chunk is judged unrelated to the question and dropped. Without this
 # gate the vector arm ALWAYS returns k chunks, so files from earlier turns kept leaking into every
 # answer ("why is it reading my Q2 report when I asked about pasta?").
@@ -383,7 +465,9 @@ async def search(cid: str, query: str, k: int = 5, query_vector: list[float] | N
     Pass `query_vector` (from embed_query) to reuse one embedding across several collections in a
     single turn instead of re-embedding the same query per collection."""
     await _require_collection_access(cid)
-    qv = _vec(query_vector if query_vector is not None else await embed_query(query))
+    if query_vector is None:  # embed with THIS collection's model so legacy + new collections both match
+        query_vector = await embed_query(query, await collection_embed_model(cid))
+    qv = _vec(query_vector)
     async with get_sessionmaker()() as s:
         vec = (await s.execute(
             text("SELECT id::text AS id, source, content, (embedding <=> (:q)::vector) AS dist "
@@ -392,10 +476,11 @@ async def search(cid: str, query: str, k: int = 5, query_vector: list[float] | N
             {"q": qv, "cid": cid, "k": k},
         )).mappings().all()
         kw = (await s.execute(
+            # 'simple' (not 'english') keeps keyword search language-neutral so non-English terms match
             text("SELECT id::text AS id, source, content "
                  "FROM chunks WHERE collection_id = (:cid)::uuid "
-                 "AND tsv @@ plainto_tsquery('english', :q) "
-                 "ORDER BY ts_rank(tsv, plainto_tsquery('english', :q)) DESC LIMIT :k"),
+                 "AND tsv @@ plainto_tsquery('simple', :q) "
+                 "ORDER BY ts_rank(tsv, plainto_tsquery('simple', :q)) DESC LIMIT :k"),
             {"q": query, "cid": cid, "k": k},
         )).mappings().all()
 

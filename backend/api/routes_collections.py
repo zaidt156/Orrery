@@ -50,6 +50,15 @@ async def collection_upload(cid: str, body: UploadDocs) -> dict:
         raise HTTPException(status_code=400, detail=str(e)[:160])
 
 
+@router.post("/collections/{cid}/reindex")
+async def collection_reindex(cid: str) -> dict:
+    """Re-embed a collection with the current default (multilingual) model, in place."""
+    try:
+        return {"reindexed": await rag.reindex_collection(cid), "model": rag.default_embed_model()}
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail=str(e)[:160])
+
+
 @router.get("/collections/{cid}/ingest-status")
 async def collection_ingest_status(cid: str) -> dict:
     try:

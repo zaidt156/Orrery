@@ -104,6 +104,17 @@ _VERSIONED_MIGRATIONS: list[tuple[str, list[str]]] = [
         ") owned "
         "WHERE c.id = owned.collection_id AND c.owner_id IS NULL",
     ]),
+    ("0008_chunks_tsv_language_neutral", [
+        # Multilingual support: the keyword arm was English-only (English stemmer + stopwords), so
+        # non-English terms matched poorly. Rebuild the generated column and its GIN index with the
+        # language-neutral 'simple' config. A persisted generated column can't be altered in place,
+        # so drop and re-add; it repopulates from content automatically.
+        "DROP INDEX IF EXISTS ix_chunks_tsv",
+        "ALTER TABLE chunks DROP COLUMN IF EXISTS tsv",
+        "ALTER TABLE chunks ADD COLUMN tsv tsvector "
+        "GENERATED ALWAYS AS (to_tsvector('simple', content)) STORED",
+        "CREATE INDEX IF NOT EXISTS ix_chunks_tsv ON chunks USING gin (tsv)",
+    ]),
 ]
 
 

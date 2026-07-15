@@ -24,6 +24,9 @@ class Settings(BaseSettings):
     # production-tunable limits (override via .env) — plan P3 #24
     sandbox_timeout_seconds: int = 60   # max wall-clock for model-written code in the sandbox
     rag_top_k: int = 5                  # chunks retrieved per "use my data" query
+    # On-device embedding model for RAG. Multilingual by default (~50 languages); must be 384-dim to
+    # fit the existing vector column (a mismatch is refused at load time — see rag._get_embedder).
+    embed_model: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
     max_upload_bytes: int = 64 * 1024 * 1024  # request body cap (multi-image messages)
     generated_file_ttl_hours: int = 168  # auto-delete generated files older than this (7 days)
 

@@ -18,8 +18,13 @@ async def _scratch_collection():
     return created["id"]
 
 
+async def _offline_embeddings(texts, model=None):
+    """Keep ingestion tests deterministic and independent of model downloads."""
+    return [[float(index + 1)] + [0.0] * (rag.EMBED_DIM - 1) for index, _ in enumerate(texts)]
+
 @pytest.mark.anyio
-async def test_reupload_replaces_instead_of_duplicating():
+async def test_reupload_replaces_instead_of_duplicating(monkeypatch):
+    monkeypatch.setattr(rag, "embed_docs", _offline_embeddings)
     cid = await _scratch_collection()
     try:
         doc = {"name": "notes.txt", "kind": "text", "content": "Orrery keeps chats in the user's own database."}
@@ -30,7 +35,7 @@ async def test_reupload_replaces_instead_of_duplicating():
 
         docs = await rag.documents(cid)
         assert len(docs) == 1
-        assert docs[0]["chunks"] == first  # same count after re-upload — no duplicates
+        assert docs[0]["chunks"] == first  # same count after re-upload - no duplicates
     finally:
         await rag.delete_collection(cid)
 
@@ -40,6 +45,7 @@ async def test_enqueue_ingest_runs_inline_when_queue_is_down(monkeypatch, tmp_pa
     from backend.core import paths
 
     monkeypatch.setattr(paths, "user_data_dir", lambda: tmp_path)
+    monkeypatch.setattr(rag, "embed_docs", _offline_embeddings)
 
     class DownQueue:
         def configure_task(self, name):

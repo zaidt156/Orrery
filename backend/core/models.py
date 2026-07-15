@@ -378,8 +378,9 @@ class Chunk(Base):
     ordinal: Mapped[int] = mapped_column(Integer)
     content: Mapped[str] = mapped_column(Text)
     embedding: Mapped[list[float]] = mapped_column(Vector(EMBED_DIM))
-    # generated keyword-search column (Postgres full-text) for hybrid retrieval
-    tsv: Mapped[str] = mapped_column(TSVECTOR, Computed("to_tsvector('english', content)", persisted=True))
+    # generated keyword-search column (Postgres full-text) for hybrid retrieval; 'simple' (not
+    # 'english') keeps it language-neutral so non-English terms match (existing DBs: migration 0008)
+    tsv: Mapped[str] = mapped_column(TSVECTOR, Computed("to_tsvector('simple', content)", persisted=True))
 
     collection: Mapped["Collection"] = relationship(back_populates="chunks")
 

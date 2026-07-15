@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import PageHero from "../components/PageHero.jsx";
 import {
   listDataConnections, addDataConnection, deleteDataConnection, listTables, browseTable,
-  listCollections, createCollection, deleteCollection, uploadDocuments,
+  listCollections, createCollection, deleteCollection, uploadDocuments, reindexCollection,
   listWorkspaces, createWorkspace, listDatasets, refreshDataset, deleteDataset,
 } from "../lib/api.js";
 
@@ -42,6 +42,7 @@ export default function Data() {
   const [colAdding, setColAdding] = useState(false);
   const [colName, setColName] = useState("");
   const [colBusy, setColBusy] = useState(false);
+  const [upgradingId, setUpgradingId] = useState(null);
   const uploadTarget = useRef(null);
   const fileRef = useRef(null);
 
@@ -159,6 +160,19 @@ export default function Data() {
     loadCols();
   }
 
+  async function upgradeCol(c) {
+    setErr(null);
+    setUpgradingId(c.id);
+    try {
+      await reindexCollection(c.id);  // re-embeds this collection on the multilingual model in place
+      loadCols();
+    } catch (e) {
+      setErr(String(e.message || e));
+    } finally {
+      setUpgradingId(null);
+    }
+  }
+
   return (
     <section className="view">
       <div className="data-wrap">
@@ -258,6 +272,11 @@ export default function Data() {
               <div className="meta">{c.chunks} chunks · {c.embed_model}<br />on-device embeddings</div>
               <div className="foot">
                 <button className="btn ghost" style={{ padding: "4px 10px", fontSize: "11px" }} onClick={() => pickUpload(c.id)}>+ Add files</button>
+                {c.embed_outdated && (
+                  <button className="btn ghost" style={{ padding: "4px 10px", fontSize: "11px" }}
+                    disabled={upgradingId === c.id} title="Re-embed this collection with the multilingual model"
+                    onClick={() => upgradeCol(c)}>{upgradingId === c.id ? "Upgrading…" : "Make multilingual"}</button>
+                )}
                 <button className="btn ghost" style={{ padding: "4px 10px", fontSize: "11px" }} onClick={(e) => removeCol(c, e)}>Remove</button>
               </div>
             </div>

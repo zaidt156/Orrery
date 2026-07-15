@@ -3,8 +3,12 @@ import pytest
 from backend.features.chat import retrieval
 
 
-async def _fake_embed_query(q):
+async def _fake_embed_query(q, model=None):
     return [0.0]  # the query vector is passed through to the (mocked) search; value is unused here
+
+
+async def _no_model_map(cids):
+    return {}  # no per-collection model overrides → every collection is on the default model
 
 
 @pytest.mark.anyio
@@ -16,6 +20,7 @@ async def test_auto_collection_held_to_strict_bar_on_normal_turn(monkeypatch):
         return [{"source": f"{cid}:doc", "content": "weakly related text", "dist": 0.50}]
 
     monkeypatch.setattr(retrieval.rag, "embed_query", _fake_embed_query)
+    monkeypatch.setattr(retrieval.rag, "embed_models", _no_model_map)
     monkeypatch.setattr(retrieval.rag, "search", fake_search)
 
     # explicit collection ("use my data" / project): the 0.50 chunk is kept on a normal turn
@@ -38,6 +43,7 @@ async def test_auto_collection_keeps_clearly_relevant_and_keyword_hits(monkeypat
         ]
 
     monkeypatch.setattr(retrieval.rag, "embed_query", _fake_embed_query)
+    monkeypatch.setattr(retrieval.rag, "embed_models", _no_model_map)
     monkeypatch.setattr(retrieval.rag, "search", fake_search)
     block, sources = await retrieval._gather_rag(
         "openai/gpt", ["own"], "q", auto_collection_ids={"own"}
@@ -95,7 +101,7 @@ async def test_query_is_embedded_once_across_many_collections(monkeypatch):
     embeds = {"n": 0}
     seen_vectors = []
 
-    async def counting_embed(q):
+    async def counting_embed(q, model=None):
         embeds["n"] += 1
         return [0.42]
 
@@ -104,14 +110,47 @@ async def test_query_is_embedded_once_across_many_collections(monkeypatch):
         return [{"source": f"{cid}:doc", "content": "clearly relevant", "dist": 0.10}]
 
     monkeypatch.setattr(retrieval.rag, "embed_query", counting_embed)
+    monkeypatch.setattr(retrieval.rag, "embed_models", _no_model_map)
     monkeypatch.setattr(retrieval.rag, "search", fake_search)
 
     block, sources = await retrieval._gather_rag(
         "openai/gpt", ["a", "b", "c", "d"], "a real question with enough words"
     )
-    assert embeds["n"] == 1                       # embedded once, not four times
+    assert embeds["n"] == 1                       # embedded once, not four times (all on the default model)
     assert seen_vectors == [[0.42]] * 4           # the same vector reused for each collection
     assert len(sources) == 4
+
+
+@pytest.mark.anyio
+async def test_legacy_and_multilingual_collections_each_use_their_own_model(monkeypatch):
+    """A collection on the default (multilingual) model reuses the one query embedding; a collection
+    still on an older model gets query_vector=None so rag.search embeds with THAT collection's model,
+    instead of searching it with an incompatible vector."""
+    default_model = retrieval.rag.default_embed_model()
+    embed_calls = []
+
+    async def model_map(cids):
+        return {"legacy": "BAAI/bge-small-en-v1.5"}  # 'new' is absent → treated as default
+
+    async def recording_embed(q, model=None):
+        embed_calls.append(model)
+        return [0.7]
+
+    seen = {}
+
+    async def fake_search(cid, query, k=5, query_vector=None):
+        seen[cid] = query_vector
+        return [{"source": cid, "content": "clearly relevant", "dist": 0.1}]
+
+    monkeypatch.setattr(retrieval.rag, "embed_models", model_map)
+    monkeypatch.setattr(retrieval.rag, "embed_query", recording_embed)
+    monkeypatch.setattr(retrieval.rag, "search", fake_search)
+
+    await retrieval._gather_rag("openai/gpt", ["new", "legacy"], "a real question with enough words")
+
+    assert embed_calls == [default_model]   # embedded once, with the default model only
+    assert seen["new"] == [0.7]             # default-model collection reuses that vector
+    assert seen["legacy"] is None           # legacy collection is embedded inside search with its own model
 
 
 @pytest.mark.anyio
@@ -126,6 +165,7 @@ async def test_rag_context_defers_privacy_redaction_to_provider_boundary(monkeyp
         return [{"source": "contacts.txt", "content": "Owner: alice@example.com", "dist": 0.1}]
 
     monkeypatch.setattr(retrieval.rag, "embed_query", _fake_embed_query)
+    monkeypatch.setattr(retrieval.rag, "embed_models", _no_model_map)
     monkeypatch.setattr(retrieval.rag, "search", fake_search)
 
     block, _ = await retrieval._gather_rag("openai/gpt", ["contacts"], "find the owner email")
