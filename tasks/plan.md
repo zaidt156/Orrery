@@ -26,6 +26,21 @@ vertically: each task lands a complete, testable path and leaves the suite green
 | 7 | No pagination/indexes on lists | **OPEN → Task 2** |
 | 8 | Duplicate chunks on re-upload | **OPEN → Task 3** (counts N+1 already fixed) |
 
+## Progress reconciliation (July 15, 2026)
+
+- **Task 1: IMPLEMENTED / automated verification complete.** Stable message-row identity,
+  animation-frame delta coalescing, and plain-text in-flight rendering are covered by the 100-row
+  UI regression test; all UI tests and the production build pass. Manual React Profiler capture
+  remains a Checkpoint 1 runtime check.
+- **Task 3: IMPLEMENTED / stress verification pending.** Re-upload deduplication, queued ingestion,
+  progress polling, and offline fallback tests pass. Re-run the 300-file stress harness at
+  Checkpoint 1 before marking the task fully complete.
+- **Tasks 6-7: COMPLETE.** LibreOffice status/guided install and faithful Office-to-PDF previews
+  shipped in DEVLOG Step 141 with backend/UI tests.
+- **Task 8: COMPLETE.** Static app intent, sandbox prompting, self-containment validation,
+  deterministic ZIP persistence, private extracted preview directories, atomic cleanup, and
+  dedicated router/tool/storage tests are complete. Task 9 is the next small-app slice.
+
 ## Architecture Decisions
 
 - **Previews:** use the LibreOffice→PDF path that already exists in `filepreview.py` and make it
@@ -143,8 +158,8 @@ directory (`index.html` + js/css/assets); validation checks self-containment (ex
 existing single-file HTML validator to bundles); stored as a zip artifact plus an extracted
 preview directory in the generated-files store.
 **Acceptance criteria:**
-- [ ] "Build me a small expense-splitter app" yields a bundle artifact (zip + preview dir)
-- [ ] Bundles with external references are rejected with a plain error
+- [x] "Build me a small expense-splitter app" yields a bundle artifact (zip + preview dir)
+- [x] Bundles with external references are rejected with a plain error
 **Verification:** filegen bundle-validation tests; routing test for app intent.
 **Dependencies:** none (parallel to Phase 2). **Files:** `backend/features/filegen.py`,
 `backend/features/files.py`, `backend/features/taskrouter.py`. **Scope:** M

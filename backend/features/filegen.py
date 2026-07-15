@@ -16,14 +16,17 @@ import asyncio
 import csv
 import io
 import json
+import posixpath
 import re
 import wave
 import zipfile
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from pathlib import PurePosixPath
+from urllib.parse import unquote, urlsplit
 
 from backend.features import events as stream_events
+from backend.features import files as file_library
 from backend.features import reasoning, sandbox, skills
 from backend.features.prompting import FILE_SYSTEM_PROMPT, build_system_prompt
 from backend.features.reasoning_trace import ThinkStream, reasoning_event
@@ -49,6 +52,13 @@ _FILE_INTENT = re.compile(
 _CREATE_VERB = re.compile(
     r"\b(create|make|generate|build|write|compose|give\s+me|need|want|produce|export|draft|design|prepare|"
     r"put\s+together|write\s+me|turn\s+.*\binto|as\s+an?)\b",
+    re.IGNORECASE,
+)
+
+_APP_INTENT = re.compile(
+    r"\b(?:small|mini|tiny|quick|throwaway|one[-\s]?(?:time|off))\s+(?:web\s+)?"
+    r"(?:[a-z0-9][a-z0-9_-]*\s+){0,3}app\b|"
+    r"\b(?:quick|one[-\s]?(?:time|off))\s+(?:tool|calculator|tracker|planner|converter|utility)\b",
     re.IGNORECASE,
 )
 
@@ -131,6 +141,68 @@ _REMOTE_HTML_REF_RE = re.compile(
     re.IGNORECASE,
 )
 _HTML_SCRIPT_REMOTE_RE = re.compile(r"<script\b[^>]*\bsrc\s*=", re.IGNORECASE)
+_APP_NETWORK_SCHEME_RE = re.compile(r"\b(?:https?|wss?|ftp|file):", re.IGNORECASE)
+_APP_JS_NETWORK_RE = re.compile(
+    r"\b(?:fetch|XMLHttpRequest|WebSocket|EventSource|importScripts)\s*\(|"
+    r"\bnavigator\s*\.\s*sendBeacon\s*\(|\bwindow\s*\.\s*open\s*\(",
+    re.IGNORECASE,
+)
+_APP_JS_IMPORT_RE = re.compile(
+    r"(?:\b(?:import|export)\s+(?:[^;\n]*?\s+from\s+)?|\bimport\s*\()\s*['\"]([^'\"]+)['\"]",
+    re.IGNORECASE,
+)
+_APP_CSS_URL_RE = re.compile(r"url\(\s*(['\"]?)(.*?)\1\s*\)", re.IGNORECASE)
+_APP_CSS_IMPORT_RE = re.compile(r"@import\s+(?:url\(\s*)?['\"]([^'\"]+)['\"]", re.IGNORECASE)
+_APP_HTML_SINGLE_URL_ATTRS = (
+    "background",
+    "cite",
+    "classid",
+    "code",
+    "codebase",
+    "data",
+    "dynsrc",
+    "href",
+    "icon",
+    "longdesc",
+    "lowsrc",
+    "manifest",
+    "poster",
+    "profile",
+    "src",
+    "usemap",
+    "xlink:href",
+)
+_APP_HTML_URL_LIST_ATTRS = ("archive", "ping")
+_APP_HTML_SRCSET_ATTRS = ("imagesrcset", "srcset")
+_APP_HTML_CSS_VALUE_ATTRS = (
+    "clip-path",
+    "color-profile",
+    "cursor",
+    "fill",
+    "filter",
+    "marker",
+    "marker-end",
+    "marker-mid",
+    "marker-start",
+    "mask",
+    "stroke",
+)
+_APP_ALLOWED_EXTENSIONS = {
+    "css", "gif", "html", "ico", "jpeg", "jpg", "js", "json", "mjs", "mp3", "mp4",
+    "otf", "png", "svg", "ttf", "txt", "wav", "webm", "webp", "woff", "woff2",
+}
+_APP_BUNDLE_PROMPT = """
+
+STATIC APP BUNDLE MODE (this overrides the single-file HTML rule above):
+- Build a client-side-only app in ./out/<short-app-name>/.
+- The directory must contain index.html, at least one local .js file, and at least one local .css file.
+- Put any images/fonts/media in nested local asset directories. Do not create the ZIP yourself.
+- index.html must load the local JS/CSS files with relative paths. Put no JavaScript inline and use
+  no inline event-handler attributes; bind events from the local JS file.
+- Do not use fetch, XMLHttpRequest, WebSocket, EventSource, service workers, external URLs, CDNs,
+  remote fonts, form actions, browser storage, or dependencies that need a server/build step.
+- The app must work by opening index.html from Orrery's read-only preview route.
+"""
 _LATEX_STRUCTURE_RE = re.compile(
     r"\\(?:documentclass|begin\s*\{\s*document\s*\}|section|subsection|title|author|"
     r"usepackage|begin\s*\{\s*(?:equation|align|tabular|itemize|enumerate)\s*\})",
@@ -183,17 +255,24 @@ class Approval:
     files: list[sandbox.SandboxFile]
     manifest: list[dict]
     reason: str = ""
+    kind: str = "files"
+    bundle_name: str | None = None
 
 
 def wants_file(text: str) -> bool:
     """True when the user is asking for a downloadable file (vs. an in-chat answer)."""
     if not text:
         return False
-    return bool(_FILE_INTENT.search(text) and (_CREATE_VERB.search(text) or "." in text))
+    return wants_app(text) or bool(_FILE_INTENT.search(text) and (_CREATE_VERB.search(text) or "." in text))
+
+
+def wants_app(text: str) -> bool:
+    """True for an explicit request to build a small, one-off client-side app."""
+    return bool(text and _APP_INTENT.search(text) and _CREATE_VERB.search(text))
 
 
 def needs_code(text: str) -> bool:
-    return bool(text and _NEEDS_CODE.search(text))
+    return wants_app(text) or bool(text and _NEEDS_CODE.search(text))
 
 
 def requested_formats(text: str) -> list[str]:
@@ -519,6 +598,295 @@ def _validate_zip(data: bytes) -> tuple[str, list[str]]:
     return "\n".join(names), ["opens_as_zip", f"member_count:{len(names)}"]
 
 
+def _safe_app_member(name: str) -> PurePosixPath:
+    return file_library.safe_app_member_path(name)
+
+
+def _normalize_app_bundle(
+    files: list[sandbox.SandboxFile],
+) -> tuple[list[sandbox.SandboxFile], str]:
+    if not files:
+        raise ValueError("The sandbox produced no app files.")
+    if len(files) > file_library.MAX_APP_BUNDLE_FILES:
+        raise ValueError("App bundle contains too many files.")
+    if sum(len(file.data) for file in files) > file_library.MAX_APP_BUNDLE_BYTES:
+        raise ValueError("App bundle exceeds the total size limit.")
+    parsed = [(_safe_app_member(file.name), file) for file in files]
+    folded = [path.as_posix().casefold() for path, _file in parsed]
+    if len(set(folded)) != len(folded):
+        raise ValueError("App bundle contains duplicate file paths.")
+
+    entrypoints = [path for path, _file in parsed if path.name == "index.html"]
+    if len(entrypoints) != 1:
+        raise ValueError("App bundle must contain exactly one index.html entry point.")
+    root = entrypoints[0].parent
+    if any(not path.is_relative_to(root) for path, _file in parsed):
+        raise ValueError("Every app file must live in the same bundle directory as index.html.")
+
+    normalized = [
+        sandbox.SandboxFile(path.relative_to(root).as_posix(), file.data)
+        for path, file in parsed
+    ]
+    extensions = {_extension(file.name) for file in normalized}
+    if not (extensions & {"js", "mjs"}) or "css" not in extensions:
+        raise ValueError("App bundle must include local JavaScript and CSS files.")
+    if any(ext not in _APP_ALLOWED_EXTENSIONS for ext in extensions):
+        unsupported = sorted(ext or "(no extension)" for ext in extensions if ext not in _APP_ALLOWED_EXTENSIONS)
+        raise ValueError(f"App bundle contains unsupported file types: {', '.join(unsupported)}.")
+
+    label = root.name if root != PurePosixPath(".") else "small-app"
+    slug = re.sub(r"[^A-Za-z0-9._-]+", "-", label).strip(".-_")[:80] or "small-app"
+    return normalized, f"{slug}.zip"
+
+
+def _app_local_target(reference: str, source: str, members: set[str]) -> str | None:
+    value = (reference or "").strip()
+    if not value or value.startswith("#"):
+        return None
+    parsed = urlsplit(value)
+    if parsed.scheme:
+        raise ValueError(f"{source} contains an external or unsafe reference.")
+    if parsed.netloc or value.startswith(("//", "\\")):
+        raise ValueError(f"{source} contains an external or unsafe reference.")
+    raw_path = unquote(parsed.path)
+    if not raw_path:
+        return None
+    if "\\" in raw_path or raw_path.startswith("/"):
+        raise ValueError(f"{source} contains an absolute or unsafe reference.")
+    relative = PurePosixPath(raw_path)
+    if ".." in relative.parts:
+        raise ValueError(f"{source} contains a path traversal reference.")
+    target = posixpath.normpath((PurePosixPath(source).parent / relative).as_posix())
+    if target not in members:
+        directory_entry = f"{target.rstrip('/')}/index.html"
+        if directory_entry in members:
+            return directory_entry
+        raise ValueError(f"{source} references missing local file: {raw_path}.")
+    return target
+
+
+def _app_srcset_targets(value: str) -> list[str]:
+    if value.strip().lower().startswith("data:"):
+        return [value]
+    return [part.strip().split()[0] for part in value.split(",") if part.strip()]
+
+
+def _validate_app_css_references(text: str, source: str, members: set[str]) -> None:
+    references = [match.group(2) for match in _APP_CSS_URL_RE.finditer(text)]
+    references.extend(match.group(1) for match in _APP_CSS_IMPORT_RE.finditer(text))
+    for reference in references:
+        _app_local_target(reference, source, members)
+
+
+def _validate_app_html(
+    text: str,
+    source: str,
+    members: set[str],
+) -> tuple[list[str], set[str], set[str]]:
+    from html.parser import HTMLParser
+
+    tags: set[str] = set()
+    refs: list[str] = []
+    script_refs: list[str] = []
+    stylesheet_refs: list[str] = []
+    style_chunks: list[str] = []
+    issues: list[str] = []
+    visible: list[str] = []
+    ignored_depth = 0
+    style_depth = 0
+
+    class BundleParser(HTMLParser):
+        def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+            nonlocal ignored_depth, style_depth
+            tag = tag.lower()
+            tags.add(tag)
+            values: dict[str, str] = {}
+            for raw_name, raw_value in attrs:
+                name = raw_name.lower()
+                if name in values:
+                    issues.append(f'Duplicate "{name}" attributes are not allowed.')
+                    continue
+                values[name] = raw_value or ""
+            if tag in {"script", "style"}:
+                ignored_depth += 1
+            if tag == "style":
+                style_depth += 1
+            if tag in {"applet", "base", "iframe", "frame", "object", "embed"}:
+                issues.append(f"<{tag}> is not allowed in a static app bundle.")
+            if tag == "script" and not values.get("src"):
+                issues.append("Inline scripts are not allowed; put JavaScript in a local .js file.")
+            if tag == "meta" and values.get("http-equiv", "").lower() == "refresh":
+                issues.append("HTML refresh navigation is not allowed.")
+            if any(name.startswith("on") for name in values):
+                issues.append("Inline event handlers are not allowed; bind events from the local JavaScript file.")
+            if values.get("action") or values.get("formaction"):
+                issues.append("Form navigation is disabled; handle the form locally in JavaScript.")
+            if values.get("style"):
+                style_chunks.append(values["style"])
+            for attr in _APP_HTML_SINGLE_URL_ATTRS:
+                if values.get(attr):
+                    refs.append(values[attr])
+            for attr in _APP_HTML_URL_LIST_ATTRS:
+                refs.extend(values.get(attr, "").split())
+            for attr in _APP_HTML_SRCSET_ATTRS:
+                if values.get(attr):
+                    refs.extend(_app_srcset_targets(values[attr]))
+            for attr in _APP_HTML_CSS_VALUE_ATTRS:
+                if values.get(attr):
+                    style_chunks.append(values[attr])
+            if tag == "script" and values.get("src"):
+                script_refs.append(values["src"])
+            rel_values = {part.lower() for part in values.get("rel", "").split()}
+            if tag == "link" and "stylesheet" in rel_values and values.get("href"):
+                stylesheet_refs.append(values["href"])
+
+        def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+            self.handle_starttag(tag, attrs)
+            if tag.lower() in {"script", "style"}:
+                self.handle_endtag(tag)
+
+        def handle_endtag(self, tag: str) -> None:
+            nonlocal ignored_depth, style_depth
+            lowered = tag.lower()
+            if lowered == "style" and style_depth:
+                style_depth -= 1
+            if lowered in {"script", "style"} and ignored_depth:
+                ignored_depth -= 1
+
+        def handle_data(self, data: str) -> None:
+            if style_depth and data.strip():
+                style_chunks.append(data)
+            elif not ignored_depth and data.strip():
+                visible.append(data.strip())
+
+    parser = BundleParser()
+    parser.feed(text)
+    if not (tags & {"html", "body", "main", "section"}):
+        issues.append("index.html does not contain a recognizable page structure.")
+    if source == "index.html" and len(" ".join(visible)) < 20:
+        issues.append("index.html has too little visible content.")
+    if issues:
+        raise ValueError(f"{source}: {' '.join(dict.fromkeys(issues))}")
+
+    for reference in refs:
+        _app_local_target(reference, source, members)
+    for css in style_chunks:
+        _validate_app_css_references(css, source, members)
+    loaded_scripts = {
+        target
+        for reference in script_refs
+        if (target := _app_local_target(reference, source, members)) is not None
+    }
+    loaded_stylesheets = {
+        target
+        for reference in stylesheet_refs
+        if (target := _app_local_target(reference, source, members)) is not None
+    }
+    return ["parses_as_html", "local_references_only"], loaded_scripts, loaded_stylesheets
+
+
+def _validate_app_text_file(file: sandbox.SandboxFile, members: set[str]) -> list[str]:
+    try:
+        text = file.data.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise ValueError(f"{file.name} must be valid UTF-8 text.") from exc
+    ext = _extension(file.name)
+    if ext == "html":
+        checks, _scripts, _stylesheets = _validate_app_html(text, file.name, members)
+        return checks
+    if ext == "css":
+        _validate_app_css_references(text, file.name, members)
+        return ["decodes_as_css", "local_references_only"]
+    if ext in {"js", "mjs"}:
+        if _APP_NETWORK_SCHEME_RE.search(text) or _APP_JS_NETWORK_RE.search(text):
+            raise ValueError(f"{file.name} contains an external reference or network API.")
+        if re.search(r"['\"]\s*//", text):
+            raise ValueError(f"{file.name} contains a protocol-relative external reference.")
+        if re.search(
+            r"\b(?:localStorage|sessionStorage|indexedDB|document\s*\.\s*cookie|"
+            r"navigator\s*\.\s*serviceWorker|window\s*\.\s*(?:parent|top|opener))\b",
+            text,
+            re.IGNORECASE,
+        ):
+            raise ValueError(f"{file.name} requests browser capabilities unavailable to a sandboxed app.")
+        for match in _APP_JS_IMPORT_RE.finditer(text):
+            _app_local_target(match.group(1), file.name, members)
+        return ["decodes_as_javascript", "no_network_apis"]
+    if ext == "json":
+        json.loads(text)
+        return ["parses_as_json"]
+    if ext == "svg":
+        import xml.etree.ElementTree as ET
+
+        root = ET.fromstring(text)
+        for element in root.iter():
+            tag = str(element.tag).rsplit("}", 1)[-1].lower()
+            if tag in {"script", "foreignobject"}:
+                raise ValueError(f"{file.name} contains unsafe SVG content.")
+            if tag == "style":
+                _validate_app_css_references(element.text or "", file.name, members)
+            for attr, value in element.attrib.items():
+                local_attr = str(attr).rsplit("}", 1)[-1].lower()
+                if local_attr.startswith("on"):
+                    raise ValueError(f"{file.name} contains an SVG event handler.")
+                if local_attr == "style":
+                    _validate_app_css_references(value, file.name, members)
+                if local_attr in {"href", "src"}:
+                    _app_local_target(value, file.name, members)
+        return ["parses_as_svg", "local_references_only"]
+    return [f"decodes_as_{ext}"]
+
+
+def _approve_app_bundle(files: list[sandbox.SandboxFile]) -> Approval:
+    try:
+        normalized, bundle_name = _normalize_app_bundle(files)
+        members = {file.name for file in normalized}
+        entry_html = next(file for file in normalized if file.name == "index.html").data.decode("utf-8")
+        _entry_checks, loaded_scripts, loaded_stylesheets = _validate_app_html(
+            entry_html,
+            "index.html",
+            members,
+        )
+        if not any(_extension(target) in {"js", "mjs"} for target in loaded_scripts):
+            raise ValueError("index.html must load the bundle's local JavaScript file.")
+        if not any(_extension(target) == "css" for target in loaded_stylesheets):
+            raise ValueError("index.html must load the bundle's local CSS file.")
+
+        manifest = []
+        for file in normalized:
+            ext = _extension(file.name)
+            checks = ["bundle_member"]
+            if ext in {"html", "css", "js", "mjs", "json", "svg", "txt"}:
+                checks.extend(_validate_app_text_file(file, members))
+            else:
+                checks.append(f"local_asset:{ext}")
+            if file.name == "index.html":
+                checks.append("app_entrypoint")
+            manifest.append({
+                "name": file.name,
+                "format": ext,
+                "size": len(file.data),
+                "ok": True,
+                "checks": checks,
+                "issues": [],
+            })
+        return Approval(
+            ok=True,
+            files=normalized,
+            manifest=manifest,
+            kind="app",
+            bundle_name=bundle_name,
+        )
+    except (ValueError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        return Approval(
+            ok=False,
+            files=[],
+            manifest=[],
+            reason=f"App bundle validation failed: {str(exc)[:1000]}",
+            kind="app",
+        )
+
+
 def _extract_and_validate(file: sandbox.SandboxFile, request: str) -> FileCheck:
     fmt = _format_for_name(file.name)
     check = FileCheck(name=file.name, format=fmt, size=len(file.data), ok=True)
@@ -627,6 +995,9 @@ def _check_text_quality(
 
 
 def _approve_files(files: list[sandbox.SandboxFile], request: str) -> Approval:
+    if wants_app(request):
+        return _approve_app_bundle(files)
+
     filtered, filter_error = _requested_file_filter(files, request)
     if filter_error:
         return Approval(ok=False, files=[], manifest=[], reason=filter_error)
@@ -671,6 +1042,7 @@ async def run(
         yield stream_events.result({"ok": False, "error": safety_error})
         return
 
+    app_request = wants_app(request)
     file_effort = quality_effort(model, effort)
     instructions = build_system_prompt(
         app_rules=FILE_SYSTEM_PROMPT,
@@ -679,6 +1051,8 @@ async def run(
         trusted_context=trusted_context,
         untrusted_context=untrusted_context,
     )
+    if app_request:
+        instructions += _APP_BUNDLE_PROMPT
     convo: list[dict] = [{"role": "user", "content": request}]
     last_error = ""
     run_manifests: list[dict] = []
@@ -686,19 +1060,28 @@ async def run(
 
     for attempt in range(max_attempts):
         yield stream_events.status(
-            "Designing the document…"
+            ("Designing the app…" if app_request else "Designing the document…")
             if attempt == 0
-            else f"Fixing the generated file ({attempt + 1}/{max_attempts})…"
+            else f"Fixing the generated {'app' if app_request else 'file'} ({attempt + 1}/{max_attempts})…"
         )
         # Don't advertise a retry counter on the first pass — that reads as a canned "1/N" ladder even
         # when generation succeeds on the first try. Show the attempt number only once a repair actually
         # happens (attempt > 0), so the trace reflects what really occurred instead of a fixed script.
         yield reasoning_event(
-            "Writing the file" if attempt == 0 else "Repairing the file",
+            ("Writing the app bundle" if app_request else "Writing the file")
+            if attempt == 0
+            else ("Repairing the app bundle" if app_request else "Repairing the file"),
             (
-                "Generating a program that builds the requested artifact in the sandbox."
+                (
+                    "Generating a program that builds the requested static app bundle in the sandbox."
+                    if app_request
+                    else "Generating a program that builds the requested artifact in the sandbox."
+                )
                 if attempt == 0
-                else f"Retry {attempt + 1}: using the previous runtime or validation failure to fix the generated file."
+                else (
+                    f"Retry {attempt + 1}: using the previous runtime or validation failure to fix "
+                    f"the generated {'app bundle' if app_request else 'file'}."
+                )
             ),
             kind="script",
             status="running",
@@ -747,7 +1130,7 @@ async def run(
             ]
             continue
 
-        yield stream_events.status("Building the file…")
+        yield stream_events.status("Building the app…" if app_request else "Building the file…")
         yield reasoning_event(
             "Running sandbox",
             "Executing the code in the locked-down offline sandbox and collecting output files.",
@@ -777,7 +1160,13 @@ async def run(
                     "ok": True,
                     "files": approval.files,
                     "code": code,
-                    "summary": _summary(approval.files),
+                    "summary": (
+                        f"Built **{approval.bundle_name}** as a self-contained app bundle."
+                        if approval.kind == "app"
+                        else _summary(approval.files)
+                    ),
+                    "kind": approval.kind,
+                    "bundle_name": approval.bundle_name,
                     "manifest": approval.manifest,
                     "sandbox": outcome.manifest,
                     "sandbox_runs": run_manifests,

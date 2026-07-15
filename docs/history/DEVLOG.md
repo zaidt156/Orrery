@@ -2541,3 +2541,96 @@ existing large-chunk warning remains visible; it is not a build failure.
 Next: execute the five-workstream plan recorded in Step 137, starting with scale foundations
 (streaming, pagination/indexes, idempotent off-thread ingestion, request-scoped team-mode caching,
 and the security re-review), then real Office previews and safe one-off app bundles.
+
+
+## Step 139 — Multilingual documents (July 14, 2026)
+
+Until now the search-your-documents feature only really understood English. The model that turns
+text into the numbers used for meaning-based search was an English-only one, and the exact-word
+side of search was pinned to English rules too, so a French, Spanish, or Chinese document searched
+poorly. This step makes document search work across roughly fifty languages.
+
+- **Meaning-based search is now multilingual.** New document collections are built with a
+  multilingual model (paraphrase-multilingual-MiniLM-L12-v2) that still runs entirely on the user's
+  machine and produces the same size of vector as before, so nothing about how the data is stored
+  had to change. The choice is now a setting, not a hard-coded name.
+- **Old collections keep working, untouched.** Every collection remembers which model built it, and
+  each one is searched with its own model — so documents indexed before this change still return
+  correct results instead of quietly breaking. Nothing is silently mixed or re-processed behind the
+  user's back.
+- **A one-click upgrade for old collections.** A "Make multilingual" button appears on any
+  collection still on the old English model. It re-processes that collection's existing text in
+  place with the multilingual model — no need to find and re-upload the original files.
+- **Exact-word search went language-neutral.** The keyword half of search no longer applies
+  English-only word rules; it now treats terms plainly, so words in any language can match. The
+  trade-off is that English word-family matches (e.g. "running" also matching "run") now lean on the
+  meaning-based half of search rather than the keyword half — which already handles that better.
+- **A safety guard.** If anyone ever points the setting at a model whose vector size doesn't fit the
+  store, the app now refuses it with a clear message instead of silently corrupting the data.
+
+Why this model specifically: it was the one multilingual option that keeps the exact vector size we
+already use, so existing data and its fast-search index carried over with no migration of the
+numbers themselves — only the small, automatic keyword-column rebuild. The heavier, higher-accuracy
+multilingual models would have forced re-processing every existing document. The one first-run cost:
+the new multilingual model is a larger one-time download than the old English model; it is fetched
+once and cached, exactly as the old one was.
+
+Verified: 14 targeted RAG/retrieval tests pass (new multilingual model default, the dimension-mismatch
+guard, language-neutral keyword column, and legacy-vs-multilingual collections each embedding with
+their own model); the production UI build is clean.
+
+Next: same five-workstream plan from Step 137 — scale foundations, real Office previews, and safe
+one-off app bundles.
+
+## Step 143 - Long chats stream without repainting the whole thread (July 15, 2026)
+
+The remaining frontend scale bottleneck is now implemented and protected by a focused regression
+check. Completed message rows keep stable identities while a reply streams, incoming text is
+coalesced to one screen update per animation frame, and the unfinished reply stays plain text until
+it is complete. A 100-message test proves that a token delta invalidates only the active row.
+
+The full verification run also exposed two ingestion tests that accidentally tried to download the
+new multilingual embedding model. They now use deterministic local vectors, so the suite proves the
+ingestion behavior without depending on internet access or a warm model cache.
+
+Verified: all 35 UI tests pass; the production UI build succeeds; all 513 backend tests pass. The
+existing large dashboard-chunk build warning remains unchanged. Manual React Profiler capture for
+a live long chat stays in Checkpoint 1.
+
+Next: finish Task 8's app-bundle persistence (zip artifact plus extracted preview directory and its
+dedicated tests), then add the traversal-proof, CSP-locked serving route in Task 9.
+
+## Step 144 - Small app requests now produce one safe bundle artifact (July 15, 2026)
+
+Orrery can now recognize an explicit one-off app request, build the client-side app in the secure
+offline sandbox, validate the bundle, and save it as one downloadable ZIP instead of attaching its
+HTML, JavaScript, CSS, and assets as unrelated files.
+
+- **A real bundle contract.** The builder requires one index.html, local JavaScript and CSS,
+  supported local assets, bounded file counts and total size, and a single normalized bundle root.
+  The exact plan example, "Build me a small expense-splitter app", now selects this path.
+- **Self-containment checks fail honestly.** External URLs, network APIs, browser storage, unsafe
+  paths, missing local references, inline scripts/events, remote CSS/SVG references, duplicate
+  attributes, and platform-specific path tricks are rejected. A failed app never falls through to
+  the document generator and never produces a fake success attachment.
+- **One durable artifact.** The generated-files library writes a deterministic ZIP plus a private
+  extracted preview tree. The preview and ZIP publish before metadata, making metadata the final
+  commit marker; injected-failure tests prove rollback leaves no partial artifact. Expiry cleanup
+  removes the ZIP, metadata, and preview as one group.
+- **Every entry point agrees.** Chat routing and the shared file.generate tool use the same
+  storage contract and return one app_bundle file record with its entry point and member count.
+  ZIP creation and disk publication run off the async request loop.
+- **The runtime boundary remains explicit.** Static source checks are a quality gate, not a
+  JavaScript security sandbox. Preview files remain private and unserved in this step. Task 9 must
+  add the authenticated route, strict response CSP, traversal-proof lookup, and sandboxed iframe
+  before Orrery exposes an interactive preview.
+
+An independent adversarial review found and verified the duplicate-attribute and uncommon
+URL-bearing-attribute hardening before approval. No Critical or Required findings remain.
+
+Verified: all 541 backend tests pass (one existing Starlette/httpx deprecation warning); all 38 UI
+tests pass; the production UI build succeeds. The existing large Dashboards chunk warning remains
+unchanged.
+
+Next: Task 9 - serve the private bundle through a session-gated, CSP-locked route and open it only
+inside a sandboxed iframe, while preserving the ZIP download.

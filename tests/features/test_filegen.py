@@ -222,3 +222,160 @@ async def test_filegen_run_validates_and_returns_file(monkeypatch):
     assert events[-1]["result"]["files"][0].name == "earth.pptx"
     assert events[-1]["result"]["sandbox"]["run_id"] == "run-abc"
     assert events[-1]["result"]["sandbox_runs"][0]["run_id"] == "run-abc"
+
+
+def _app_bundle(*, script: bytes = b"document.querySelector('button').onclick = () => {};"):
+    return [
+        sandbox.SandboxFile(
+            "expense-splitter/index.html",
+            b"""<!doctype html><html><head><link rel="stylesheet" href="styles.css"></head>
+            <body><main><h1>Expense splitter</h1><p>Split shared expenses between friends locally.</p>
+            <button type="button">Calculate shares</button></main><script src="app.js"></script></body></html>""",
+        ),
+        sandbox.SandboxFile("expense-splitter/styles.css", b"body { font-family: sans-serif; }"),
+        sandbox.SandboxFile("expense-splitter/app.js", script),
+    ]
+
+
+def test_approve_accepts_normalized_static_app_bundle():
+    approval = filegen._approve_files(_app_bundle(), "Build me a small expense splitter app")
+
+    assert approval.ok
+    assert approval.kind == "app"
+    assert approval.bundle_name == "expense-splitter.zip"
+    assert [item.name for item in approval.files] == ["index.html", "styles.css", "app.js"]
+    assert any("app_entrypoint" in item["checks"] for item in approval.manifest)
+
+
+def test_approve_rejects_app_bundle_with_network_access():
+    approval = filegen._approve_files(
+        _app_bundle(script=b"fetch('https://example.com/private-data')"),
+        "Build me a small expense splitter app",
+    )
+
+    assert not approval.ok
+    assert "external" in approval.reason.lower() or "network" in approval.reason.lower()
+
+
+def test_approve_rejects_app_bundle_path_traversal():
+    app_files = _app_bundle() + [sandbox.SandboxFile("expense-splitter/../escape.txt", b"nope")]
+
+    approval = filegen._approve_files(app_files, "Build me a small expense splitter app")
+
+    assert not approval.ok
+    assert "traversal" in approval.reason.lower() or "unsafe" in approval.reason.lower()
+
+
+def test_approve_rejects_app_bundle_with_remote_inline_css():
+    files = _app_bundle()
+    files[0] = sandbox.SandboxFile(
+        "expense-splitter/index.html",
+        b"""<!doctype html><html><head><link rel="stylesheet" href="styles.css">
+        <style>@import url('https://cdn.example/theme.css');</style></head>
+        <body><main><h1>Expense splitter</h1><p>Split shared expenses between friends locally.</p>
+        </main><script src="app.js"></script></body></html>""",
+    )
+
+    approval = filegen._approve_files(files, "Build me a small expense-splitter app")
+
+    assert not approval.ok
+    assert "external" in approval.reason.lower() or "unsafe" in approval.reason.lower()
+
+
+@pytest.mark.parametrize(
+    "unsafe_markup",
+    [
+        '<script src="https://evil.example/x.js" src="app.js"></script>',
+        '<a href="#result" ping="https://evil.example/collect">Result</a>',
+        '<div background="https://evil.example/pixel.png">Totals</div>',
+        (
+            '<svg xmlns:xlink="http://www.w3.org/1999/xlink">'
+            '<image xlink:href="https://evil.example/pixel.png"></image></svg>'
+        ),
+    ],
+    ids=["duplicate-src", "ping", "background", "svg-xlink"],
+)
+def test_approve_rejects_hidden_external_html_references(unsafe_markup):
+    files = _app_bundle()
+    html = f"""<!doctype html><html><head><link rel="stylesheet" href="styles.css"></head>
+    <body><main><h1>Expense splitter</h1><p>Split shared expenses between friends locally.</p>
+    {unsafe_markup}</main><script src="app.js"></script></body></html>"""
+    files[0] = sandbox.SandboxFile("expense-splitter/index.html", html.encode())
+
+    approval = filegen._approve_files(files, "Build me a small expense-splitter app")
+
+    assert not approval.ok
+    assert "external" in approval.reason.lower() or "duplicate" in approval.reason.lower()
+
+
+def test_app_entrypoint_requires_script_and_stylesheet_loads():
+    files = _app_bundle()
+    files[0] = sandbox.SandboxFile(
+        "expense-splitter/index.html",
+        b"""<!doctype html><html><body><main><h1>Expense splitter</h1>
+        <p>These files are downloads, not executable app resources.</p>
+        <a href="app.js">JavaScript</a><a href="styles.css">Styles</a></main></body></html>""",
+    )
+
+    approval = filegen._approve_files(files, "Build me a small expense-splitter app")
+
+    assert not approval.ok
+    assert "load" in approval.reason.lower()
+
+
+@pytest.mark.anyio
+async def test_filegen_run_returns_app_bundle_contract(monkeypatch):
+    async def fake_stream_chat(model, messages, system_prompt=None, effort=None, usage_out=None):
+        yield chr(96) * 3 + "python\nprint('expense-splitter')\n" + chr(96) * 3
+
+    def fake_run_code(code):
+        return sandbox.SandboxResult(
+            ok=True,
+            stdout="",
+            stderr="",
+            exit_code=0,
+            timed_out=False,
+            files=_app_bundle(),
+            run_id="run-app",
+            manifest={"run_id": "run-app", "outputs": []},
+        )
+
+    monkeypatch.setattr(filegen.ai, "stream_chat", fake_stream_chat)
+    monkeypatch.setattr(filegen.skills, "skills_prompt", lambda _request: "")
+    monkeypatch.setattr(filegen.sandbox, "run_code", fake_run_code)
+
+    events = [
+        event
+        async for event in filegen.run(
+            "openai/gpt-test",
+            "Build me a small expense-splitter app",
+            None,
+            "low",
+        )
+    ]
+
+    result = events[-1]["result"]
+    assert result["ok"] is True
+    assert result["kind"] == "app"
+    assert result["bundle_name"] == "expense-splitter.zip"
+    assert [item.name for item in result["files"]] == ["index.html", "styles.css", "app.js"]
+
+
+def test_approve_rejects_casefold_duplicate_app_paths():
+    app_files = _app_bundle() + [sandbox.SandboxFile("expense-splitter/APP.js", b"duplicate")]
+
+    approval = filegen._approve_files(app_files, "Build me a small expense-splitter app")
+
+    assert not approval.ok
+    assert "duplicate" in approval.reason.lower()
+
+
+def test_app_approval_and_storage_share_file_and_size_limits(monkeypatch):
+    monkeypatch.setattr(filegen.file_library, "MAX_APP_BUNDLE_FILES", 3)
+    too_many = _app_bundle() + [sandbox.SandboxFile("expense-splitter/readme.txt", b"details")]
+    assert not filegen._approve_files(too_many, "Build me a small app").ok
+
+    monkeypatch.setattr(filegen.file_library, "MAX_APP_BUNDLE_BYTES", 10)
+    too_large = filegen._approve_files(_app_bundle(), "Build me a small app")
+    assert not too_large.ok
+    assert "size" in too_large.reason.lower()

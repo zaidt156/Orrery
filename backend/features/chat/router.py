@@ -6,7 +6,6 @@ import datetime
 import io
 import json
 import logging
-import mimetypes
 import re
 import uuid
 from collections.abc import AsyncIterator
@@ -292,6 +291,26 @@ async def _deliver_file_failure(
     yield trace.summary()
     yield stream_events.done()
 
+
+async def _deliver_app_failure(
+    cid: uuid.UUID,
+    model: str,
+    trace: ReasoningTrace,
+    detail: str,
+) -> AsyncIterator[dict]:
+    safe_detail = " ".join((detail or "No approved app bundle was produced.").split())[:240]
+    message = (
+        "I could not create a safe, self-contained app bundle for this request. "
+        "No app files were saved."
+    )
+    if safe_detail:
+        message += f" Builder detail: {safe_detail}"
+    message_id = await persistence._persist_assistant(cid, message, model)
+    yield trace.error("App generation failed", safe_detail)
+    yield stream_events.delta(message)
+    yield stream_events.message_id(message_id)
+    yield trace.summary()
+    yield stream_events.done()
 
 @dataclass(slots=True)
 class _TurnContext:
@@ -674,18 +693,21 @@ async def _route_file(
     route_event_id: str | None,
     state: _RouteResult,
 ) -> AsyncIterator[dict]:
-    """Generate requested files, falling back from sandbox to docgen, then an honest saved failure."""
-    # Prefer the sandbox whenever it's available: model-written Python (python-docx/openpyxl/pptx/
-    # reportlab/Pillow…) reliably produces a real, downloadable file of any type — which is what the
-    # user sees as an actual file card. The deterministic docgen builder remains the fallback.
+    """Generate requested files, with no document fallback for static app bundles."""
+    app_request = filegen.wants_app(user_content)
     use_sandbox = sandbox.image_ready()
     sandbox_attempted = False
+    app_failure_detail = ""
+
     if use_sandbox:
         sandbox_attempted = True
         yield trace.step(
             "Selected generation path",
             "Writing and running code in the secure sandbox to produce the requested file.",
-            kind="tool", status="done", phase="execute", metadata={"sandbox": True},
+            kind="tool",
+            status="done",
+            phase="execute",
+            metadata={"sandbox": True},
         )
         result = None
         async for ev in filegen.run(model, user_content, gen_system, effort, rag_context, trusted_context):
@@ -693,14 +715,13 @@ async def _route_file(
                 result = ev["result"]
             else:
                 yield ev
+
         if result and result.get("ok") and result.get("files"):
-            produced: list[dict] = []
-            for item in result["files"]:
-                mime = mimetypes.guess_type(item.name)[0] or "application/octet-stream"
-                try:
-                    produced.append({"kind": "file", **file_library.store(item.name, mime, item.data)})
-                except ValueError:
-                    continue
+            try:
+                produced = await asyncio.to_thread(file_library.store_filegen_output, result)
+            except ValueError as exc:
+                produced = []
+                app_failure_detail = str(exc)
             if produced:
                 summary = result.get("summary") or "Here is your file."
                 message_id = await persistence._persist_assistant(cid, summary, model, produced)
@@ -714,21 +735,57 @@ async def _route_file(
                 state.handled = True
                 state.outcome = "sandbox_success"
                 return
+
+        if app_request:
+            if not app_failure_detail:
+                app_failure_detail = str(
+                    (result or {}).get("error") or "The generated bundle did not pass validation."
+                )
+            await route_telemetry.record_outcome(route_event_id, "app_failed")
+            state.handled = True
+            state.outcome = "app_failed"
+            async for ev in _deliver_app_failure(cid, model, trace, app_failure_detail):
+                yield ev
+            return
+
         yield trace.warning(
             "Sandbox fallback",
             "The sandbox path did not produce an approved file, so Orrery is falling back to deterministic document generation.",
             sandbox_attempted=True,
         )
     else:
+        if app_request:
+            await route_telemetry.record_outcome(route_event_id, "app_unavailable")
+            state.handled = True
+            state.outcome = "app_unavailable"
+            async for ev in _deliver_app_failure(
+                cid,
+                model,
+                trace,
+                "The secure local code sandbox is unavailable.",
+            ):
+                yield ev
+            return
         yield trace.step(
             "Selected generation path",
             "Using the deterministic document builder for this downloadable file.",
-            kind="tool", status="done", phase="execute", metadata={"sandbox": False},
+            kind="tool",
+            status="done",
+            phase="execute",
+            metadata={"sandbox": False},
         )
 
     delivered = False
     docspec_error: str | None = None
-    async for ev in _deliver_docspec(cid, model, user_content, gen_system, effort, rag_context, trusted_context):
+    async for ev in _deliver_docspec(
+        cid,
+        model,
+        user_content,
+        gen_system,
+        effort,
+        rag_context,
+        trusted_context,
+    ):
         if "_docspec_error" in ev:
             docspec_error = str(ev.get("_docspec_error") or "")
             continue
