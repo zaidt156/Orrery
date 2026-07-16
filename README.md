@@ -2,11 +2,14 @@
 
 <img src="assets/orrery-logo.svg" alt="Orrery" width="440">
 
-### A local desktop AI workspace for models, files, data, projects, and automation
+### A local-first desktop AI workspace — bring your own models and your own database
 
-Orrery lets you connect your own AI providers, local models, PostgreSQL data, project context,
-documents, skills, and workflow tools in one Windows desktop app.
+Orrery ties your own AI accounts and your own PostgreSQL database together into one desktop app:
+chat with any model, retrieve your documents, build dashboards and automations from your data, run
+goal-driven agents, and generate real files — all while your data, files, and credentials stay on
+your machine.
 
+![Version](https://img.shields.io/badge/version-0.2.1-E5A93F)
 ![License](https://img.shields.io/badge/License-Apache_2.0-F2B14E)
 ![Windows](https://img.shields.io/badge/Windows-supported-9DB9F0?logo=windows&logoColor=white)
 ![Python](https://img.shields.io/badge/Python-3.12+-9DB9F0?logo=python&logoColor=white)
@@ -19,39 +22,69 @@ documents, skills, and workflow tools in one Windows desktop app.
 
 ## Status
 
-Orrery is open source and under active development. Windows is the supported target right now.
-macOS and Linux are planned, but the current release packaging, installer notes, and testing path are
-Windows-focused. An Electron shell is now being added as the production desktop direction while the
-existing PyInstaller shell remains available during migration.
+Orrery is open source and under active development; the current line is **v0.2.1**. Windows is the
+fully supported target, with a macOS preview build published per release. Linux is planned. An
+Electron shell is the production desktop direction and ships alongside the original PyInstaller/Qt
+packaging while that migration finishes.
 
-The app is built for people who want AI help across documents, databases, local models, dashboards,
-automations, projects, and structured workflows while keeping control of their data. When you choose
-a cloud model, only the selected prompt/context needed for that request is sent to that provider.
-Your app state, files, database connection details, generated files, and credentials stay in your
-environment.
+The whole design rests on two things you bring: **your own model accounts or API keys**, and **your
+own PostgreSQL database**. Orrery is the framework between them. When you pick a cloud model, only the
+prompt and context that request needs is sent to that one provider. Your conversations, files,
+database connection details, generated documents, and credentials stay in your environment — there is
+no Orrery account, no telemetry, and no phone-home.
 
-## What Orrery Supports
+## What Orrery Does
 
-- Chat with multiple model routes: API-key providers, official CLI/account routes, custom
-  OpenAI-compatible endpoints, and local Ollama models.
-- Accounts & Keys: add provider API keys, connect supported first-party CLI plans, and manage active
-  models without exposing secrets in the UI.
-- Local models through Ollama, including one-click install/pull helpers where available.
-- File upload, search, and retrieval-augmented generation (RAG) with PostgreSQL and pgvector.
-- A data layer for local or active PostgreSQL connections, so dashboards and automations can be built
-  from connected data sources.
-- Projects with chat hierarchy and reusable context.
-- Ontologies and reusable knowledge structures for stronger context control.
-- Effort modes and context-window controls, including high-limit options for deeper work.
-- Sandboxed file generation for PDFs, Word documents, spreadsheets, PowerPoint decks, CSV files,
-  charts, HTML/web pages, audio, video/MP4/WebM, SVG/image-style outputs, archives, and other
-  requested artifacts.
-- Skills: reusable instruction playbooks that guide chat, file generation, research, coding, images,
-  projects, spreadsheets, presentations, and sandboxed work.
-- Admin controls for small teams, including feature toggles and approval flow for team-created
-  skills/tools.
-- Reasoning trace summaries that show what Orrery is doing without exposing raw private chain of
-  thought.
+Orrery is organized as a set of workspace tabs. Each keeps the same local, private-by-default rules.
+
+- **Chat** — talk to any connected model with streaming responses, a model picker, effort modes, and
+  context-window controls. Chat is also a command surface: from the chat box you can generate a file,
+  build a dashboard, start an agent, or run an automation, all through the same approval and scope
+  checks as everywhere else. Point it at your document collections to answer from your own material.
+- **Data** — connect local or remote PostgreSQL databases, browse tables read-only, and build
+  document collections for retrieval (RAG) using pgvector plus PostgreSQL full-text search. Untrusted
+  document text is kept separate from system instructions.
+- **Ontology** — reusable knowledge structures that give the model stronger, relevance-gated context
+  control across conversations.
+- **Dashboards** — describe the dashboard you want and pick a model; the model writes the SQL and
+  chooses the charts, and Orrery saves it as a spec. Refreshes re-run the saved queries against your
+  live data with no additional model cost. The AI is the designer, not the renderer.
+- **Automations** — fixed-recipe visual workflows on a canvas, triggered manually or on a schedule.
+  Nodes include LLM prompt, document search, database query, HTTP request, sandboxed Python, shell,
+  web search, branch, delay, dashboard refresh, and MCP tool calls, with a run/debug view.
+- **Agents** — goal-driven workers built on a durable run engine: they plan, act, self-check, and
+  improve within a strict scope until done, stopped, or a budget limit is hit. Tool use passes
+  through grant enforcement; runs support approval pauses, cancellation, scheduled ticks, and
+  crash-safe resume from an immutable step trace.
+- **Media Hub** — a playground for image and video generation on your own media-model keys, with
+  prompts and settings saved alongside the generated assets.
+- **Projects** — durable project context: a chat hierarchy plus reusable instructions and files that
+  related conversations share.
+- **Skills** — reusable instruction playbooks that guide chat, file generation, research, coding,
+  images, spreadsheets, presentations, and sandboxed work.
+- **Local Models** — install Ollama and pull models with one-click helpers where available, and keep
+  prompts and responses entirely on your machine.
+- **Settings & Admin** — Accounts & Keys (stored in the OS keychain), model providers, MCP servers,
+  defaults, and small-team feature toggles with an approval flow for team-created skills and tools.
+
+### File generation
+
+Orrery builds real files, not just text about them. It generates PDFs, Word documents, spreadsheets,
+PowerPoint decks, CSV files, charts, HTML/web pages, small self-contained web apps, audio, video,
+SVG/image outputs, and archives. Generated documents are the user's own deliverables — they carry no
+Orrery branding inside the file. Office files can be previewed faithfully (via LibreOffice or the
+bundled PDF renderer), and heavier or code-driven artifacts are produced in the locked-down sandbox
+and validated before they are attached.
+
+### Reasoning and memory
+
+- **Reasoning trace** — a live activity panel shows what Orrery is doing (planning, searching,
+  running code, building a file). Where a model connection exposes raw thinking tokens, they stream
+  into their own collapsible block; where a connection does not (some first-party CLI plans), the
+  panel says so honestly and shows Orrery's structured trace instead.
+- **Life Memory** — an optional durable memory the app can learn over time, kept in a file in your
+  user-data directory. Any AI-proposed change is a diff you approve before it is written; edits are
+  atomic and reversible.
 
 ## Architecture
 
@@ -68,7 +101,9 @@ environment.
 
 Orrery is a modular monolith with sidecars, not microservices. The backend modules run as one local
 application, while risky or heavy capabilities such as sandboxed file generation, local model runtimes,
-and provider CLIs stay isolated as local sidecar processes.
+and provider CLIs stay isolated as local sidecar processes. Automations and agents run as durable
+background jobs through the Procrastinate worker, so a scheduled workflow or a long agent run survives
+restarts and resumes from its recorded state.
 
 ## Download A Desktop Build
 
@@ -81,8 +116,10 @@ When a release is published, download the desktop package from the
 - `Orrery-macOS.zip`: macOS preview package with `Orrery.app`, database compose file, sandbox
   Dockerfile, `setup-orrery.command`, `run-orrery.command`, and macOS notes.
 
-The first public builds are preview builds. If a release asset is not attached yet, run Orrery from
-source using the steps below or ask a maintainer to publish a tagged release.
+Windows packages are built and attached automatically on each version tag; the macOS package is a
+preview (not yet code-signed or notarized — see the macOS notes below). If an asset is not attached
+to the latest release yet, run Orrery from source using the steps below or ask a maintainer to
+publish a tagged release.
 
 ### Windows Release Prerequisites
 
@@ -328,7 +365,7 @@ Orrery uses PostgreSQL as the main data layer. You can:
 - Use pgvector and PostgreSQL full-text search for hybrid retrieval.
 - Use retrieved context in chat while keeping untrusted document text separated from system
   instructions.
-- Build dashboards and automations from connected data sources as those features mature.
+- Build dashboards and automations directly from connected data sources.
 
 ## File Generation And Sandbox
 
@@ -364,11 +401,11 @@ Read [`SECURITY.md`](SECURITY.md) for vulnerability reporting.
 Maintainers can build release assets with GitHub Actions.
 
 1. Push the changes to GitHub.
-2. Create and push a version tag:
+2. Create and push a version tag (the tag push is what triggers the release build):
 
 ```powershell
-git tag v0.1.0
-git push origin v0.1.0
+git tag v0.2.1
+git push origin v0.2.1
 ```
 
 3. The release workflows build and publish platform zips:

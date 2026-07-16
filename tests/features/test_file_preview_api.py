@@ -196,8 +196,8 @@ def test_reply_pdf_preview_registers_webview_safe_content(monkeypatch):
         seen["source"] = (name, mime, data)
         return b'<html data-renderer="qt-pdf">pages</html>', "text/html; charset=utf-8"
 
-    def register(content, media_type="text/html"):
-        seen["artifact"] = (content, media_type)
+    def register(content, media_type="text/html", filename=None):
+        seen["artifact"] = (content, media_type, filename)
         return "preview-id"
 
     monkeypatch.setattr(chat, "can_access_conversation", allow_access)
@@ -213,6 +213,8 @@ def test_reply_pdf_preview_registers_webview_safe_content(monkeypatch):
     assert response.status_code == 200
     assert seen["source"] == ("resume.pdf", "application/pdf", b"%PDF-valid")
     assert seen["artifact"][1] == "text/html; charset=utf-8"
+    # The real name rides along, so saving from the viewer does not yield a uuid filename.
+    assert seen["artifact"][2] == "resume.pdf"
     assert response.json() == {
         "url": "/artifacts/preview-id",
         "kind": "pdf",

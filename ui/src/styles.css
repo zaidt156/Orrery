@@ -850,6 +850,9 @@ button.attach-chip:hover{border-color:var(--amber); color:var(--text)}
 .icon-square:hover{color:var(--text);border-color:var(--ice)}
 .icon-square svg{width:16px;height:16px}
 .icon-square.danger:hover{color:var(--red);border-color:var(--red)}
+.icon-square[aria-busy="true"]{opacity:.6;cursor:default}
+.local-refresh{display:flex;align-items:center;gap:9px;flex:none}
+.local-refresh>small{min-width:78px;min-height:12px;color:var(--faint);font-family:var(--font-mono);font-size:9px;line-height:1;white-space:nowrap;text-align:right}
 .local-error{max-width:1180px;margin:0 auto 14px;padding:9px 12px;border:1px solid #E36C6C55;background:#E36C6C16;color:var(--red);border-radius:7px;font-size:12px}
 .runtime-strip{max-width:1180px;margin:0 auto 26px;padding:14px 16px;display:flex;align-items:center;gap:16px;border-top:1px solid var(--line);border-bottom:1px solid var(--line);background:var(--bg1)}
 .runtime-state{display:flex;align-items:center;gap:11px;min-width:220px}
@@ -1891,8 +1894,11 @@ button:focus-visible, .toggle:focus-visible, .node:focus-visible, .convo:focus-v
 .dash-heading{min-width:0;display:flex;flex-direction:column;gap:5px}
 .dash-heading>div{display:flex;align-items:baseline;gap:9px;min-width:0}
 .dash-title{min-width:0;margin:0;font-family:var(--font-display);font-size:19px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.dash-refresh-tools{display:flex;align-items:flex-end;flex-direction:column;gap:3px}
-.dash-refresh-tools>small{min-height:12px;color:var(--faint);font-family:var(--font-mono);font-size:8.5px;line-height:1}
+/* Control and status share one row/baseline with the buttons beside them. The small's min-width
+   must cover its longest text ("Last run 10:22:31") — the row is right-anchored through .grow, so
+   a width change here slides the select sideways under the cursor on every auto-refresh. */
+.dash-refresh-tools{display:flex;align-items:center;gap:10px}
+.dash-refresh-tools>small{min-width:96px;min-height:12px;color:var(--faint);font-family:var(--font-mono);font-size:9px;line-height:1;white-space:nowrap;text-align:right}
 .dash-refresh-control{display:flex;align-items:center;gap:7px;color:var(--faint);font-family:var(--font-mono);font-size:8.5px;letter-spacing:.04em;text-transform:uppercase}
 .dash-refresh-control select{height:30px;max-width:136px;border:1px solid var(--line);border-radius:calc(var(--radius-ui) - 5px);background:var(--bg2);padding:0 24px 0 8px;color:var(--text);font:10px var(--font-sans);letter-spacing:0;text-transform:none}
 .dash-live{display:inline-flex;align-items:center;gap:5px;font-style:normal;color:var(--faint);letter-spacing:0;text-transform:none}
@@ -1958,7 +1964,6 @@ button:focus-visible, .toggle:focus-visible, .node:focus-visible, .convo:focus-v
   .dashboard-commandbar{align-items:flex-start;flex-wrap:wrap}
   .dash-heading{flex-basis:calc(100% - 10px)}
   .dashboard-commandbar .grow{display:none}
-  .dash-refresh-tools{align-items:flex-start}
   .dash-canvas{min-height:520px}
   .dash-insights{grid-template-columns:1fr 1fr}
   .dash-insight-status{grid-column:1/-1}
@@ -1967,10 +1972,9 @@ button:focus-visible, .toggle:focus-visible, .node:focus-visible, .convo:focus-v
   .dashboard-side{max-height:240px}
   .dashboard-side .project-list{display:flex}
   .dashboard-commandbar .btn{flex:1;justify-content:center}
-  .dash-refresh-tools{width:100%;align-items:stretch;flex-direction:row;justify-content:space-between}
+  .dash-refresh-tools{width:100%;justify-content:space-between}
   .dash-refresh-control{min-width:0}
   .dash-refresh-control select{max-width:150px}
-  .dash-refresh-tools>small{align-self:center;text-align:right}
   .dash-heading>div{align-items:flex-start;flex-direction:column;gap:2px}
   .dash-summary-strip{padding:10px 10px 0;gap:5px}
   .dash-summary-strip span{align-items:flex-start;flex-direction:column;gap:1px;padding:7px 8px}

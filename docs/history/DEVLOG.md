@@ -2634,3 +2634,69 @@ unchanged.
 
 Next: Task 9 - serve the private bundle through a session-gated, CSP-locked route and open it only
 inside a sandboxed iframe, while preserving the ZIP download.
+
+## Step 145 - The reported issues, and why a CV came out looking like a report (July 16, 2026)
+
+Five reported problems turned out to be four unrelated bugs and one that explained two complaints at
+once. Each was traced to a proven cause before anything was changed.
+
+- **Asking for a CV produced no file at all.** This was the big one, and the reasoning panel was
+  telling the truth about it. Orrery has an optional setting, "Model-guided tool planner", which the
+  owner had switched on. With it on, Orrery stopped handling file requests itself and left the model
+  to decide whether to make a file — but the model is only *offered* that ability, never required to
+  use it, so "Creat me a CV..." came back as a chat message with the CV typed into it and no
+  document attached. The chat history shows both halves of the story in one conversation: with the
+  setting off, the same request produced a real Word CV and a full activity trace; with it on, one
+  line, "Done", and no file. Worse, the panel had already announced "Preparing the requested file"
+  before the code decided to skip that path, so Orrery promised a file it never made. A request for
+  a deliverable now always uses Orrery's own file builder; the planner still picks tools freely for
+  everything else.
+
+- **The "pathetic CV" was the same bug wearing a different hat.** Because no file was generated, the
+  owner exported the chat reply instead — and an exported reply is rendered by the generic document
+  renderer, which is why a CV arrived shaped like a report. That path also stamped "Orrery" and a
+  page number onto the bottom of every page, and recorded Orrery as the document's author.
+
+- **Files no longer advertise Orrery.** A CV, a letter or a report belongs to the person who asked
+  for it; a document footed with the name of the app that typed it is not one anyone would send. The
+  file's own code already said so in a comment and then did the opposite. Page numbers stay, the app
+  name is gone, and the Word author field is now cleared rather than left to say "python-docx".
+
+- **The model was told to deface its own documents.** It had been instructed to mark sample content
+  as fictional but given nowhere to put that, so it wrote "This is a fictional sample CV..." into the
+  top of the CV, above the contact details, and narrated the document to its reader
+  ("Reverse-chronological summary of 5 roles..."). It is now told to keep such notes in the chat
+  message, where they do not deface the file, and that a CV opens with a person's name.
+
+- **Two ways to crash a chat turn, and one real security hole.** Reviewing the app-bundle work from
+  Step 144 found that Orrery read the model's hand-written SVG images with the standard XML reader.
+  That reader expands "entities", so roughly 270 bytes of a well-known malicious pattern balloons
+  into as much memory as the attacker likes — the size limits do not help, because the growth happens
+  after the check. Orrery already ships a hardened reader and already uses it in two other places;
+  the file builder now uses it too. Separately, a broken image, or an app that used one name as both
+  a file and a folder, raised errors of a type nobody was catching, so instead of a plain "could not
+  build it" message the whole turn fell over. Both now fail politely.
+
+- **The Local Models refresh button.** It was never broken. It fetched, it updated, it just did so
+  invisibly: no spinner, and because Ollama was already running the answer came back identical, so
+  not one pixel changed. It now spins while checking and shows the time it last checked, so an
+  unchanged answer still looks like an answer.
+
+- **The dashboard toolbar.** The "Last run" time sat underneath the auto-refresh dropdown, making
+  that side of the bar two rows tall while the buttons beside it were one, so nothing lined up. It
+  is one row now.
+
+- **A test file that could only be run with company.** Not reported, found on the way past: the
+  exports module imported the chat module while the chat module imported exports, so the export
+  tests only passed when another test dragged the chat module in first. Running them alone failed on
+  untouched code. The import now happens where it is used.
+
+Task 8 is now genuinely complete; it had been recorded as complete while three real defects were
+still in it. Regression tests lock in the two failures a user would actually notice: a file request
+with the planner on must still reach the file builder (verified to fail against the old code), and a
+generated file must not carry Orrery's name.
+
+Verified: all 543 backend tests pass; all 38 UI tests pass; the production UI build succeeds.
+
+Next: Task 9 - serve the private bundle through a session-gated, CSP-locked route and open it only
+inside a sandboxed iframe, while preserving the ZIP download.

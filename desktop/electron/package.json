@@ -1,6 +1,6 @@
 {
   "name": "orrery-desktop",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "description": "Orrery — your local-first AI workspace.",
   "main": "main.cjs",

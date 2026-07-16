@@ -409,6 +409,62 @@ async def test_proceed_after_an_svg_turn_inherits_intent_with_context(monkeypatc
 
 
 @pytest.mark.anyio
+async def test_file_request_still_routes_to_file_with_capability_agent_on(monkeypatch):
+    """The tool planner must not swallow an explicit deliverable request.
+
+    Regression for the reported bug: with capability_agent enabled, "Creat me a CV …" skipped the
+    file route entirely and came back as chat prose with no file — under a reasoning card that had
+    already announced "Preparing the requested file", because the card is authored from the plan
+    before the routing decision. The planner only OFFERS file_generate; it never requires it, so a
+    file request must keep the purpose-built route.
+    """
+    calls = []
+
+    async def fake_prepare_turn(*args, **kwargs):
+        return _fake_turn()
+
+    async def fake_trusted_context(project_id):
+        return None
+
+    async def fake_record_plan(*args, **kwargs):
+        return "route-1"
+
+    async def fake_flags():
+        return {"capability_agent": True, "file_gen": True}
+
+    async def fake_route_file(*args, **kwargs):
+        calls.append("file")
+        args[-1].handled = True
+        yield {"done": True}
+
+    async def fake_route_model_reply(*args, **kwargs):
+        calls.append("model")
+        yield {"done": True}
+
+    monkeypatch.setattr(chat.router, "_prepare_turn", fake_prepare_turn)
+    monkeypatch.setattr(chat.project_store, "trusted_context", fake_trusted_context)
+    monkeypatch.setattr(chat.route_telemetry, "record_plan", fake_record_plan)
+    monkeypatch.setattr(chat.router.admin, "effective_flags", fake_flags)
+    monkeypatch.setattr(chat.router, "_route_file", fake_route_file)
+    monkeypatch.setattr(chat.router, "_route_model_reply", fake_route_model_reply)
+
+    events = [
+        event
+        async for event in chat.stream_reply(
+            "00000000-0000-0000-0000-000000000001",
+            "Create me a CV as a PDF for a data engineer",
+        )
+    ]
+
+    assert calls == ["file"], "capability_agent must not bypass an explicit file request"
+
+    # The card announces the file route — which must therefore be the route that actually ran.
+    # Unguarded next(): a missing card is itself a failure, not a skip.
+    outer = next(e for e in events if isinstance(e, dict) and e.get("type") == "reasoning_outer")
+    assert outer["reasoning_outer"]["title"] == "Preparing the requested file"
+
+
+@pytest.mark.anyio
 async def test_stream_reply_file_route_can_fall_back_to_model_reply(monkeypatch):
     calls = []
 

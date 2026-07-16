@@ -532,11 +532,21 @@ def _validate_tex(data: bytes) -> tuple[str, list[str]]:
     return text, ["decodes_as_tex", "has_latex_structure"]
 
 
-def _validate_svg(data: bytes) -> tuple[str, list[str]]:
-    import xml.etree.ElementTree as ET
+def _parse_svg(text: str):
+    """Parse untrusted model SVG via defusedxml (stdlib ElementTree expands entities — a
+    billion-laughs payload balloons past any size cap). All parse failures become ValueError, the
+    type every caller's guard expects (ParseError is a SyntaxError, not a ValueError)."""
+    from defusedxml import ElementTree as SafeElementTree
 
+    try:
+        return SafeElementTree.fromstring(text)
+    except Exception as exc:  # noqa: BLE001 — ParseError/EntitiesForbidden/DTDForbidden all mean "bad SVG"
+        raise ValueError(f"SVG could not be parsed safely: {str(exc)[:200]}") from exc
+
+
+def _validate_svg(data: bytes) -> tuple[str, list[str]]:
     text = _decode_text(data)
-    root = ET.fromstring(text)
+    root = _parse_svg(text)
     tag = str(root.tag).rsplit("}", 1)[-1]
     if tag != "svg":
         raise ValueError("SVG root element is not <svg>.")
@@ -622,6 +632,17 @@ def _normalize_app_bundle(
     root = entrypoints[0].parent
     if any(not path.is_relative_to(root) for path, _file in parsed):
         raise ValueError("Every app file must live in the same bundle directory as index.html.")
+
+    # "app.js" and "app.js/logo.png" are each valid alone, but one cannot be both a file and a
+    # directory on disk. Caught here, it is a plain validation error the model can repair; left to
+    # the host write it surfaces as FileExistsError and takes the whole turn down with it.
+    folded_set = set(folded)
+    for path, _file in parsed:
+        for parent in path.parents:
+            if parent.as_posix().casefold() in folded_set:
+                raise ValueError(
+                    f"App bundle uses '{parent.as_posix()}' as both a file and a folder."
+                )
 
     normalized = [
         sandbox.SandboxFile(path.relative_to(root).as_posix(), file.data)
@@ -816,9 +837,7 @@ def _validate_app_text_file(file: sandbox.SandboxFile, members: set[str]) -> lis
         json.loads(text)
         return ["parses_as_json"]
     if ext == "svg":
-        import xml.etree.ElementTree as ET
-
-        root = ET.fromstring(text)
+        root = _parse_svg(text)
         for element in root.iter():
             tag = str(element.tag).rsplit("}", 1)[-1].lower()
             if tag in {"script", "foreignobject"}:
