@@ -41,6 +41,11 @@ ROUTE_CASES = [
     ("draw a logo for my startup", "image"),
     ("design an icon for the settings screen", "image"),
     ("draw a diagram of the architecture", "image"),    # 'draw' is not a file verb → image
+    # an explicit SVG request is an image artifact, never a document. Regression for the report
+    # where "create an SVG" then "do it" came back as a PDF containing the SVG's source text.
+    ("create an SVG explaining the HCI loop", "image"),
+    ("make me an svg logo", "image"),
+    ("generate an svg illustration of a clock", "image"),
     # audio: delivered as a downloadable audio artifact via the FILE route (there is no separate
     # "audio" route value — see taskrouter.plan's audio branch, which returns route="file")
     ("read this out loud", "file"),
@@ -159,6 +164,29 @@ async def test_image_attachment_vision_question_routes_to_model(monkeypatch):
 async def test_data_file_attachment_with_file_request_still_makes_a_file(monkeypatch):
     # a non-image attachment (a CSV) plus "make a PDF report" is a legitimate file build
     assert await _drive(monkeypatch, "make a PDF report from this data", attachments=[_CSV]) == ["file"]
+
+
+@pytest.mark.anyio
+async def test_svg_request_routes_to_image_not_a_document(monkeypatch):
+    assert await _drive(monkeypatch, "create an SVG explaining the HCI loop") == ["image"]
+
+
+@pytest.mark.anyio
+async def test_svg_request_stays_image_with_the_tool_planner_on(monkeypatch):
+    # Regression for the report: with capability_agent on, "create an SVG" then "do it" fell through
+    # to the planner and came back as a PDF containing the SVG source. An explicit visual request must
+    # keep the deterministic image route, planner or not.
+    async def flags():
+        return {"capability_agent": True, "file_gen": True}
+
+    monkeypatch.setattr(chat.router.admin, "effective_flags", flags)
+    assert await _drive(monkeypatch, "create an SVG explaining the HCI loop") == ["image"]
+
+    history = [
+        {"role": "user", "content": "can you create an SVG explaining HCI"},
+        {"role": "assistant", "content": "Yes, I can create an SVG. Tell me the style you want."},
+    ]
+    assert await _drive(monkeypatch, "that do it", history=history) == ["image"]
 
 
 @pytest.mark.anyio
