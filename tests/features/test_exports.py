@@ -47,6 +47,25 @@ def test_pdf_export_is_readable():
     assert "Revenue increased" in text
 
 
+def test_exports_never_brand_the_users_file():
+    """A generated file is the user's, not an Orrery advert.
+
+    Regression for the reported CV: every page carried an "Orrery · N" footer and /Author=Orrery,
+    so a resume announced the app that typed it. Page numbers are fine; the app name is not.
+    """
+    pdf = exports.render_export("Jordan A. Rivera", "openai/test", SAMPLE_REPLY, "pdf")
+    assert b"Orrery" not in pdf.content
+    reader = PdfReader(io.BytesIO(pdf.content))
+    # ReportLab writes "(anonymous)" with no author set — no identity is the point, not the string.
+    assert (reader.metadata or {}).get("/Author") in (None, "", "(anonymous)")
+    assert "Orrery" not in "\n".join(p.extract_text() or "" for p in reader.pages)
+
+    # "python-docx" counts too: the default template names itself as author if left unset.
+    docx = exports.render_export("Jordan A. Rivera", "openai/test", SAMPLE_REPLY, "docx")
+    assert Document(io.BytesIO(docx.content)).core_properties.author in (None, "")
+    assert b"Orrery" not in docx.content
+
+
 def test_docx_export_is_readable():
     result = exports.render_export("Quarterly report", "openai/test", SAMPLE_REPLY, "docx")
     document = Document(io.BytesIO(result.content))

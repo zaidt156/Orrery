@@ -140,7 +140,7 @@ def create_app(session_token: str) -> FastAPI:
         item = artifacts.get(artifact_id)
         if item is None:
             return Response("This preview has expired. Re-open it from the chat.", status_code=404)
-        media_type, data = item
+        media_type, data, filename = item
         headers = {
             "X-Frame-Options": "SAMEORIGIN",
             "X-Content-Type-Options": "nosniff",
@@ -148,6 +148,10 @@ def create_app(session_token: str) -> FastAPI:
         }
         if media_type == "text/html":  # HTML runs sandboxed; binary files (PDF) render natively
             headers["Content-Security-Policy"] = _ARTIFACT_CSP
+        elif filename:
+            # "inline" keeps it in the viewer; the name is only used if the user saves from there,
+            # which otherwise names the file after the uuid in the URL. Sanitized in artifacts.py.
+            headers["Content-Disposition"] = f'inline; filename="{filename}"'
         return Response(content=data, media_type=media_type, headers=headers)
 
 

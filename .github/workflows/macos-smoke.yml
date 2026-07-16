@@ -17,7 +17,7 @@ on:
         default: v0.1.0-preview
       asset:
         description: DMG asset name to test
-        default: Orrery-0.2.0-mac-arm64.dmg
+        default: Orrery-0.2.1-mac-arm64.dmg
   workflow_run:
     workflows: ["Build macOS Release"]
     types: [completed]
@@ -29,7 +29,7 @@ jobs:
     timeout-minutes: 25
     env:
       TAG: ${{ inputs.tag || 'v0.1.0-preview' }}
-      ASSET: ${{ inputs.asset || 'Orrery-0.2.0-mac-arm64.dmg' }}
+      ASSET: ${{ inputs.asset || 'Orrery-0.2.1-mac-arm64.dmg' }}
       GH_TOKEN: ${{ github.token }}
     steps:
       - name: Download the released DMG

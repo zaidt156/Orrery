@@ -40,7 +40,6 @@ from sqlalchemy import select
 
 from backend.core.database import get_sessionmaker
 from backend.core.models import Conversation, Message
-from backend.features.chat import versioning
 
 MAX_EXPORT_CHARS = 2_000_000
 MAX_TABLE_CELLS = 50_000
@@ -440,6 +439,9 @@ def _pdf_markup(spans: list[InlineSpan], sans: str, mono: str) -> str:
 
 
 def build_pdf(title: str, model: str, blocks: list[ExportBlock]) -> bytes:
+    """Render blocks to PDF. Carries no Orrery name or authorship anywhere — every file this
+    builds is the user's own deliverable, and provenance lives in the chat UI, not inside the
+    document (the same reason there is no "Model:" subtitle). Bare page numbers only."""
     output = io.BytesIO()
     sans, mono = _pdf_fonts()
     styles = getSampleStyleSheet()
@@ -494,10 +496,7 @@ def build_pdf(title: str, model: str, blocks: list[ExportBlock]) -> bytes:
         topMargin=18 * mm,
         bottomMargin=18 * mm,
         title=title,
-        author="Orrery",
     )
-    # No "Model:" subtitle here — a user-requested document (CV, letter, report) must read as the
-    # real thing; provenance already lives in the chat UI, not stamped inside the file.
     story = [
         Paragraph(html.escape(title), heading_styles[1]),
         Spacer(1, 4 * mm),
@@ -553,7 +552,7 @@ def build_pdf(title: str, model: str, blocks: list[ExportBlock]) -> bytes:
         canvas.saveState()
         canvas.setFont(sans, 8)
         canvas.setFillColor(colors.HexColor("#69758a"))
-        canvas.drawRightString(A4[0] - 18 * mm, 10 * mm, f"Orrery · {document.page}")
+        canvas.drawRightString(A4[0] - 18 * mm, 10 * mm, str(document.page))
         canvas.restoreState()
 
     doc.build(story, onFirstPage=footer, onLaterPages=footer)
@@ -578,6 +577,7 @@ def _shade_paragraph(paragraph, fill: str) -> None:
 
 
 def build_docx(title: str, model: str, blocks: list[ExportBlock]) -> bytes:
+    """Render blocks to DOCX. Carries no Orrery authorship — see build_pdf."""
     document = Document()
     section = document.sections[0]
     section.top_margin = Inches(0.65)
@@ -585,7 +585,9 @@ def build_docx(title: str, model: str, blocks: list[ExportBlock]) -> bytes:
     section.left_margin = Inches(0.75)
     section.right_margin = Inches(0.75)
     document.core_properties.title = title
-    document.core_properties.author = "Orrery"
+    # Cleared, not merely left unset: python-docx's default template stamps itself as the author,
+    # so a CV would ship claiming "python-docx" wrote it. The file belongs to the user.
+    document.core_properties.author = ""
     document.add_heading(title, level=0)  # no "Model:" subtitle — the document is the deliverable
 
     for block in blocks:
@@ -949,6 +951,8 @@ code{{font-family:Consolas,monospace}} blockquote{{border-left:4px solid #8fa5c8
     return document.encode("utf-8")
 
 def render_export(title: str, model: str, content: str, export_format: str) -> ExportResult:
+    """Export a chat reply as a file. The user may well be exporting a deliverable the model wrote
+    into the chat (this is how a CV reached them once), so this carries no Orrery branding either."""
     if export_format not in SUPPORTED_FORMATS:
         raise ValueError("Unsupported export format")
     blocks = parse_markdown(content)
@@ -1010,6 +1014,11 @@ async def _load_export_payload(conversation_id: str, message_id: str, export_for
                 select(Message).where(Message.conversation_id == conversation_uuid).order_by(Message.created_at)
             )
         ).scalars().all()
+
+        # Imported here, not at module scope: backend.features.chat pulls in router -> docgen ->
+        # exports, so a top-level import makes this module unimportable unless chat happens to be
+        # imported first. The suite only passed by that accident of ordering.
+        from backend.features.chat import versioning
 
         # Follow the version chain that led to this exact reply (it may be an inactive version).
         chain = versioning.ancestors(messages, str(message_uuid))

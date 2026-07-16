@@ -37,9 +37,19 @@ vertically: each task lands a complete, testable path and leaves the suite green
   Checkpoint 1 before marking the task fully complete.
 - **Tasks 6-7: COMPLETE.** LibreOffice status/guided install and faithful Office-to-PDF previews
   shipped in DEVLOG Step 141 with backend/UI tests.
-- **Task 8: COMPLETE.** Static app intent, sandbox prompting, self-containment validation,
-  deterministic ZIP persistence, private extracted preview directories, atomic cleanup, and
-  dedicated router/tool/storage tests are complete. Task 9 is the next small-app slice.
+- **Task 8: COMPLETE** (as of Step 145; the earlier "COMPLETE" here was premature). Static app
+  intent, sandbox prompting, self-containment validation, deterministic ZIP persistence, private
+  extracted preview directories, atomic cleanup, and dedicated router/tool/storage tests landed in
+  Step 144 — but a follow-up review found three real defects that AC#2's "plain error" contract had
+  not actually met, all fixed in Step 145: untrusted model-written SVG was parsed with raw
+  ElementTree (billion-laughs exposure; now defusedxml, which the repo already standardised on),
+  and both a malformed SVG (ParseError subclasses SyntaxError, not ValueError) and a file/folder
+  name collision (FileExistsError is an OSError) escaped their guards and crashed the turn.
+  Caveats worth carrying into Task 9: "self-containment validation" is a heuristic quality gate, not
+  a boundary — `window['fet'+'ch'](...)` passes it — so Task 9's CSP is the load-bearing control;
+  "private preview directories" means "no route serves them yet", not filesystem-private; and the
+  ZIP is byte-deterministic within a platform but not across operating systems (ZipInfo sets
+  create_system from sys.platform). Task 9 is the next small-app slice.
 
 ## Architecture Decisions
 

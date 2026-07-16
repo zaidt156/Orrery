@@ -720,8 +720,16 @@ async def _route_file(
             try:
                 produced = await asyncio.to_thread(file_library.store_filegen_output, result)
             except ValueError as exc:
+                # Validation messages are authored strings — safe to surface for the repair loop.
                 produced = []
                 app_failure_detail = str(exc)
+            except OSError as exc:
+                # A storage fault must degrade to a plain reply, never take the turn down — but
+                # str(exc) embeds the absolute host path (and username), which would be persisted
+                # into the conversation and replayed to the cloud model. Log it, don't surface it.
+                _log.warning("app bundle store failed: %s: %s", type(exc).__name__, exc)
+                produced = []
+                app_failure_detail = "The generated bundle could not be saved to disk."
             if produced:
                 summary = result.get("summary") or "Here is your file."
                 message_id = await persistence._persist_assistant(cid, summary, model, produced)
@@ -1050,14 +1058,17 @@ async def stream_reply(
                     kind="context", status="done", phase="context",
                 )
 
-    # Capability planner: when the model-guided tool planner is enabled, file/image requests are NOT
-    # pre-routed by regex — they flow to the model, which self-selects file_generate (which produces
-    # HTML, LaTeX/.tex, images, audio, docx, xlsx, …) or another tool. When it's off (default), the
-    # deterministic route-specific handlers below run as before. Project creation stays a dedicated
-    # side-effecting route regardless.
-    planner_on = bool(flags.get("capability_agent", False))
+    # Capability planner: the model self-selects tools for turns whose intent is open-ended. It does
+    # NOT get to override an explicit deliverable request. It used to: file/image turns skipped the
+    # handlers below and were left to the model to self-select file_generate — but the tool is only
+    # OFFERED, never required, so "Creat me a CV …" came back as chat prose with no file, under a
+    # card that had already promised one (the card is authored from the plan, above). The two roles
+    # compose better than they compete: when the router sees a deliverable, the purpose-built route
+    # runs (validation, repair loop, preview contract, narrated trace); when the router sees "chat"
+    # but the turn really does need a file, the planner can still reach for file_generate itself
+    # (_allowed_registry_tools still offers it downstream, gated on the same flag).
 
-    if plan.route == "image" and not attachments and not planner_on:
+    if plan.route == "image" and not attachments:
         # plan_text, not user_content: a "do it" confirmation carries its inherited ask along,
         # so the generator sees WHAT to draw instead of just the two-word go-signal.
         async for event in _route_image(cid, model, plan_text, gen_system, effort, trace, route_event_id):
@@ -1076,7 +1087,7 @@ async def stream_reply(
             yield event
         return
 
-    if plan.route == "file" and flags.get("file_gen", True) and not planner_on:
+    if plan.route == "file" and flags.get("file_gen", True):
         route_state = _RouteResult()
         async for event in _route_file(
             cid, model, plan_text, gen_system, effort, rag_context, trusted_context,

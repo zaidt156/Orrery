@@ -68,7 +68,7 @@ async def preview_reply(cid: str, mid: str, export_format: str) -> dict:
         result.media_type,
         result.content,
     )
-    artifact_id = artifacts.register(content, media)
+    artifact_id = artifacts.register(content, media, filename=result.filename)
     return {"url": f"/artifacts/{artifact_id}", "kind": export_format, "mime": media}
 
 @router.get("/files/{file_id}")
@@ -101,7 +101,7 @@ async def preview_file(file_id: str) -> dict:
         data,
         cache_path=cache_path,
     )
-    artifact_id = artifacts.register(content, media)
+    artifact_id = artifacts.register(content, media, filename=meta["name"])
     rendered_pdf = office_file and b'data-renderer="qt-pdf"' in content
     partial = rendered_pdf and b'data-preview-complete="false"' in content
     faithful = rendered_pdf and not partial

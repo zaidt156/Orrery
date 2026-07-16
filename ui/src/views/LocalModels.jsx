@@ -38,13 +38,27 @@ export default function LocalModels({ onNavigate }) {
   const [query, setQuery] = useState("");
   const [tier, setTier] = useState("all");
   const [customName, setCustomName] = useState("");
+  const [refreshing, setRefreshing] = useState(false);
+  const [checkedAt, setCheckedAt] = useState(null);
+  const [announce, setAnnounce] = useState(false);
 
-  async function refresh() {
+  // Own state rather than `busy`: action() and pull() call refresh() while they hold busy, so
+  // sharing it would clear their spinner early. The probe reaches Ollama over the network and
+  // usually returns an identical status, so the timestamp — not the spinner — is what proves to
+  // the user that the check actually ran. `announce` is only set for an explicit button press, so
+  // the live region does not narrate the silent refreshes that follow a model toggle or a pull.
+  async function refresh(announce = false) {
+    if (refreshing) return;
+    setRefreshing(true);
     try {
       setError("");
       setData(await getLocalModels());
+      setCheckedAt(Date.now());
+      setAnnounce(announce);
     } catch (err) {
       setError(String(err.message || err));
+    } finally {
+      setRefreshing(false);
     }
   }
 
@@ -104,7 +118,26 @@ export default function LocalModels({ onNavigate }) {
             <h1>Local Models</h1>
             <p>Install Ollama, download a model, and keep prompts and responses on this computer.</p>
           </div>
-          <button className="icon-square" title="Refresh status" onClick={refresh}><RefreshCw /></button>
+          <div className="local-refresh">
+            <small role="status" aria-live={announce ? "polite" : "off"}>
+              {refreshing
+                ? "Checking…"
+                : checkedAt
+                  ? `Checked ${new Date(checkedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`
+                  : ""}
+            </small>
+            {/* aria-busy, not disabled: disabling the focused button drops keyboard focus to
+                <body>. The click guard in refresh() prevents overlap. */}
+            <button
+              className="icon-square"
+              title="Refresh status"
+              aria-label="Refresh local model status"
+              aria-busy={refreshing}
+              onClick={() => refresh(true)}
+            >
+              <RefreshCw className={refreshing ? "spin" : ""} />
+            </button>
+          </div>
         </header>
 
         {error && <div className="local-error">{error}</div>}
