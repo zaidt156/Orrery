@@ -32,13 +32,26 @@ _DEFAULT_ROW_CAP = 200
 
 # --- SQL validation (defense in depth — the READ ONLY transaction is the enforcement) ------------
 
+def _parse_sql_statements(sql: str) -> list:
+    """Parse with the Postgres dialect, degrading to the default dialect if that dialect module is
+    unavailable. sqlglot loads dialects dynamically by name, so a packaged (PyInstaller) build that
+    did not bundle `sqlglot.dialects.postgres` would otherwise turn every widget into a parse error
+    ("No module named 'sqlglot.dialects.postgres'"). The default dialect parses standard SQL fine,
+    and the READ ONLY transaction — not this parser — is the real enforcement."""
+    import sqlglot
+
+    try:
+        return sqlglot.parse(sql, read="postgres")
+    except ModuleNotFoundError:
+        return sqlglot.parse(sql)
+
+
 def validate_widget_sql(sql: str) -> str | None:
     """Reject anything that isn't a single SELECT. Returns an error string or None when clean."""
-    import sqlglot
     from sqlglot import exp
 
     try:
-        statements = sqlglot.parse(sql, read="postgres")
+        statements = _parse_sql_statements(sql)
     except Exception as exc:  # noqa: BLE001
         return f"SQL didn't parse: {str(exc)[:160]}"
     if len(statements) != 1 or statements[0] is None:

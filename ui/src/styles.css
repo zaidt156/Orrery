@@ -479,7 +479,7 @@ button.stat-card:hover{border-color:var(--ice); transform:translateY(-1px)}
   font-family:var(--font-mono); font-size:9.5px; color:var(--faint); background:transparent;
   border:1px solid var(--line); border-radius:99px; padding:2px 8px; letter-spacing:0; text-transform:none;
 }
-.msg.ai p{margin-bottom:10px; color:#D6DCEF}
+.msg.ai p{margin-bottom:10px; color:var(--text)}
 .msg.ai pre{
   background:var(--bg1); border:1px solid var(--line); border-radius:9px; padding:11px 13px;
   font-family:var(--font-mono); font-size:11.5px; color:var(--ice); overflow-x:auto; margin-bottom:10px;
@@ -1017,7 +1017,7 @@ button.attach-chip:hover{border-color:var(--amber); color:var(--text)}
 .node.selected .port{border-color:var(--amber)}
 .palette{
   position:absolute; left:14px; top:14px; display:flex; flex-direction:column; gap:5px;
-  background:#111831E6; border:1px solid var(--line); border-radius:10px; padding:9px; width:122px;
+  background:var(--bg1); border:1px solid var(--line); border-radius:10px; padding:9px; width:122px;
   backdrop-filter:blur(4px);
 }
 .palette .p-label{font-family:var(--font-mono); font-size:8.5px; letter-spacing:.12em; color:var(--faint); text-transform:uppercase; margin-bottom:3px}
@@ -1487,7 +1487,7 @@ button.attach-chip:hover{border-color:var(--amber); color:var(--text)}
 .ontology-chip .chip-name{background:none;border:none;color:var(--text);font-size:11px;cursor:pointer;max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ontology-chip .chip-x{background:none;border:none;color:var(--faint);cursor:pointer;font-size:13px;line-height:1;padding:0 3px;border-radius:4px}
 .ontology-chip .chip-x:hover{color:var(--text);background:var(--bg2)}
-.project-node.active{border-color:var(--line);background:#18213F66}
+.project-node.active{border-color:var(--amber-dim);background:var(--amber-dim)}
 .project-item{
   display:flex;align-items:center;gap:9px;width:100%;text-align:left;border:1px solid transparent;
   border-radius:8px;background:transparent;color:var(--muted);padding:9px 10px;cursor:pointer;

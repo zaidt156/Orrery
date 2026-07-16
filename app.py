@@ -315,7 +315,11 @@ def main() -> None:
         gui=_desktop_gui(),
         icon=_app_icon(),
         storage_path=str(WEBVIEW_DATA_DIR),
-        private_mode=True,
+        # Persist localStorage/cookies to WEBVIEW_DATA_DIR across restarts. private_mode=True is
+        # incognito — it ignores storage_path, so every UI preference (theme, interface mode,
+        # onboarding flags) was wiped on close. User data lives in Postgres and the keychain, and
+        # the session token is regenerated each launch, so nothing sensitive persists here.
+        private_mode=False,
     )
 
 

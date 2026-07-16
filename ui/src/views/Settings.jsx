@@ -1152,7 +1152,7 @@ function ThemeSection() {
             </button>
           ))}
         </div>
-        <div className="mode-sub" style={{ marginTop: 8 }}>
+        <div className="mode-sub" style={{ marginTop: 8, textAlign: "center" }}>
           Classic preserves the compact workflow. Concept enables Home and the reference layout.
         </div>
       </div>
@@ -1181,7 +1181,7 @@ function ThemeSection() {
             </button>
           ))}
         </div>
-        <div className="mode-sub" style={{ marginTop: 8 }}>
+        <div className="mode-sub" style={{ marginTop: 8, textAlign: "center" }}>
           Applies instantly without moving or resizing the interface. Status colors stay consistent.
         </div>
       </div>
