@@ -2700,3 +2700,96 @@ Verified: all 543 backend tests pass; all 38 UI tests pass; the production UI bu
 
 Next: Task 9 - serve the private bundle through a session-gated, CSP-locked route and open it only
 inside a sandboxed iframe, while preserving the ZIP download.
+
+## Step 146 - A full architecture map people can actually read (July 16, 2026)
+
+Orrery now has one durable architecture document that maps the system from the outside in. It
+shows the desktop launch, all workspace areas, the Python modules, a complete Chat turn, data and
+retrieval, dashboard creation and refresh, durable Automations and Agents, storage ownership, and
+the security chain as separate Mermaid diagrams instead of squeezing everything into one unreadable
+box chart.
+
+The map was checked against the current code rather than copied from the original roadmap. That
+matters because the app has grown: Electron is now the desktop direction, Agents and Dashboards are
+wired through the interface, the shared tool and job layers are real, and the Automations and Media
+Hub screens are still at different stages of connection. The document says those differences
+plainly so a future contributor does not mistake a working backend engine or a polished screen for
+an end-to-end feature.
+
+No runtime behavior changed. This was a documentation-only pass.
+
+## Step 147 - One clear story per architecture diagram (July 16, 2026)
+
+The first architecture map was accurate, but several pictures tried to explain too many
+relationships at once. That made arrows cross between unrelated parts and forced the reader to
+decode the whole application before understanding any one flow.
+
+The document now moves in layers: system context, workspace, live request path, background work,
+startup, backend boundaries, and then one focused map per feature. Data access, imported datasets,
+document ingestion, retrieval, dashboard design, dashboard refresh, Automations, Agents, the shared
+tool gate, storage, and each security boundary all have their own small picture. Every flow has one
+direction and one question to answer. Repeated decorative colours and large all-to-all component
+maps were removed.
+
+The underlying architecture did not change. This was a readability and information-design pass.
+
+Next: finish and verify the safe interactive preview for small app bundles, then keep these focused
+maps current whenever a major boundary or feature moves.
+
+## Step 148 - The architecture map now follows executable code, not the mockups (July 16, 2026)
+
+The architecture document has been rebuilt after reading the runtime, API registration, Chat
+orchestration, model adapters, shared tools, storage models, data paths, retrieval, dashboards,
+agents, workflow engine, desktop shells, security boundaries, and the React views themselves. Each
+diagram now names the implementation files that prove it.
+
+That deeper pass corrected several important assumptions. Automations has a real backend workflow
+engine but no registered API route, no workflow scheduler, and only a hard-coded UI. Media Hub is a
+static screen, although Chat can generate media files through its separate file pipeline. Chat does
+not directly start Agents, run workflows, or create dashboards. Agent Slack, Gmail, and API triggers
+exist in configuration and storage but have no inbound receivers. LIFE learning creates reviewable
+proposals, but LIFE.md is not injected into ordinary Chat and the agent LIFE permission is not yet
+used by the run loop. The document also distinguishes the strict no-network app-bundle preview from
+the more permissive generic HTML preview instead of treating them as the same boundary.
+
+The result is deliberately honest about four states: live end to end, conditional, backend only,
+and static UI. No runtime behavior changed; this was a code-derived documentation correction.
+
+## Step 146 - Runnable app bundles, and a batch of reported fixes (July 16, 2026)
+
+Two threads landed together: the app-bundle feature reached the point where you can actually use a
+generated app, and a run of reported problems got fixed at the root.
+
+- **You can now run a generated app.** Small apps were being built and stored but nothing served
+  them, so they were dead files. There is now a read-only route that serves a bundle's own files
+  into a sandboxed panel, and the chat file card gained "Open app" alongside "Download ZIP". The
+  serving is deliberately locked down: the app runs in a walled-off frame that cannot reach the
+  network or touch the workspace, each app has an unguessable address, and requests cannot escape
+  the app's own folder (tested against a spread of path-escape tricks).
+
+- **Dashboards were dead, and the reason was a packaging gap.** Every widget showed "No module named
+  'sqlglot.dialects.postgres'". The SQL checker loads its Postgres knowledge by name at run time,
+  and the packaged app had not bundled that piece. Two fixes: the checker now falls back gracefully
+  so dashboards work even in the current build, and the build now includes the missing piece for
+  next time.
+
+- **The biggest complaint — settings resetting on close — is fixed.** The desktop window was running
+  in a private/incognito mode that throws away all saved preferences when the app closes, so a theme
+  or layout choice never survived a restart. It now remembers. (Your actual data was always safe in
+  the database; only the on-screen preferences were being discarded.)
+
+- **The light themes are usable again.** In Winter and Summer, chat text was a pale colour baked for
+  the dark themes, so it vanished on a light background; the selected Skills/MCP tab was a dark block
+  with barely-visible text; and the Automations toolbar was a dark slab. All three now follow the
+  active theme. The two captions on the Appearance page are centred under their cards.
+
+Still open from this report and queued next: an SVG request that is confirmed with "do it" can come
+back as a PDF containing the SVG's source text instead of a picture (a routing choice worth verifying
+against the full scenario matrix); the dashboard edit flow shows "working" without showing what it is
+doing; local models cannot yet reach the code/tool capabilities (a boundary question that deserves a
+design pass); a dedicated dashboard-editing side tab; and a conservative dead-code/unused-file sweep.
+
+Verified: all 562 backend tests pass; the UI builds; the app-serving route was checked live against a
+real server for headers, MIME, and traversal.
+
+Next: Task 10 - app-intent routing polish and the heavy-scenario tests, then Checkpoint 3.
