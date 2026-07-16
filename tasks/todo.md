@@ -29,7 +29,7 @@
 - [x] Prefs reset on close: pywebview private_mode was incognito -> now persists localStorage
 - [x] Winter/Summer readability: chat text, selected skills/MCP tab, Automations palette; appearance captions centered
 - [ ] SVG "do it" -> PDF-with-SVG-source-as-text: routing/planner picks file over image (needs heavy-matrix verify)
-- [ ] Dashboard "shows working but you can't see what it's doing": stream the build/revise steps
+- [x] Dashboard "shows working but you can't see what it's doing": streaming build/revise (status + reasoning)
 - [ ] Local models can't use tools/code: capability-boundary architecture (design first)
 - [ ] Feature: dedicated dashboard-editing side tab
 - [ ] Cleanup: remove dead code / unused files (e.g. router._deliver_docspec_legacy_unused) — do conservatively
