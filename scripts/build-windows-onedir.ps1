@@ -139,6 +139,7 @@ Invoke-Checked ".venv\Scripts\pyinstaller.exe" `
     "--collect-all" "litellm" `
     "--collect-all" "tiktoken" `
     "--collect-submodules" "tiktoken_ext" `
+    "--collect-submodules" "sqlglot.dialects" `
     "--collect-all" "fastembed" `
     "--collect-all" "pptx" `
     "--collect-data" "procrastinate" `
