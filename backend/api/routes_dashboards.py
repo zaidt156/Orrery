@@ -26,6 +26,12 @@ async def dashboard_create(body: DashboardCreate) -> dict:
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+@router.post("/dashboards/stream")
+async def dashboard_create_stream(body: DashboardCreate) -> StreamingResponse:
+    """Same as POST /dashboards but streams status + the model's reasoning while it designs, so the
+    build shows what it is doing instead of a blank wait. The final `result` event carries the board."""
+    return _sse(dashboards.create_dashboard_stream(body.model, body.connection_ids, body.description))
+
 @router.get("/dashboards/{did}")
 async def dashboard_get(did: str) -> dict:
     out = await dashboards.get_dashboard(did)
@@ -49,6 +55,10 @@ async def dashboard_revise(did: str, body: DashboardRevise) -> dict:
     if out is None:
         raise HTTPException(status_code=404, detail="Dashboard not found")
     return out
+
+@router.post("/dashboards/{did}/revise/stream")
+async def dashboard_revise_stream(did: str, body: DashboardRevise) -> StreamingResponse:
+    return _sse(dashboards.revise_dashboard_stream(did, body.model, body.instruction))
 
 @router.put("/dashboards/{did}/transforms")
 async def dashboard_set_transforms(did: str, body: TransformsBody) -> dict:

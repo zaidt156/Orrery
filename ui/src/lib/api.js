@@ -224,9 +224,14 @@ export const setDashboardLayout = (id, order) => apiSend(`/api/dashboards/${id}/
 export const listDashboards = () => apiGet("/api/dashboards");
 export const createDashboard = (model, connection_ids, description) =>
   apiSend("/api/dashboards", "POST", { model, connection_ids, description });
+// Streaming builds: onEvent gets {status}/{reasoning_delta}/{result:{dashboard}}/{error}/{done}.
+export const createDashboardStream = (model, connection_ids, description, onEvent, signal) =>
+  streamSSE("/api/dashboards/stream", { body: { model, connection_ids, description }, signal }, onEvent);
 export const runDashboard = (id) => apiSend(`/api/dashboards/${id}/run`, "POST");
 export const reviseDashboard = (id, model, instruction) =>
   apiSend(`/api/dashboards/${id}/revise`, "POST", { model, instruction });
+export const reviseDashboardStream = (id, model, instruction, onEvent, signal) =>
+  streamSSE(`/api/dashboards/${id}/revise/stream`, { body: { model, instruction }, signal }, onEvent);
 export const rollbackDashboard = (id) => apiSend(`/api/dashboards/${id}/rollback`, "POST");
 export const deleteDashboard = (id) => apiSend(`/api/dashboards/${id}`, "DELETE");
 

@@ -19,7 +19,7 @@ from sqlalchemy import select
 
 from backend.core.database import get_sessionmaker
 from backend.core.models import Dashboard, DataConnection
-from backend.features import data, datamodels, skills, team
+from backend.features import data, datamodels, events as stream_events, skills, team
 from backend.providers import ai
 
 log = logging.getLogger("orrery.dashboards")
@@ -211,12 +211,7 @@ async def _schemas_block(connection_ids: list[str]) -> str:
     return block + datamodels.describe_models(models)
 
 
-async def _ask_model(model: str, prompt: str) -> dict:
-    parts: list[str] = []
-    async for delta in ai.stream_chat(model, [{"role": "user", "content": prompt}], None, "high"):
-        if not isinstance(delta, ai.ReasoningDelta):
-            parts.append(str(delta))
-    text = "".join(parts)
+def _parse_spec_json(text: str) -> dict:
     match = re.search(r"\{.*\}", text, re.DOTALL)
     if not match:
         raise ValueError("The model didn't return a dashboard spec. Try again or pick another model.")
@@ -226,12 +221,19 @@ async def _ask_model(model: str, prompt: str) -> dict:
         raise ValueError("The model returned malformed JSON. Try again or pick another model.")
 
 
-async def _build_spec(model: str, connection_ids: list[str], prompt: str) -> tuple[str, dict, list[str]]:
-    """Run the model, validate every transform + widget, return (name, spec, dropped-reasons)."""
-    raw = await _ask_model(model, prompt)
+async def _ask_model(model: str, prompt: str) -> dict:
+    parts: list[str] = []
+    async for delta in ai.stream_chat(model, [{"role": "user", "content": prompt}], None, "high"):
+        if not isinstance(delta, ai.ReasoningDelta):
+            parts.append(str(delta))
+    return _parse_spec_json("".join(parts))
+
+
+def _spec_from_raw(raw: dict, connection_ids: list[str], model_ctes: list[dict]) -> tuple[str, dict, list[str]]:
+    """Validate a model-produced spec into (name, spec, dropped-reasons). Shared by the plain and
+    streaming build paths; `model_ctes` are the user's data-model joins (fetched once by the caller)."""
     allowed = set(connection_ids)
     default_conn = connection_ids[0]
-    model_ctes = await datamodels.models_as_transforms(connection_ids)
     reserved = {m["name"] for m in model_ctes}
     transforms, widgets, dropped = [], [], []
     seen_names: set[str] = set(reserved)  # spec transforms may not shadow data-model names
@@ -257,6 +259,30 @@ async def _build_spec(model: str, connection_ids: list[str], prompt: str) -> tup
         raise ValueError("None of the model's widgets passed SQL validation. Try again or rephrase.")
     name = str(raw.get("name", "") or "Dashboard")[:160]
     return name, {"connections": connection_ids, "transforms": transforms, "widgets": widgets}, dropped
+
+
+async def _build_spec(model: str, connection_ids: list[str], prompt: str) -> tuple[str, dict, list[str]]:
+    """Run the model, validate every transform + widget, return (name, spec, dropped-reasons)."""
+    raw = await _ask_model(model, prompt)
+    model_ctes = await datamodels.models_as_transforms(connection_ids)
+    return _spec_from_raw(raw, connection_ids, model_ctes)
+
+
+async def _stream_spec(model: str, connection_ids: list[str], prompt: str):
+    """Design a spec while streaming progress to the UI. Yields stream_events (status/reasoning),
+    then a final {"_spec": (name, spec, dropped)} sentinel. The model's own reasoning is forwarded
+    so the build is no longer an opaque 'working…' wait."""
+    yield stream_events.status(f"Designing the dashboard with {model.split('/')[-1]}…")
+    parts: list[str] = []
+    async for delta in ai.stream_chat(model, [{"role": "user", "content": prompt}], None, "high"):
+        if isinstance(delta, ai.ReasoningDelta):
+            yield stream_events.reasoning_delta(str(delta))
+        else:
+            parts.append(str(delta))
+    yield stream_events.status("Validating the queries against your schema…")
+    raw = _parse_spec_json("".join(parts))
+    model_ctes = await datamodels.models_as_transforms(connection_ids)
+    yield {"_spec": _spec_from_raw(raw, connection_ids, model_ctes)}
 
 
 # --- CRUD + execution -----------------------------------------------------------------------------
@@ -306,17 +332,17 @@ async def list_dashboards() -> list[dict]:
         return [_dict(r) for r in rows]
 
 
-async def create_dashboard(model: str, connection_ids: list[str], description: str) -> dict:
-    connection_ids = [c for c in connection_ids if c]
-    if not connection_ids:
-        raise ValueError("Pick at least one data connection.")
+async def _create_prompt(connection_ids: list[str], description: str) -> str:
     schemas = await _schemas_block(connection_ids)
     prompt = _SPEC_PROMPT.format(max_widgets=MAX_WIDGETS, max_transforms=MAX_TRANSFORMS,
                                  schemas=schemas, description=description.strip())
     guidance = skills.skills_prompt(f"dashboard visualization chart {description}")
-    if guidance:  # the dashboard-design skill: chart choice, aggregation, labeling rules
-        prompt = f"{guidance}\n\n{prompt}"
-    name, spec, dropped = await _build_spec(model, connection_ids, prompt)
+    # the dashboard-design skill: chart choice, aggregation, labeling rules
+    return f"{guidance}\n\n{prompt}" if guidance else prompt
+
+
+async def _persist_new_dashboard(name: str, spec: dict, description: str, model: str,
+                                 connection_ids: list[str], dropped: list[str]) -> dict:
     async with get_sessionmaker()() as s:
         row = Dashboard(
             name=name, description=description.strip()[:2000] or None,
@@ -330,6 +356,42 @@ async def create_dashboard(model: str, connection_ids: list[str], description: s
     if dropped:
         out["dropped"] = dropped
     return out
+
+
+def _clean_connection_ids(connection_ids: list[str]) -> list[str]:
+    ids = [c for c in connection_ids if c]
+    if not ids:
+        raise ValueError("Pick at least one data connection.")
+    return ids
+
+
+async def create_dashboard(model: str, connection_ids: list[str], description: str) -> dict:
+    connection_ids = _clean_connection_ids(connection_ids)
+    prompt = await _create_prompt(connection_ids, description)
+    name, spec, dropped = await _build_spec(model, connection_ids, prompt)
+    return await _persist_new_dashboard(name, spec, description, model, connection_ids, dropped)
+
+
+async def create_dashboard_stream(model: str, connection_ids: list[str], description: str):
+    """Streaming build: yields status + the model's reasoning, then a `result` event carrying the
+    finished dashboard, then `done`. Errors surface as an `error` event, never an unhandled 500."""
+    try:
+        connection_ids = _clean_connection_ids(connection_ids)
+        yield stream_events.status("Reading your data schema…")
+        prompt = await _create_prompt(connection_ids, description)
+        result = None
+        async for ev in _stream_spec(model, connection_ids, prompt):
+            if isinstance(ev, dict) and "_spec" in ev:
+                result = ev["_spec"]
+            else:
+                yield ev
+        name, spec, dropped = result
+        out = await _persist_new_dashboard(name, spec, description, model, connection_ids, dropped)
+        yield stream_events.result({"dashboard": out})
+        yield stream_events.done()
+    except Exception as exc:  # noqa: BLE001 — surface a clean error frame, not a broken stream
+        yield stream_events.error(str(exc)[:300])
+        yield stream_events.done()
 
 
 async def get_dashboard(did: str) -> dict | None:
@@ -372,18 +434,21 @@ async def run_dashboard(did: str) -> dict | None:
     return base
 
 
-async def revise_dashboard(did: str, model: str, instruction: str) -> dict | None:
+async def _revise_prompt(did: str, instruction: str) -> tuple[list[str], str] | None:
     async with get_sessionmaker()() as s:
         row = await _get_owned(s, did)
         if row is None:
             return None
         spec = _load_spec(row)
-    connection_ids = spec.get("connections") or [str(row.connection_id)]
+        connection_ids = spec.get("connections") or [str(row.connection_id)]
     schemas = await _schemas_block(connection_ids)
     prompt = _REVISE_PROMPT.format(spec=json.dumps(spec, indent=1), schemas=schemas,
                                    instruction=instruction.strip(), max_widgets=MAX_WIDGETS,
                                    max_transforms=MAX_TRANSFORMS)
-    name, new_spec, dropped = await _build_spec(model, connection_ids, prompt)
+    return connection_ids, prompt
+
+
+async def _persist_revision(did: str, name: str, new_spec: dict, model: str, dropped: list[str]) -> dict | None:
     async with get_sessionmaker()() as s:
         row = await _get_owned(s, did)
         if row is None:
@@ -403,6 +468,44 @@ async def revise_dashboard(did: str, model: str, instruction: str) -> dict | Non
     if dropped:
         out["dropped"] = dropped
     return out
+
+
+async def revise_dashboard(did: str, model: str, instruction: str) -> dict | None:
+    prep = await _revise_prompt(did, instruction)
+    if prep is None:
+        return None
+    connection_ids, prompt = prep
+    name, new_spec, dropped = await _build_spec(model, connection_ids, prompt)
+    out = await _persist_revision(did, name, new_spec, model, dropped)
+    return out
+
+
+async def revise_dashboard_stream(did: str, model: str, instruction: str):
+    """Streaming revise — same event contract as create_dashboard_stream."""
+    try:
+        yield stream_events.status("Reviewing the current dashboard…")
+        prep = await _revise_prompt(did, instruction)
+        if prep is None:
+            yield stream_events.error("Dashboard not found.")
+            yield stream_events.done()
+            return
+        connection_ids, prompt = prep
+        result = None
+        async for ev in _stream_spec(model, connection_ids, prompt):
+            if isinstance(ev, dict) and "_spec" in ev:
+                result = ev["_spec"]
+            else:
+                yield ev
+        name, new_spec, dropped = result
+        out = await _persist_revision(did, name, new_spec, model, dropped)
+        if out is None:
+            yield stream_events.error("Dashboard not found.")
+        else:
+            yield stream_events.result({"dashboard": out})
+        yield stream_events.done()
+    except Exception as exc:  # noqa: BLE001
+        yield stream_events.error(str(exc)[:300])
+        yield stream_events.done()
 
 
 async def set_transforms(did: str, transforms: list[dict]) -> dict | None:

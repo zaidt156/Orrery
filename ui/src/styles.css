@@ -1890,6 +1890,10 @@ button:focus-visible, .toggle:focus-visible, .node:focus-visible, .convo:focus-v
 .dash-builder-intro{display:flex;flex-direction:column;gap:7px;margin-bottom:6px;padding:18px;border:1px solid var(--line);border-radius:var(--radius-ui);background:linear-gradient(135deg,var(--bg2),var(--bg1));box-shadow:var(--shadow-2)}
 .dash-builder-intro h2{margin:0;font-family:var(--font-display);font-size:25px;line-height:1.15;letter-spacing:-.02em}
 .dash-builder-intro p{max-width:680px;margin:0;color:var(--muted)}
+.dash-build-activity{margin-top:10px;padding:10px 12px;border:1px solid var(--line);border-radius:var(--radius-ui);background:var(--bg1)}
+.dab-status{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--text)}
+.dab-spin{width:11px;height:11px;flex:none;border:2px solid var(--amber-dim);border-top-color:var(--amber);border-radius:50%;animation:spin .8s linear infinite}
+.dab-think{margin:8px 0 0;max-height:150px;overflow:auto;font-family:var(--font-mono);font-size:10.5px;line-height:1.5;color:var(--muted);white-space:pre-wrap;word-break:break-word}
 .dashboard-commandbar{min-height:73px;padding:12px 18px;background:var(--bg1);box-shadow:var(--shadow-2);z-index:2}
 .dash-heading{min-width:0;display:flex;flex-direction:column;gap:5px}
 .dash-heading>div{display:flex;align-items:baseline;gap:9px;min-width:0}

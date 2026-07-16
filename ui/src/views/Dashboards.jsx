@@ -2,9 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import * as echarts from "echarts";
 import { Code2, Database, LayoutDashboard, Layers, Plus, RefreshCw, Search, Trash2, Undo2, WandSparkles } from "lucide-react";
 import {
-  addDataConnection, createDashboard, createDataModel, createDatasetFromApi, createDatasetFromFile, createDatasetFromMongo,
+  addDataConnection, createDashboard, createDashboardStream, createDataModel, createDatasetFromApi, createDatasetFromFile, createDatasetFromMongo,
   createWorkspace, deleteDashboard, deleteDataModel, getModels, getSchemaMap, listDashboards,
-  listDataConnections, listDataModels, listWorkspaces, reviseDashboard, rollbackDashboard,
+  listDataConnections, listDataModels, listWorkspaces, reviseDashboard, reviseDashboardStream, rollbackDashboard,
   runDashboard, setDashboardLayout, setDashboardTransforms,
 } from "../lib/api.js";
 import {
@@ -27,6 +27,18 @@ import {
 // viewable (security.md §3: AI-written SQL is shown, never hidden).
 const CHART_COLORS = ["#f2b14e", "#82ade8", "#54c08a", "#e06666", "#b58ee8", "#5fc4c9", "#e8a2c0"];
 const DASHBOARD_REFRESH_STORAGE_PREFIX = "orrery:dashboard-refresh:";
+
+// Live build/revise progress: the current step, plus the model's own reasoning as it designs, so a
+// build shows what it is doing instead of an opaque "working…".
+function DashBuildActivity({ activity }) {
+  if (!activity) return null;
+  return (
+    <div className="dash-build-activity" role="status" aria-live="polite">
+      <span className="dab-status"><span className="dab-spin" aria-hidden="true" />{activity.status}</span>
+      {activity.think ? <pre className="dab-think">{activity.think.slice(-1400)}</pre> : null}
+    </div>
+  );
+}
 
 function storedDashboardRefreshMs(dashboardId) {
   if (!dashboardId || typeof window === "undefined") return 0;
@@ -170,6 +182,7 @@ export default function Dashboards() {
   const [model, setModel] = useState("");
   const [selectedConns, setSelectedConns] = useState([]);
   const [busy, setBusy] = useState(false);
+  const [buildActivity, setBuildActivity] = useState(null); // {status, think} live during a build/revise
   const [loading, setLoading] = useState(false);
   const [autoRefreshing, setAutoRefreshing] = useState(false);
   const [refreshMs, setRefreshMs] = useState(0);
@@ -559,26 +572,49 @@ export default function Dashboards() {
     setErr("");
   }
 
+  // Collect a streamed build/revise into a dashboard, surfacing status + the model's reasoning live.
+  function onBuildEvent(setActivity) {
+    let think = "";
+    let dashboard = null;
+    let error = "";
+    const handle = (ev) => {
+      if (ev.status) setActivity((a) => ({ ...(a || {}), status: ev.status }));
+      else if (ev.reasoning_delta) { think += ev.reasoning_delta; setActivity((a) => ({ ...(a || {}), think })); }
+      else if (ev.result?.dashboard) dashboard = ev.result.dashboard;
+      else if (ev.error) error = ev.error;
+    };
+    return { handle, result: () => ({ dashboard, error }) };
+  }
+
   async function build() {
     if (!desc.trim() || !model || selectedConns.length === 0) return;
-    setBusy(true); setErr("");
+    setBusy(true); setErr(""); setBuildActivity({ status: "Starting…", think: "" });
+    const sink = onBuildEvent(setBuildActivity);
     try {
-      const d = await enqueueDashboardMutation(() => createDashboard(model, selectedConns, desc.trim()));
+      await enqueueDashboardMutation(() =>
+        createDashboardStream(model, selectedConns, desc.trim(), sink.handle));
+      const { dashboard, error } = sink.result();
+      if (error) throw new Error(error);
+      if (!dashboard) throw new Error("The build did not return a dashboard.");
       setDesc(""); setCreating(false);
-      await load(d.id);
-    } catch (e) { setErr(String(e.message || e)); } finally { setBusy(false); }
+      await load(dashboard.id);
+    } catch (e) { setErr(String(e.message || e)); } finally { setBusy(false); setBuildActivity(null); }
   }
 
   async function revise() {
     if (!reviseText.trim() || !activeId || !model) return;
     const dashboardId = activeId;
     const instruction = reviseText.trim();
-    setBusy(true); setErr("");
+    setBusy(true); setErr(""); setBuildActivity({ status: "Starting…", think: "" });
+    const sink = onBuildEvent(setBuildActivity);
     try {
-      await enqueueDashboardMutation(() => reviseDashboard(dashboardId, model, instruction));
+      await enqueueDashboardMutation(() =>
+        reviseDashboardStream(dashboardId, model, instruction, sink.handle));
+      const { error } = sink.result();
+      if (error) throw new Error(error);
       setReviseText("");
       await load(dashboardId);
-    } catch (e) { setErr(String(e.message || e)); } finally { setBusy(false); }
+    } catch (e) { setErr(String(e.message || e)); } finally { setBusy(false); setBuildActivity(null); }
   }
 
   async function rollback() {
@@ -1013,6 +1049,7 @@ export default function Dashboards() {
                     {busy ? "Designing..." : "Build dashboard"}
                   </button>
                 </div>
+                <DashBuildActivity activity={buildActivity} />
               </>
             )}
             {err && <div className="chat-banner">{err}</div>}
@@ -1187,6 +1224,7 @@ export default function Dashboards() {
               </select>
               <button className="btn" onClick={revise} disabled={busy || !reviseText.trim()}>{busy ? "Working…" : "Apply"}</button>
             </div>
+            <DashBuildActivity activity={buildActivity} />
           </>
         )}
       </main>
