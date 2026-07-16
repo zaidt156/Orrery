@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import base64
-import datetime
-import io
 import json
 import logging
 import re
@@ -13,22 +11,18 @@ from dataclasses import dataclass
 
 from sqlalchemy import select
 
-from backend.core.config import settings
 from backend.core.database import get_sessionmaker
-from backend.core.observability import log_event
-from backend.core.models import Conversation, Message, Project
-from backend.features import admin, capabilities, code_images, code_interpreter, docgen, events as stream_events, filegen, life_learn, mcp, rag, reasoning, research, route_telemetry, sandbox, skills, taskbrain, taskrouter, team
+from backend.core.models import Conversation, Message
+from backend.features import admin, capabilities, code_images, code_interpreter, docgen, events as stream_events, filegen, life_learn, mcp, rag, reasoning, research, route_telemetry, sandbox, skills, taskrouter, team
 from backend.features import projects as project_store
 from backend.features import files as file_library
-from backend.features.prompting import CODE_INTERPRETER_PROMPT, FORMAT_INSTRUCTIONS, build_system_prompt, strip_think as _strip_think
+from backend.features.prompting import CODE_INTERPRETER_PROMPT, FORMAT_INSTRUCTIONS, build_system_prompt
 from backend.features.chat_context import (
-    DEFAULT_CONTEXT_WINDOW, _build_user_content, _content_token_estimate, _db_content,
-    _effective_context_window, _history_text, _latest_user_text, _limit_messages,
-    _message_artifacts, _title_from, _wants_high_effort,
+    _build_user_content, _effective_context_window, _history_text, _latest_user_text,
+    _limit_messages, _title_from, _wants_high_effort,
 )
 from backend.features.reasoning_trace import ReasoningTrace, ThinkStream
 from backend.providers import ai
-from backend.security import privacy
 from backend.features.chat import conversations, generation, persistence, retrieval, versioning
 
 _log = logging.getLogger("orrery.chat")
@@ -146,67 +140,6 @@ async def _conv_title(cid: uuid.UUID) -> str:
         if conv is not None and not conversations._owned_by(conv, owner):
             raise PermissionError("Conversation access denied.")
         return (conv.title if conv and conv.title else None) or "Orrery file"
-
-
-async def _deliver_docspec_legacy_unused(
-    cid: uuid.UUID,
-    model: str,
-    request: str,
-    system_prompt: str | None,
-    effort: str | None,
-    untrusted_context: str | None = None,
-    trusted_context: str | None = None,
-) -> AsyncIterator[dict]:
-    """Reliable fallback when code-execution misses: ask for a structured spec, then build the
-    file deterministically with docgen and deliver it. Yields nothing if no spec comes back."""
-    yield stream_events.status("Creating the file structure…")
-    instructions = build_system_prompt(
-        app_rules=FORMAT_INSTRUCTIONS,
-        user_preferences=system_prompt,
-        trusted_context=trusted_context,
-        untrusted_context=untrusted_context,
-    )
-    parts: list[str] = []
-    think = ThinkStream()  # strips provider/inline hidden reasoning; public trace is emitted separately
-    try:
-        async for delta in ai.stream_chat(model, [{"role": "user", "content": request}], instructions, filegen.quality_effort(model, effort)):
-            if isinstance(delta, ai.ReasoningDelta):
-                for ev in think.feed_reasoning(str(delta)):
-                    yield ev
-                continue
-            answer, events = think.feed(str(delta))
-            for ev in events:
-                yield ev
-            if answer:
-                parts.append(answer)
-        tail, events = think.finish()
-        for ev in events:
-            yield ev
-        if tail:
-            parts.append(tail)
-    except Exception:  # noqa: BLE001 — fall through to a normal reply
-        return
-    content = "".join(parts)
-    spec = docgen.parse_doc_spec(content)
-    if spec is None:
-        return
-    title = await _conv_title(cid)
-    produced: list[dict] = []
-    for fmt in _detect_formats(request):
-        try:
-            result = await asyncio.to_thread(docgen.render_spec, title, model, spec, fmt)
-            produced.append({"kind": "file", **file_library.store(result.filename, result.media_type, result.content)})
-        except Exception:  # noqa: BLE001 — skip a format that fails to build
-            continue
-    if not produced:
-        return
-    idx = content.lower().find("```orrery-doc")
-    summary = (content[:idx] if idx >= 0 else content).strip()[:300] or "Here is your file."
-    message_id = await persistence._persist_assistant(cid, summary, model, produced)
-    yield stream_events.delta(summary)
-    yield stream_events.files(produced)
-    yield stream_events.message_id(message_id)
-    yield stream_events.done()
 
 
 async def _deliver_docspec(

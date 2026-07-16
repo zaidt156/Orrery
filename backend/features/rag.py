@@ -338,7 +338,6 @@ async def enqueue_ingest(cid: str, files: list[dict]) -> dict:
     The upload request returns immediately; the UI polls ingest_progress. Payloads are spooled
     as a file because large base64 bodies don't belong in queue-job arguments."""
     import json as _json
-    from pathlib import Path
 
     from backend.core.paths import user_data_dir
 
