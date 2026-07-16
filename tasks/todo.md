@@ -32,7 +32,10 @@
 - [x] Dashboard "shows working but you can't see what it's doing": streaming build/revise (status + reasoning)
 - [ ] Local models can't use tools/code: capability-boundary architecture (design first)
 - [ ] Feature: dedicated dashboard-editing side tab
-- [ ] Cleanup: remove dead code / unused files (e.g. router._deliver_docspec_legacy_unused) — do conservatively
+- [x] Cleanup: removed router._deliver_docspec_legacy_unused + copy-pasted unused imports in the route modules (-155 lines, suite green)
+- [ ] Feature: dedicated dashboard-editing side tab (still open)
+- [ ] Local models can't use tools/code: capability-boundary architecture (design first — still open)
+- [ ] NOTE: an unreviewed ARCHITECTURE.md (633 lines) sits untracked in the repo root — decide keep/commit/delete
 
 ## Phase 4 — Concept continuation (parallel-safe with Phases 2–3)
 - [ ] Task 11: Chat view concept composition (Concept mode only)
