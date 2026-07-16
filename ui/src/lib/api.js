@@ -371,6 +371,11 @@ export async function previewGeneratedFile(fileId) {
   return { ...data, url: `${API_BASE}${data.url}` };
 }
 
+// Entry URL for a generated app bundle (Task 9). No token: the route is unauthenticated by design
+// (a sandboxed iframe's sub-resource requests can't carry the header) and confined server-side by a
+// strict CSP + traversal-proof resolution. Load it only in a sandboxed iframe.
+export const appBundleUrl = (fileId) => `${API_BASE}/api/apps/${fileId}/index.html`;
+
 // render a reply as a temporary preview artifact for the requested export format
 export async function previewExport(conversationId, messageId, format) {
   const data = await apiGet(`/api/conversations/${conversationId}/messages/${messageId}/preview/${format}`);

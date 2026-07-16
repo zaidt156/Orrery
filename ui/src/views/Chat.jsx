@@ -33,7 +33,7 @@ import {
   getModels, listCollections, listConversations, getConversation, createConversation,
   updateConversation, deleteConversation, streamMessage, regenerateMessage,
   downloadMessageExport, streamCodeImage, createArtifact, previewExport, saveClientFile,
-  downloadGeneratedFile, previewGeneratedFile, stopGeneration, resumeGeneration, listProjects, saveReasoning,
+  downloadGeneratedFile, previewGeneratedFile, appBundleUrl, stopGeneration, resumeGeneration, listProjects, saveReasoning,
   getDefaults, readFileAsAttachment, getAttachmentText, activateMessageVersion,
 } from "../lib/api.js";
 import {
@@ -200,6 +200,18 @@ export default function Chat() {
     } catch (e) {
       setBanner(String(e.message || e));
     }
+  }
+
+  // Open a generated app bundle live in the side panel. previewFrameSandbox(true) gives an
+  // interactive but opaque-origin iframe (allow-scripts, NO allow-same-origin), so the app cannot
+  // touch the workspace or its token; the server's strict CSP blocks any network egress.
+  function openApp(file) {
+    setBanner(null);
+    setArtifact({
+      url: appBundleUrl(file.id),
+      title: file.name?.replace(/\.zip$/i, "") || "App",
+      frameSandbox: previewFrameSandbox(true),
+    });
   }
   const [contextWindow, setContextWindow] = useState("1000000");
   const [evalFor, setEvalFor] = useState(null); // {messageId, content} — the answer being evaluated
@@ -762,6 +774,7 @@ export default function Chat() {
     copy,
     editPrompt,
     fileIcon,
+    openApp,
     openAttachment,
     openFilePreview,
     openGeneratedPreview,
@@ -1223,6 +1236,7 @@ function AssistantMessageRow({
             key={`${artifact.id}-${artifactIndex}`}
             file={artifact}
             onPreview={() => current.openGeneratedPreview(artifact)}
+            onOpenApp={() => current.openApp(artifact)}
             onDownload={() => downloadGeneratedFile(artifact.id, artifact.name)
               .catch((error) => current.setBanner(String(error.message || error)))}
           />
