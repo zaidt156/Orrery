@@ -53,7 +53,7 @@ openai==2.41.1
 openpyxl==3.1.5
 packaging==26.2
 pgvector==0.4.2
-pillow==12.2.0
+pillow==12.3.0
 pluggy==1.6.0
 procrastinate==3.8.1
 propcache==0.5.2
