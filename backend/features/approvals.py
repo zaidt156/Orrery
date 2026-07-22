@@ -39,6 +39,7 @@ class _Approval:
     label: str
     summary: str
     owner: str
+    rememberable: bool = True  # destructive tools always ask — one click never becomes standing RCE
     status: str = "pending"  # pending | approved | denied | expired
     created: float = field(default_factory=time.monotonic)
     decided: asyncio.Event = field(default_factory=asyncio.Event)
@@ -106,7 +107,8 @@ def _sweep() -> None:
 
 def _public(entry: _Approval) -> dict:
     return {"id": entry.id, "tool": entry.tool_key, "label": entry.label,
-            "summary": entry.summary, "status": entry.status}
+            "summary": entry.summary, "status": entry.status,
+            "rememberable": entry.rememberable}
 
 
 async def gate(tool, validated_args: dict, approval_id: str | None = None) -> dict:
@@ -133,18 +135,20 @@ async def gate(tool, validated_args: dict, approval_id: str | None = None) -> di
                     "error": "The approval is missing, expired, or does not match this exact action."}
         log.info("tool approval consumed: %s digest=%s", tool.key, digest[:12])
         return {"allowed": True}
+    rememberable = tool.risk != "destructive"
     remember_key = _remember_key(tool.key, validated_args)
-    try:
-        if remember_key in await _allowlist(owner):
-            log.info("tool pre-approved by allowlist: %s", remember_key)
-            return {"allowed": True}
-    except Exception:  # noqa: BLE001 — unreadable allowlist just means we ask; asking is the safe direction
-        pass
+    if rememberable:
+        try:
+            if remember_key in await _allowlist(owner):
+                log.info("tool pre-approved by allowlist: %s", remember_key)
+                return {"allowed": True}
+        except Exception:  # noqa: BLE001 — unreadable allowlist just means we ask; asking is the safe direction
+            pass
     _sweep()
     entry = _Approval(
         id=uuid.uuid4().hex, tool_key=tool.key, remember_key=remember_key, digest=digest,
         label=tool.label or tool.key, summary=_summary_for(tool.key, tool.label, validated_args),
-        owner=owner,
+        owner=owner, rememberable=rememberable,
     )
     _STORE[entry.id] = entry
     log.info("tool approval requested: %s digest=%s", tool.key, digest[:12])
@@ -177,7 +181,7 @@ async def decide(approval_id: str, *, approve: bool, remember: bool = False) -> 
         _STORE.pop(entry.id, None)
     if entry.status == "pending":
         entry.status = "approved" if approve else "denied"
-        if approve and remember:
+        if approve and remember and entry.rememberable:
             await _remember(owner, entry.remember_key)
         entry.decided.set()
         if entry.status == "denied":

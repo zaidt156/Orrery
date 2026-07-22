@@ -120,3 +120,18 @@ async def test_api_dataset_key_param_goes_to_keychain_not_the_db(monkeypatch):
     finally:
         await datasets.delete_dataset(created["id"])
     assert secrets.get_secret(f"dataset_url:{created['id']}") is None
+
+
+def test_google_sheet_detection_requires_the_real_host():
+    assert datasets._is_google_sheet("https://docs.google.com/spreadsheets/d/abc123/export?format=csv")
+    # a URL that merely MENTIONS the sheets host must not take the relaxed sheets fetch path
+    assert not datasets._is_google_sheet("https://attacker.example/feed?ref=docs.google.com/spreadsheets")
+    assert not datasets._is_google_sheet("https://docs.google.com.evil.example/spreadsheets/d/abc")
+    assert not datasets._is_google_sheet("https://docs.google.com/other/path")
+
+
+def test_split_secret_url_catches_common_secret_names():
+    for param in ("pwd", "pass", "jwt", "bearer", "session", "sig", "access_token", "client_secret"):
+        _full, display = datasets._split_secret_url(f"https://api.example.com/d?{param}=HUSH&page=1")
+        assert "HUSH" not in display, f"{param} leaked into the display URL"
+        assert "page=1" in display

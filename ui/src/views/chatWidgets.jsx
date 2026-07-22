@@ -33,14 +33,16 @@ export function ApprovalCard({ approval }) {
         <div className="approval-actions">
           <button className="approval-approve" disabled={busy} onClick={() => decide(true)}>Approve</button>
           <button className="approval-deny" disabled={busy} onClick={() => decide(false)}>Deny</button>
-          <label className="approval-remember">
-            <input
-              type="checkbox"
-              checked={remember}
-              onChange={(event) => setRemember(event.target.checked)}
-            />
-            Always allow this tool
-          </label>
+          {approval.rememberable !== false && (
+            <label className="approval-remember">
+              <input
+                type="checkbox"
+                checked={remember}
+                onChange={(event) => setRemember(event.target.checked)}
+              />
+              Always allow this tool
+            </label>
+          )}
         </div>
       )}
     </div>

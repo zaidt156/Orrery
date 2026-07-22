@@ -626,8 +626,9 @@ Other implemented controls include:
 - A central registry-level approval gate for non-Agent tool side effects: external/destructive tools
   (MCP calls, Crabbox) pause the chat turn for an inline user decision bound to the sha256 digest of
   the exact validated arguments — single-use, expiring, replay-refused. Read-only and sandboxed tools
-  never prompt; "always allow" is remembered per owner (per server+tool for MCP). Agent runs keep
-  their own durable AgentApproval flow.
+  never prompt; "always allow" is remembered per owner (per server+tool for MCP), and
+  destructive-risk tools are never rememberable — they ask every time. Agent runs keep their own
+  durable AgentApproval flow.
 - Identity and authorization fail closed: a database/config error reports team mode with a locked
   identity (never solo-admin), disables all feature gates for team callers, and refuses team
   bootstrap unless a successful query proves the team table is empty.

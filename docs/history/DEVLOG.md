@@ -2879,3 +2879,17 @@ connections, and credential-bearing URLs), 38 UI tests pass, and the production 
 
 Next: Workstream 2 — the bounded document worker, deterministic test groups, and the web-search
 provider interface.
+
+## Step 152 - Review pass hardened three edges of the new boundary (July 22, 2026)
+
+An adversarial review of Step 151 confirmed three real weaknesses, all fixed the same day. The
+Google-Sheets fetch path chose its branch by substring, so a URL that merely mentioned the sheets
+host could take the relaxed fetch on refresh and follow a redirect into the local network in team
+mode — the branch now requires the host to actually be docs.google.com and applies the team-mode
+address policy. "Always allow" could turn one benign approval of the remote executor into standing
+permission for arbitrary future commands — destructive-risk tools are now never rememberable and
+ask every time, and the checkbox disappears from their card. The secret-parameter detector missed
+common names like pwd, pass, jwt, bearer, and session — the match list is broader now, biased
+toward over-masking because the display URL is cosmetic while the real URL lives in the keychain.
+
+Verified: 651 backend tests pass (3 new regressions), the production UI builds.

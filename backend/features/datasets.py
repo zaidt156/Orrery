@@ -263,7 +263,8 @@ def _url_secret(did: str) -> str:
 
 
 _SECRET_PARAM_RX = re.compile(
-    r"key|token|secret|password|signature|sig$|^auth|credential", re.IGNORECASE
+    r"key|token|secret|pass|pwd|auth|credential|signature|sig$|jwt|bearer|session",
+    re.IGNORECASE,
 )
 
 
@@ -345,6 +346,15 @@ async def _register(name: str, kind: str, source: str, header: list, rows: list[
 
 
 _GSHEET = re.compile(r"docs\.google\.com/spreadsheets/d/([A-Za-z0-9_-]+)")
+
+
+def _is_google_sheet(url: str) -> bool:
+    """The host must BE docs.google.com — a substring match would let any URL that merely
+    mentions it take the sheets fetch path (and its relaxed no-headers policy)."""
+    from urllib.parse import urlparse
+    parsed = urlparse(url or "")
+    return (parsed.hostname or "").lower() == "docs.google.com" and \
+        parsed.path.startswith("/spreadsheets/")
 
 
 def _parse_jsonl(text_content: str) -> tuple[list, list[list]]:
@@ -453,9 +463,12 @@ async def create_from_api(name: str, url: str, headers: dict[str, str] | None = 
     # A shared Google Sheets link imports via its CSV export (no auth; sheet must be link-visible).
     gs = _GSHEET.search(url or "")
     if gs:
+        from backend.features import team
         from backend.security import netguard
         export = f"https://docs.google.com/spreadsheets/d/{gs.group(1)}/export?format=csv"
-        resp = await netguard.fetch_checked(export, max_bytes=MAX_API_BYTES)
+        resp = await netguard.fetch_checked(
+            export, max_bytes=MAX_API_BYTES, allow_private=not await team.team_mode(),
+        )
         resp.raise_for_status()
         header, rows = _parse_csv(resp.text)
         return await _register(name or "google sheet", "api", export, header, rows, workspace_id)
@@ -497,9 +510,12 @@ async def refresh_dataset(did: str) -> dict:
     headers = json.loads(raw) if raw else None
     # Prefer the keychain URL (the stored source is redacted); legacy rows still carry the full URL.
     fetch_url = secrets.get_secret(_url_secret(did)) or url
-    if "docs.google.com/spreadsheets" in fetch_url:
+    if _is_google_sheet(fetch_url):
+        from backend.features import team
         from backend.security import netguard
-        resp = await netguard.fetch_checked(fetch_url, max_bytes=MAX_API_BYTES)
+        resp = await netguard.fetch_checked(
+            fetch_url, max_bytes=MAX_API_BYTES, allow_private=not await team.team_mode(),
+        )
         resp.raise_for_status()
         header, rows = _parse_csv(resp.text)
     else:

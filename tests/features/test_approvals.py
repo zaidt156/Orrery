@@ -272,3 +272,20 @@ async def test_chat_turn_continues_without_the_tool_when_denied(monkeypatch):
     resolved = [event["approval_resolved"] for event in events if "approval_resolved" in event]
     assert resolved and resolved[0]["status"] == "denied"
     assert observations and "denied" in observations[0]
+
+
+@pytest.mark.anyio
+async def test_destructive_tools_are_never_remembered(memory_appconfig):
+    """One benign approval of the remote executor must not become standing permission for
+    arbitrary future commands."""
+    tool = get_tool("crabbox_run")
+    args = {"shell": "echo hi", "command": [], "label": "", "timeout_seconds": None}
+
+    request = (await approvals.gate(tool, dict(args)))["approval"]
+    assert request["rememberable"] is False
+
+    await approvals.decide(request["id"], approve=True, remember=True)
+    assert not memory_appconfig.get(approvals._ALLOWLIST_KEY)  # nothing was persisted
+
+    again = await approvals.gate(tool, dict(args))
+    assert again["allowed"] is False  # still asks next time
