@@ -268,10 +268,10 @@ function AgentEditor({ initial, catalog, catalogReady = true, modelsReady = true
         <h3><CalendarClock /> Triggers &amp; schedule</h3>
         <div className="agent-trigger-row">
           <Toggle checked disabled label="Manual" onChange={() => {}} />
-          <Toggle checked={config.trigger_modes.includes("api")} label="Scoped API" onChange={(value) => toggleTrigger("api", value)} />
+          <Toggle checked={config.trigger_modes.includes("api")} disabled={!config.trigger_modes.includes("api")} label="Scoped API · receiver not built yet" onChange={(value) => toggleTrigger("api", value)} />
           <Toggle checked={config.trigger_modes.includes("schedule")} label="Schedule" onChange={(value) => toggleTrigger("schedule", value)} />
-          <Toggle disabled label="Slack · connect account first" checked={false} onChange={() => {}} />
-          <Toggle disabled label="Gmail · connect account first" checked={false} onChange={() => {}} />
+          <Toggle checked={config.trigger_modes.includes("slack")} disabled={!config.trigger_modes.includes("slack")} label="Slack · receiver not built yet" onChange={(value) => toggleTrigger("slack", value)} />
+          <Toggle checked={config.trigger_modes.includes("gmail")} disabled={!config.trigger_modes.includes("gmail")} label="Gmail · receiver not built yet" onChange={(value) => toggleTrigger("gmail", value)} />
         </div>
         {config.schedule.enabled && (
           <div className="agent-form-grid schedule">
@@ -314,7 +314,7 @@ function AgentInspector({ agent }) {
       <section><h4><Wrench /> Tools</h4>{config.tool_grants?.length ? config.tool_grants.map((grant) => <div className="inspector-line" key={grant.tool}><b>{grant.tool}</b><span>{grant.approval.replaceAll("_", " ")}</span></div>) : <p>No tools granted.</p>}</section>
       <section><h4><Database /> Context</h4><div className="agent-count-grid"><span><b>{config.skills?.length || 0}</b>skills</span><span><b>{config.datasets?.length || 0}</b>datasets</span><span><b>{config.ontologies?.length || 0}</b>ontologies</span><span><b>{config.projects?.length || 0}</b>projects</span></div></section>
       <section><h4><ShieldCheck /> Limits</h4><div className="inspector-line"><b>{config.budgets?.max_steps_per_run || 0} steps</b><span>per run</span></div><div className="inspector-line"><b>{config.budgets?.max_runtime_seconds || 0}s</b><span>runtime</span></div><div className="inspector-line"><b>${Number(config.budgets?.max_cost_usd_per_day || 0).toFixed(2)}</b><span>daily API cap</span></div><div className="inspector-line"><b>{config.permissions?.life_access || "none"}</b><span>LIFE.md</span></div></section>
-      <section><h4><KeyRound /> Integration API</h4><p>{config.trigger_modes?.includes("api") ? "Enabled for scoped, revocable keys. No key exists until you create one." : "Disabled for this agent."}</p></section>
+      <section><h4><KeyRound /> Integration API</h4><p>{config.trigger_modes?.includes("api") ? "Saved in this version, but the inbound receiver is not implemented. Edit the agent to remove it." : "The inbound receiver is not implemented yet."}</p></section>
     </aside>
   );
 }
@@ -559,7 +559,7 @@ export default function Agents() {
         <p className="agents-list-note">A goal, exact authority, a model, and a bounded way to run.</p>
         <div className="agents-list-scroll">
           {loading && <div className="agents-loading">Loading agents…</div>}
-          {!loading && agents.length === 0 && <button className="agents-empty-list" onClick={() => { setCreating(true); setEditing(true); }}><Bot /><b>Create your first agent</b><span>Attach skills, data, tools, schedules, and integrations.</span></button>}
+          {!loading && agents.length === 0 && <button className="agents-empty-list" onClick={() => { setCreating(true); setEditing(true); }}><Bot /><b>Create your first agent</b><span>Attach skills, data, tools, and a manual or scheduled run.</span></button>}
           {agents.map((agent) => (
             <button key={agent.id} className={`agent-list-item${selected?.id === agent.id ? " active" : ""}`} onClick={() => { setSelectedId(agent.id); setEditing(false); setCreating(false); setError(""); }}>
               <span className={`agent-list-icon status-${agent.status}`}><Bot /></span><span><b>{agent.name}</b><small>{agent.config?.model || "No model"} · v{agent.version}</small></span><ChevronRight />
@@ -574,7 +574,7 @@ export default function Agents() {
       ) : selected ? (
         <AgentDetail agent={selected} onEdit={() => setEditing(true)} onStatus={changeStatus} onArchive={archive} />
       ) : (
-        <main className="agents-main agents-zero"><div className="agent-zero-orbit"><Bot /></div><span className="eyebrow">Build with boundaries</span><h1>Give recurring work a durable home.</h1><p>Create an agent, attach only the Orrery context and tools it needs, then choose manual, schedule, API, Slack, or Gmail triggers.</p><button className="btn primary" onClick={() => { setCreating(true); setEditing(true); }}><Plus />Create agent</button>{error && <div className="agent-form-error">{error}</div>}</main>
+        <main className="agents-main agents-zero"><div className="agent-zero-orbit"><Bot /></div><span className="eyebrow">Build with boundaries</span><h1>Give recurring work a durable home.</h1><p>Create an agent, attach only the Orrery context and tools it needs, then run it manually or on a schedule. Inbound API, Slack, and Gmail triggers are planned.</p><button className="btn primary" onClick={() => { setCreating(true); setEditing(true); }}><Plus />Create agent</button>{error && <div className="agent-form-error">{error}</div>}</main>
       )}
 
       {!editing && <AgentInspector agent={selected} />}

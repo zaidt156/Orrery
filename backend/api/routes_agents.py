@@ -8,6 +8,30 @@ from backend.features import agent_runs, agents, team
 router = APIRouter()
 
 
+# The schema already reserves these trigger kinds, but no inbound receiver is registered yet.
+# Keep them visible to clients without implying that configuring one makes it operational.
+AGENT_CONNECTORS = (
+    {
+        "id": "api",
+        "label": "Scoped API",
+        "available": False,
+        "reason": "The scoped agent API receiver is not implemented yet.",
+    },
+    {
+        "id": "slack",
+        "label": "Slack",
+        "available": False,
+        "reason": "The Slack event receiver is not implemented yet.",
+    },
+    {
+        "id": "gmail",
+        "label": "Gmail",
+        "available": False,
+        "reason": "The Gmail event receiver is not implemented yet.",
+    },
+)
+
+
 class AgentRunStart(BaseModel):
     input: str = Field(default="", max_length=100_000)
 
@@ -50,10 +74,7 @@ async def agent_catalog() -> dict:
         "dashboards": await dashboards.list_dashboards(),
         "mcp_servers": await mcp.list_servers(),
         "tools": tools.list_tools(),
-        "connectors": [
-            {"id": "slack", "label": "Slack", "available": True},
-            {"id": "gmail", "label": "Gmail", "available": True},
-        ],
+        "connectors": [dict(connector) for connector in AGENT_CONNECTORS],
     }
 
 

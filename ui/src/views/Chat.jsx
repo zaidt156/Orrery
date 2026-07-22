@@ -101,8 +101,7 @@ function compactModelLabel(label) {
 }
 
 const CMDS = [
-  ["/image", true], ["/video", true], ["/run automation", false],
-  ["/agent", false], ["/dashboard", false], ["/search docs", false],
+  ["/research", false], ["/image", true],
 ];
 
 const PROVIDER_NAME = {
@@ -988,7 +987,7 @@ export default function Chat({ features = null }) {
 
         <div className="composer">
           <div className="cmd-row">
-            <span className="cmd-lead">type / to run anything:</span>
+            <span className="cmd-lead">available commands:</span>
             {CMDS.map(([c, warm]) => (
               <span key={c} className={`cmd-chip${warm ? " warm" : ""}`} onClick={() => setInput(c + " ")}>{c}</span>
             ))}
@@ -1054,7 +1053,7 @@ export default function Chat({ features = null }) {
                 const files = Array.from(e.clipboardData?.files || []);
                 if (files.length) { e.preventDefault(); addFiles(files); }  // paste screenshots/files directly
               }}
-              placeholder="Ask, attach or paste files/screenshots, or type / to run anything…"
+              placeholder="Ask anything, attach files or screenshots, or use the available Chat tools…"
             />
             {sending ? (
               <button className="send stop" aria-label="Stop" title="Stop" onClick={stop}>

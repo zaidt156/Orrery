@@ -3,7 +3,9 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from backend.features import agents
+from backend import tools
+from backend.api import routes_agents
+from backend.features import agents, dashboards, data, datasets, mcp, projects, rag, skills
 
 
 def _config(**overrides):
@@ -80,3 +82,29 @@ def test_agent_config_hash_is_canonical():
     second = agents.AgentConfig.model_validate(first.model_dump())
 
     assert agents._canonical(first)[1] == agents._canonical(second)[1]
+
+
+@pytest.mark.anyio
+async def test_agent_catalog_does_not_advertise_unregistered_trigger_receivers(monkeypatch):
+    async def no_items(*_args, **_kwargs):
+        return []
+
+    for module, function_name in (
+        (skills, "list_user_skills"),
+        (datasets, "list_datasets"),
+        (rag, "list_collections"),
+        (projects, "list_projects"),
+        (data, "list_connections"),
+        (dashboards, "list_dashboards"),
+        (mcp, "list_servers"),
+    ):
+        monkeypatch.setattr(module, function_name, no_items)
+    monkeypatch.setattr(skills, "list_builtin", lambda: [])
+    monkeypatch.setattr(tools, "list_tools", lambda: [])
+
+    catalog = await routes_agents.agent_catalog()
+    connectors = catalog["connectors"]
+
+    assert {item["id"] for item in connectors} == {"api", "slack", "gmail"}
+    assert all(item["available"] is False for item in connectors)
+    assert all(item["reason"] for item in connectors)
