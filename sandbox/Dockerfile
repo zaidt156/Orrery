@@ -1,10 +1,12 @@
 # Orrery code-execution sandbox: a locked-down Python image that turns model-written
 # code into real files of any type. Run with --network=none, resource caps, non-root,
-# read-only root + a single writable /work mount (see backend/features/sandbox.py).
+# read-only root + isolated writable scratch/output mounts (see backend/features/sandbox.py).
 FROM python:3.12-slim
 
+LABEL org.orrery.sandbox.version="2"
+
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ffmpeg espeak-ng \
+    && apt-get install -y --no-install-recommends ffmpeg espeak-ng tesseract-ocr \
     && rm -rf /var/lib/apt/lists/*
 
 # Broad file/data/plot toolkit so the model can build essentially any artifact.
@@ -18,13 +20,15 @@ RUN pip install --no-cache-dir \
         pandas==2.2.3 \
         numpy==2.1.3 \
         matplotlib==3.9.2 \
-        Pillow==11.0.0 \
+        Pillow==12.3.0 \
         imageio==2.36.0 \
         imageio-ffmpeg==0.5.1 \
-        markdown==3.7 \
+        markdown==3.10.2 \
         beautifulsoup4==4.12.3 \
-        lxml==5.3.0 \
-        odfpy==1.4.1
+        lxml==6.1.1 \
+        odfpy==1.4.1 \
+        pypdfium2==5.12.1 \
+        pytesseract==0.3.13
 
 # matplotlib without a display: headless backend + a writable config dir
 ENV MPLBACKEND=Agg \

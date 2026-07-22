@@ -13,13 +13,43 @@ from sqlalchemy import select
 
 from backend.core.database import get_sessionmaker
 from backend.core.models import Conversation, Message
-from backend.features import admin, capabilities, code_images, code_interpreter, docgen, events as stream_events, filegen, life_learn, mcp, rag, reasoning, research, route_telemetry, sandbox, skills, taskrouter, team
+from backend.features import (
+    admin,
+    capabilities,
+    code_images,
+    code_interpreter,
+    docgen,
+    events as stream_events,
+    filegen,
+    life_learn,
+    mcp,
+    rag,
+    reasoning,
+    research,
+    route_telemetry,
+    sandbox,
+    skills,
+    taskrouter,
+    team,
+    websearch,
+)
 from backend.features import projects as project_store
 from backend.features import files as file_library
-from backend.features.prompting import CODE_INTERPRETER_PROMPT, FORMAT_INSTRUCTIONS, build_system_prompt
+from backend.features.prompting import (
+    FORMAT_INSTRUCTIONS,
+    SANDBOX_TOOL_PROMPT,
+    WEB_SEARCH_PROMPT,
+    build_system_prompt,
+)
 from backend.features.chat_context import (
-    _build_user_content, _effective_context_window, _history_text, _latest_user_text,
-    _limit_messages, _title_from, _wants_high_effort,
+    _build_user_content,
+    _content_token_estimate,
+    _effective_context_window,
+    _history_text,
+    _latest_user_text,
+    _limit_messages,
+    _title_from,
+    _wants_high_effort,
 )
 from backend.features.reasoning_trace import ReasoningTrace, ThinkStream
 from backend.providers import ai
@@ -297,7 +327,7 @@ async def _prepare_turn(
         else:  # normal turn (or an unknown/non-user sibling target): thread onto the active path
             history = versioning.active_path(rows)
             parent_id = history[-1].id if history else None
-        messages = await _hydrate_history(s, history)
+        messages = await _hydrate_history(s, history, context_window)
         messages.append({"role": "user", "content": _build_user_content(user_content, attachments)})
 
         # Attachment metadata rides in artifacts so reloads render real chips (name+kind), not a
@@ -406,38 +436,78 @@ def _model_history(history: list[Message]) -> list[dict]:
     ]
 
 
-# Generous inline-history bound. The token-accurate trim still happens in _limit_messages; this cap
-# only keeps the DB load and per-turn Python work flat on very long chats. Turns older than the tail
-# already fell out of every realistic token window; their files return via relevance-gated retrieval.
-_HISTORY_TAIL = 200
+_HISTORY_BATCH_SIZE = 200
 
 
-async def _hydrate_history(s, path: list) -> list[dict]:
+async def _hydrate_history(
+    s,
+    path: list,
+    context_window: int | None = None,
+) -> list[dict]:
     """_model_history over SKELETON rows (persistence.load_skeletons): fetch the text the model
-    actually uses — `content` for the newest _HISTORY_TAIL path rows, plus `context` for the single
-    most-recent user turn — instead of every text column of every row in the conversation."""
-    tail = list(path[-_HISTORY_TAIL:])
-    if not tail:
+    can fit, plus `context` for the single most-recent user turn. Rows are fetched backward in
+    batches until the configured token window is covered; final exact trimming happens later."""
+    active_path = list(path)
+    if not active_path:
         return []
-    content_by_id = {
-        r.id: (r.content or "")
-        for r in (
-            await s.execute(select(Message.id, Message.content).where(Message.id.in_([m.id for m in tail])))
-        ).all()
-    }
-    last_user = max((i for i, m in enumerate(tail) if m.role == "user"), default=-1)
+
+    latest_user = max(
+        (index for index, message in enumerate(active_path) if message.role == "user"),
+        default=-1,
+    )
+    latest_user_id = active_path[latest_user].id if latest_user >= 0 else None
     context_text = None
-    if last_user >= 0:
+    if latest_user >= 0:
         context_text = (
-            await s.execute(select(Message.context).where(Message.id == tail[last_user].id))
+            await s.execute(select(Message.context).where(Message.id == latest_user_id))
         ).scalar_one_or_none()
+
+    hydration_budget = _effective_context_window(context_window)
+    content_by_id: dict[uuid.UUID, str] = {}
+    first_included = len(active_path)
+    hydrated_tokens = 0
+    while first_included > 0 and hydrated_tokens < hydration_budget:
+        batch_start = max(0, first_included - _HISTORY_BATCH_SIZE)
+        while batch_start > 0 and active_path[batch_start].role != "user":
+            batch_start -= 1
+        batch = active_path[batch_start:first_included]
+        batch_content = {
+            row.id: (row.content or "")
+            for row in (
+                await s.execute(
+                    select(Message.id, Message.content).where(
+                        Message.id.in_([message.id for message in batch])
+                    )
+                )
+            ).all()
+        }
+        content_by_id.update(batch_content)
+        hydrated_tokens += sum(
+            4
+            + _content_token_estimate(
+                (context_text or batch_content.get(message.id, ""))
+                if message.id == latest_user_id
+                else batch_content.get(message.id, "")
+            )
+            for message in batch
+        )
+        first_included = batch_start
+
+    selected_path = active_path[first_included:]
+    last_user = max(
+        (index for index, message in enumerate(selected_path) if message.role == "user"),
+        default=-1,
+    )
     return [
         {
-            "role": m.role,
-            "content": (context_text or content_by_id.get(m.id, "")) if i == last_user
-            else content_by_id.get(m.id, ""),
+            "role": message.role,
+            "content": (
+                (context_text or content_by_id.get(message.id, ""))
+                if index == last_user
+                else content_by_id.get(message.id, "")
+            ),
         }
-        for i, m in enumerate(tail)
+        for index, message in enumerate(selected_path)
     ]
 
 
@@ -457,6 +527,11 @@ def _research_query(text: str) -> str | None:
     if not match:
         return None
     return text[match.end():].strip()
+
+
+def _web_search_for_turn(flags: dict, requested: bool | None) -> bool:
+    """Require both the workspace gate and explicit per-turn consent (fail closed when omitted)."""
+    return bool(flags.get("web_search", True)) and requested is True
 
 
 def _mcp_catalog(servers: list[dict]) -> str:
@@ -520,6 +595,8 @@ async def _route_research(
     project_id: uuid.UUID | None,
     effort: str | None,
     trace: ReasoningTrace,
+    *,
+    web_search_enabled: bool = True,
 ) -> AsyncIterator[dict]:
     """Run the explicit Deep Research workflow."""
     research_collection = collection_id
@@ -534,6 +611,7 @@ async def _route_research(
         model, query,
         collection_id=research_collection, effort=effort,
         trusted_context=research_trusted, trace=trace, persist=_persist_research,
+        web_search=web_search_enabled,
     ):
         if event.get("done"):
             yield trace.done("Finished the research report and saved it.")
@@ -773,22 +851,49 @@ async def _route_model_reply(
     outcome = "completed"
 
     sandbox_ok = sandbox.image_ready()
+    web_ready = allow_web and websearch.available()
+    mcp_servers = await mcp.enabled_servers() if allow_mcp else []
     effective_flags = flags or {}
     allowed_tools = _allowed_registry_tools(
         effective_flags,
         sandbox_ok=sandbox_ok,
         allow_code=allow_code,
-        allow_web=allow_web,
+        allow_web=web_ready,
         allow_mcp=allow_mcp,
     )
-    if sandbox_ok and allow_code:
+    if not mcp_servers:
+        allowed_tools.discard("mcp_call")
+
+    if allow_code and not sandbox_ok:
+        yield trace.step(
+            "Sandbox offline",
+            "Docker isn't running (or the sandbox image isn't built), so code execution and "
+            "sandbox file tools are unavailable this turn. Other enabled tools remain available.",
+            kind="context",
+            status="warning",
+            phase="prepare",
+        )
+    if allow_web and not web_ready:
+        yield trace.step(
+            "Web search unavailable",
+            "The web-search dependency is missing, so current web results are unavailable this turn.",
+            kind="context",
+            status="warning",
+            phase="prepare",
+        )
+
+    if allowed_tools:
         user_text = _latest_user_text(limited_messages)
         gen_effort = filegen.quality_effort(model, effort) if _wants_high_effort(user_text) else effort
-        mcp_servers = await mcp.enabled_servers() if allow_mcp else []
         # No generic "Thinking" step — the model's live reasoning streams into the panel directly.
-        feature_rules = CODE_INTERPRETER_PROMPT
-        if not allow_web:
-            feature_rules += "\n\nWeb search is currently disabled — do not use an orrery-search block."
+        feature_rules = "\n\n".join(
+            rule
+            for enabled, rule in (
+                (sandbox_ok and allow_code, SANDBOX_TOOL_PROMPT),
+                (web_ready, WEB_SEARCH_PROMPT),
+            )
+            if enabled
+        )
         feature_rules += await capabilities.tool_catalog(allowed_tools)
         feature_rules += _mcp_catalog(mcp_servers)
         formatted_prompt = build_system_prompt(
@@ -805,7 +910,7 @@ async def _route_model_reply(
 
         async for event in code_interpreter.run(
             model, formatted_prompt, limited_messages, gen_effort, trace=trace, persist=_persist,
-            allow_web=allow_web, mcp_servers=mcp_servers, allowed_tools=allowed_tools,
+            allow_web=web_ready, mcp_servers=mcp_servers, allowed_tools=allowed_tools,
             system_prompt=gen_system, trusted_context=trusted_context, untrusted_context=rag_context,
         ):
             if "error" in event:
@@ -816,14 +921,6 @@ async def _route_model_reply(
                 yield trace.summary()
             yield event
     else:
-        if allow_code and not sandbox_ok:
-            # Say WHY code-run/file tools are missing instead of silently degrading — users otherwise
-            # see the model claim it "can't write files" with no hint that Docker is simply off.
-            yield trace.step(
-                "Sandbox offline", "Docker isn't running (or the sandbox image isn't built), so code "
-                "execution and sandbox file tools are unavailable this turn. Answering directly.",
-                kind="context", status="warning", phase="prepare",
-            )
         async for event in generation._generate(cid, model, gen_system, limited_messages, effort, rag_context, trusted_context):
             if "error" in event:
                 outcome = "failed"
@@ -843,6 +940,8 @@ async def stream_reply(
     attachments: list[dict] | None = None,
     collection_id: str | None = None,
     sibling_of: str | None = None,
+    *,
+    web_search: bool = False,
 ) -> AsyncIterator[dict]:
     """Persist the user message (with any attachments), then stream + persist the reply."""
     cid = uuid.UUID(conv_id)
@@ -863,18 +962,38 @@ async def stream_reply(
     yield stream_events.title(turn.title)
 
     flags = await admin.effective_flags()  # workspace defaults plus per-user team overrides
+    turn_web_search = _web_search_for_turn(flags, web_search)
 
     # Deep Research: an explicit /research command runs the decompose -> gather -> cited-report
     # workflow instead of a normal chat turn.
     research_q = _research_query(user_content)
     if research_q is not None and flags.get("deep_research", True):
         trace = ReasoningTrace()
+        web_search_enabled = turn_web_search and websearch.available()
+        evidence_sources = "your documents and the web" if web_search_enabled else "your documents"
         yield trace.outer(
             "Deep Research",
-            "Decomposing the question, gathering evidence from your documents, and writing a cited report.",
+            f"Decomposing the question, gathering evidence from {evidence_sources}, and writing a cited report.",
             status="running", phase="route", metadata={"route": "research", "reasoning_mode": reasoning.label(effort)},
         )
-        async for event in _route_research(cid, model, research_q or user_content, collection_id, project_id, effort, trace):
+        if turn_web_search and not web_search_enabled:
+            yield trace.step(
+                "Web search unavailable",
+                "The web-search dependency is missing, so this report will use document evidence only.",
+                kind="context",
+                status="warning",
+                phase="prepare",
+            )
+        async for event in _route_research(
+            cid,
+            model,
+            research_q or user_content,
+            collection_id,
+            project_id,
+            effort,
+            trace,
+            web_search_enabled=web_search_enabled,
+        ):
             yield event
         return
 
@@ -1033,7 +1152,7 @@ async def stream_reply(
     async for event in _route_model_reply(
         cid, model, gen_system, messages, effort, context_window, trusted_context, rag_context,
         plan, trace, route_event_id,
-        allow_code=flags.get("chat_code", True), allow_web=flags.get("web_search", True),
+        allow_code=flags.get("chat_code", True), allow_web=turn_web_search,
         allow_mcp=flags.get("mcp", True), flags=flags,
     ):
         yield event
@@ -1138,7 +1257,7 @@ async def regenerate(conv_id: str) -> AsyncIterator[dict]:
             yield stream_events.error("Nothing to regenerate.")
             return
         anchor_id = history[-1].id  # the user turn being re-answered; the new reply branches here
-        messages = await _hydrate_history(s, history)
+        messages = await _hydrate_history(s, history, context_window)
 
     trusted_context = await project_store.trusted_context(project_id)
     budget_system = "\n\n".join(part for part in (system_prompt, trusted_context) if part)

@@ -11,8 +11,12 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import shlex
+import signal
 import subprocess
+import threading
 import uuid
+from functools import wraps
 
 from sqlalchemy import select
 
@@ -24,6 +28,12 @@ from backend.security import secrets
 
 _ALLOWED_TRANSPORTS = {"stdio", "http"}
 _MCP_TIMEOUT = 45  # seconds for a whole stdio session (first npx run can be slow)
+_INHERITED_ENV_NAMES = {
+    "APPDATA", "COMSPEC", "HOME", "LANG", "LC_ALL", "LOCALAPPDATA", "PATH", "PATHEXT",
+    "PROGRAMDATA", "PROGRAMFILES", "PROGRAMFILES(X86)", "PROGRAMW6432", "SYSTEMDRIVE",
+    "SYSTEMROOT", "TEMP", "TMP", "TMPDIR", "USERPROFILE", "WINDIR", "XDG_CACHE_HOME",
+    "XDG_CONFIG_HOME", "XDG_DATA_HOME",
+}
 
 
 # --- per-server environment variables (many servers need an API key/token) -----------------------
@@ -45,9 +55,20 @@ def _load_env(sid: str) -> dict[str, str]:
         return {}
 
 
-def set_env(sid: str, env: dict[str, str]) -> None:
+def _clean_env(env: dict[str, str] | None) -> dict[str, str]:
+    clean: dict[str, str] = {}
+    for raw_key, raw_value in (env or {}).items():
+        key = str(raw_key).strip()
+        value = str(raw_value)
+        if not key or "=" in key or "\x00" in key or "\x00" in value or key.upper().startswith("ORRERY_"):
+            continue
+        clean[key] = value
+    return clean
+
+
+def _write_env(sid: str, env: dict[str, str]) -> None:
     """Replace a server's env vars. Empty dict clears them."""
-    clean = {str(k).strip(): str(v) for k, v in (env or {}).items() if str(k).strip()}
+    clean = _clean_env(env)
     if clean:
         secrets.set_secret(_env_secret(sid), json.dumps(clean))
     else:
@@ -58,15 +79,106 @@ def set_env(sid: str, env: dict[str, str]) -> None:
 # We avoid the official `mcp` asyncio client because its stdio transport needs subprocess support
 # that Windows only offers on the Proactor loop, while the app runs on the Selector loop (psycopg).
 # A blocking subprocess + newline-delimited JSON-RPC, run off the event loop via to_thread, sidesteps
-# that entirely. The configured command is admin-owned and runs only when a server is enabled.
+# that entirely. Commands are parsed to argv and launched without a shell; child processes receive
+# only a small OS-runtime environment plus the secrets explicitly configured for that MCP server.
 
-def _stdio_session(command: str, ops: list[dict], env: dict[str, str] | None = None) -> list:
+def _command_argv(command: str) -> list[str]:
+    cleaned = (command or "").strip()
+    if not cleaned or "\x00" in cleaned:
+        raise ValueError("The MCP launch command is empty or invalid.")
+    if os.name == "nt":
+        # CommandLineToArgvW implements the quoting rules Windows users expect when they paste a
+        # command into the UI. shlex(posix=True) corrupts unquoted backslashes in Windows paths.
+        import ctypes
+
+        argc = ctypes.c_int()
+        parse = ctypes.windll.shell32.CommandLineToArgvW
+        parse.argtypes = (ctypes.c_wchar_p, ctypes.POINTER(ctypes.c_int))
+        parse.restype = ctypes.POINTER(ctypes.c_wchar_p)
+        parsed = parse(cleaned, ctypes.byref(argc))
+        if not parsed:
+            raise ValueError("The MCP launch command could not be parsed.")
+        try:
+            argv = [parsed[index] for index in range(argc.value)]
+        finally:
+            free = ctypes.windll.kernel32.LocalFree
+            free.argtypes = (ctypes.c_void_p,)
+            free.restype = ctypes.c_void_p
+            free(ctypes.cast(parsed, ctypes.c_void_p))
+    else:
+        argv = shlex.split(cleaned, posix=True)
+    if not argv or any(not arg or "\x00" in arg for arg in argv):
+        raise ValueError("The MCP launch command is empty or invalid.")
+    resolved = proc.find_executable(argv[0])
+    if resolved:
+        argv[0] = resolved
+    return argv
+
+
+def _child_env(server_env: dict[str, str] | None) -> dict[str, str]:
+    inherited = {
+        key: value
+        for key, value in os.environ.items()
+        if (key.upper() in _INHERITED_ENV_NAMES if os.name == "nt" else key in _INHERITED_ENV_NAMES)
+    }
+    for key, value in _clean_env(server_env).items():
+        inherited[key] = value
+    return inherited
+
+
+def _availability_error(server: dict) -> str | None:
+    if server.get("status") != "approved":
+        return "The MCP server is awaiting administrator approval."
+    if not server.get("enabled"):
+        return "The MCP server is disabled."
+    return None
+
+def _terminate_process_tree(process, *, force: bool = False) -> None:
+    """Stop an MCP process, force-killing its process group/tree after a timed-out session."""
+    if not force:
+        try:
+            process.terminate()
+            process.wait(timeout=1)
+            return
+        except Exception:  # noqa: BLE001 - fall through to the process-tree kill
+            pass
+    try:
+        if os.name == "nt":
+            taskkill = os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), "System32", "taskkill.exe")
+            proc.run([taskkill, "/PID", str(process.pid), "/T", "/F"], capture_output=True, timeout=5)
+        else:
+            os.killpg(process.pid, signal.SIGKILL)
+    except Exception:  # noqa: BLE001 - direct kill is the final portable fallback
+        try:
+            process.kill()
+        except Exception:  # noqa: BLE001
+            pass
+    try:
+        process.wait(timeout=2)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _stdio_session(
+    command: str,
+    ops: list[dict],
+    env: dict[str, str] | None = None,
+    on_start=None,
+) -> list:
     """Initialize an MCP stdio server, run each op (method/params), return their results."""
-    p = proc.popen(
-        command, shell=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-        text=True, encoding="utf-8", bufsize=1,
-        env={**os.environ, **env} if env else None,
+    group_options = (
+        {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
+        if os.name == "nt"
+        else {"start_new_session": True}
     )
+    p = proc.popen(
+        _command_argv(command), shell=False, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+        text=True, encoding="utf-8", bufsize=1,
+        env=_child_env(env),
+        **group_options,
+    )
+    if on_start is not None:
+        on_start(p)
     try:
         def send(obj: dict) -> None:
             p.stdin.write(json.dumps(obj) + "\n")
@@ -98,15 +210,35 @@ def _stdio_session(command: str, ops: list[dict], env: dict[str, str] | None = N
             results.append(resp.get("result"))
         return results
     finally:
-        for closer in (lambda: p.stdin.close(), p.terminate):
-            try:
-                closer()
-            except Exception:  # noqa: BLE001
-                pass
+        try:
+            p.stdin.close()
+        except Exception:  # noqa: BLE001
+            pass
+        _terminate_process_tree(p)
 
 
 async def _run_stdio(command: str, ops: list[dict], env: dict[str, str] | None = None) -> list:
-    return await asyncio.wait_for(asyncio.to_thread(_stdio_session, command, ops, env), timeout=_MCP_TIMEOUT)
+    holder: dict[str, object] = {}
+    timed_out = threading.Event()
+
+    def on_start(process) -> None:
+        holder["process"] = process
+        if timed_out.is_set():
+            _terminate_process_tree(process, force=True)
+
+    task = asyncio.create_task(asyncio.to_thread(_stdio_session, command, ops, env, on_start))
+    try:
+        return await asyncio.wait_for(asyncio.shield(task), timeout=_MCP_TIMEOUT)
+    except TimeoutError:
+        timed_out.set()
+        process = holder.get("process")
+        if process is not None:
+            await asyncio.to_thread(_terminate_process_tree, process, force=True)
+        try:
+            await asyncio.wait_for(asyncio.shield(task), timeout=2)
+        except Exception:  # noqa: BLE001 - the timeout remains the public failure
+            task.cancel()
+        raise
 
 
 def _server_env(server: dict) -> dict[str, str]:
@@ -116,6 +248,8 @@ def _server_env(server: dict) -> dict[str, str]:
 
 async def list_tools(server: dict) -> list[dict]:
     """Connect to a server and return its tools [{name, description, input_schema}]. [] on failure."""
+    if _availability_error(server):
+        return []
     if server.get("transport") != "stdio" or not server.get("command"):
         return []  # http/sse transport not supported by this minimal client yet
     try:
@@ -129,6 +263,9 @@ async def list_tools(server: dict) -> list[dict]:
 
 async def call_tool(server: dict, tool: str, args: dict) -> dict:
     """Call a tool on a server; returns {ok, text|error}. Output is untrusted context."""
+    unavailable = _availability_error(server)
+    if unavailable:
+        return {"ok": False, "error": unavailable}
     if server.get("transport") != "stdio" or not server.get("command"):
         return {"ok": False, "error": "Only stdio MCP servers are supported right now."}
     try:
@@ -151,15 +288,66 @@ def _dict(s: McpServer) -> dict:
     return {
         "id": str(s.id), "name": s.name, "transport": s.transport,
         "command": s.command or "", "url": s.url or "", "enabled": bool(s.enabled), "tools": tools,
-        "status": getattr(s, "status", "approved") or "approved", "owner_id": getattr(s, "owner_id", None),
+        "status": getattr(s, "status", None) or "pending", "owner_id": getattr(s, "owner_id", None),
         "env_names": sorted(_load_env(str(s.id)).keys()),  # names only — values never leave the keychain
     }
+
+
+async def _actor() -> tuple[dict, bool]:
+    """Return (current actor, team mode), rejecting locked team clients at the feature boundary."""
+    in_team = await team.team_mode()
+    if not in_team:
+        return team.SOLO_USER, False
+    user = await team.current_user()
+    if not user:
+        raise PermissionError("Team access key required.")
+    return user, True
+
+
+def _require_server_access(
+    row: McpServer,
+    actor: dict,
+    *,
+    in_team: bool,
+    admin_only: bool = False,
+) -> None:
+    if not in_team:
+        return
+    if actor.get("role") == "admin":
+        return
+    if admin_only:
+        raise PermissionError("MCP server approval requires an administrator.")
+    if not row.owner_id or str(row.owner_id) != str(actor.get("id") or ""):
+        raise PermissionError("Only the MCP server owner or an administrator can manage it.")
 
 
 async def _all_servers() -> list[dict]:
     async with get_sessionmaker()() as s:
         rows = (await s.execute(select(McpServer).order_by(McpServer.created_at))).scalars().all()
         return [_dict(r) for r in rows]
+
+
+def _server_uuid(server_id: str) -> uuid.UUID | None:
+    try:
+        return uuid.UUID(server_id)
+    except (ValueError, TypeError, AttributeError):
+        return None
+
+
+_SERVER_LOCKS: dict[str, asyncio.Lock] = {}
+
+
+def _serialized_server_operation(func):
+    """Serialize each server's config transitions and launches inside the local backend process."""
+    @wraps(func)
+    async def wrapped(server_id: str, *args, **kwargs):
+        parsed_id = _server_uuid(server_id)
+        if parsed_id is None:
+            return await func(server_id, *args, **kwargs)
+        lock = _SERVER_LOCKS.setdefault(str(parsed_id), asyncio.Lock())
+        async with lock:
+            return await func(server_id, *args, **kwargs)
+    return wrapped
 
 
 async def list_servers() -> list[dict]:
@@ -177,65 +365,108 @@ async def list_servers() -> list[dict]:
 
 async def create_server(name: str, transport: str, command: str = "", url: str = "", enabled: bool = False,
                         env: dict[str, str] | None = None) -> dict:
+    actor, in_team = await _actor()
     transport = transport if transport in _ALLOWED_TRANSPORTS else "stdio"
+    status = "approved" if not in_team or actor.get("role") == "admin" else "pending"
     async with get_sessionmaker()() as s:
         row = McpServer(
             name=(name.strip() or "MCP server")[:120], transport=transport,
-            command=(command.strip() or None), url=(url.strip() or None), enabled=bool(enabled),
-            owner_id=await team.current_owner_id(), status=await team.creation_status(),
+            command=(command.strip() or None), url=(url.strip() or None),
+            enabled=bool(enabled) if status == "approved" else False,
+            owner_id=str(actor["id"]) if in_team else None, status=status,
         )
         s.add(row)
         await s.commit()
         await s.refresh(row)
         if env:
-            set_env(str(row.id), env)
+            _write_env(str(row.id), env)
         return _dict(row)
 
 
+@_serialized_server_operation
 async def update_server(server_id: str, **fields) -> bool:
+    actor, in_team = await _actor()
+    parsed_id = _server_uuid(server_id)
+    if parsed_id is None:
+        return False
+    replacement_env = _clean_env(fields.get("env")) if fields.get("env") is not None else None
     async with get_sessionmaker()() as s:
-        row = await s.get(McpServer, uuid.UUID(server_id))
+        row = await s.get(McpServer, parsed_id)
         if row is None:
             return False
+        _require_server_access(row, actor, in_team=in_team)
+        connection_changed = False
         if fields.get("name") is not None:
             row.name = (fields["name"].strip() or row.name)[:120]
         if fields.get("transport") is not None and fields["transport"] in _ALLOWED_TRANSPORTS:
-            row.transport = fields["transport"]
+            if row.transport != fields["transport"]:
+                row.transport = fields["transport"]
+                connection_changed = True
         if fields.get("command") is not None:
-            row.command = fields["command"].strip() or None
+            command = fields["command"].strip() or None
+            if row.command != command:
+                row.command = command
+                connection_changed = True
         if fields.get("url") is not None:
-            row.url = fields["url"].strip() or None
+            url = fields["url"].strip() or None
+            if row.url != url:
+                row.url = url
+                connection_changed = True
+        if replacement_env is not None and replacement_env != _load_env(server_id):
+            connection_changed = True
         if fields.get("enabled") is not None:
             row.enabled = bool(fields["enabled"])
+        if connection_changed:
+            row.tools = None
+            if in_team:
+                row.status = "pending"
+                row.enabled = False
+        if row.status != "approved":
+            row.enabled = False
         await s.commit()
-    if fields.get("env") is not None:
-        set_env(server_id, fields["env"] or {})
+    if replacement_env is not None:
+        _write_env(server_id, replacement_env)
     return True
 
 
+@_serialized_server_operation
 async def delete_server(server_id: str) -> bool:
+    actor, in_team = await _actor()
+    parsed_id = _server_uuid(server_id)
+    if parsed_id is None:
+        return False
     async with get_sessionmaker()() as s:
-        row = await s.get(McpServer, uuid.UUID(server_id))
+        row = await s.get(McpServer, parsed_id)
         if row is None:
             return False
+        _require_server_access(row, actor, in_team=in_team)
         await s.delete(row)
         await s.commit()
     secrets.delete_secret(_env_secret(server_id))  # remove the server's env secrets with it
     return True
 
 
+@_serialized_server_operation
 async def refresh_tools(server_id: str) -> dict:
     """Connect to a server, list its tools, cache them, and return {ok, tools|error}."""
+    actor, in_team = await _actor()
+    parsed_id = _server_uuid(server_id)
+    if parsed_id is None:
+        return {"ok": False, "error": "Server not found"}
     async with get_sessionmaker()() as s:
-        row = await s.get(McpServer, uuid.UUID(server_id))
+        row = await s.get(McpServer, parsed_id)
         if row is None:
             return {"ok": False, "error": "Server not found"}
+        _require_server_access(row, actor, in_team=in_team)
         server = _dict(row)
+    unavailable = _availability_error(server)
+    if unavailable:
+        return {"ok": False, "error": unavailable}
     tools = await list_tools(server)
     if not tools:
         return {"ok": False, "error": "No tools returned — check the command/URL and that the server runs."}
     async with get_sessionmaker()() as s:
-        row = await s.get(McpServer, uuid.UUID(server_id))
+        row = await s.get(McpServer, parsed_id)
         if row is not None:
             row.tools = json.dumps(tools)
             await s.commit()
@@ -244,24 +475,40 @@ async def refresh_tools(server_id: str) -> dict:
 
 async def enabled_servers() -> list[dict]:
     """Approved + enabled servers (with cached tools) — what chat advertises to the model, team-wide."""
-    return [s for s in await _all_servers() if s["enabled"] and s.get("tools") and s.get("status", "approved") == "approved"]
+    return [s for s in await _all_servers() if s["enabled"] and s.get("tools") and s.get("status") == "approved"]
 
 
+@_serialized_server_operation
 async def set_status(server_id: str, status: str) -> bool:
-    """Approve (or send back to pending) an MCP server. Caller authorizes (admin)."""
+    """Approve (or send back to pending) an MCP server. Team approval is admin-only."""
+    actor, in_team = await _actor()
+    parsed_id = _server_uuid(server_id)
+    if parsed_id is None:
+        return False
     async with get_sessionmaker()() as s:
-        row = await s.get(McpServer, uuid.UUID(server_id))
+        row = await s.get(McpServer, parsed_id)
         if row is None:
             return False
+        _require_server_access(row, actor, in_team=in_team, admin_only=True)
         row.status = "approved" if status == "approved" else "pending"
+        if row.status != "approved":
+            row.enabled = False
+            row.tools = None
         await s.commit()
         return True
 
 
+@_serialized_server_operation
 async def call_tool_by_id(server_id: str, tool: str, args: dict) -> dict:
+    parsed_id = _server_uuid(server_id)
+    if parsed_id is None:
+        return {"ok": False, "error": "Server not found"}
     async with get_sessionmaker()() as s:
-        row = await s.get(McpServer, uuid.UUID(server_id))
+        row = await s.get(McpServer, parsed_id)
         if row is None:
             return {"ok": False, "error": "Server not found"}
         server = _dict(row)
+    unavailable = _availability_error(server)
+    if unavailable:
+        return {"ok": False, "error": unavailable}
     return await call_tool(server, tool, args)

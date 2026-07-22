@@ -248,7 +248,7 @@ copy .env.example .env
 # Start local PostgreSQL + pgvector.
 docker compose up -d
 
-# Build the sandbox image used by file generation.
+# Build the versioned sandbox used by file generation and local PDF OCR.
 docker build -t orrery-sandbox:latest sandbox
 
 # Python environment.
@@ -319,7 +319,7 @@ cp .env.example .env
 # Start local PostgreSQL + pgvector.
 docker compose up -d
 
-# Build the sandbox image used by file generation.
+# Build the versioned sandbox used by file generation and local PDF OCR.
 docker build -t orrery-sandbox:latest sandbox
 
 # Python environment.
@@ -369,18 +369,20 @@ Orrery uses PostgreSQL as the main data layer. You can:
 
 ## File Generation And Sandbox
 
-Rich file generation uses a locked-down Docker sandbox. Build the image once:
+Rich file generation and scanned-PDF OCR use a locked-down Docker sandbox. Build the image once:
 
 ```powershell
 docker build -t orrery-sandbox:latest sandbox
 ```
 
-The sandbox has no network, a read-only root filesystem, dropped Linux capabilities, memory/CPU/PID
-limits, and a per-run output folder. Model-written code never runs inside the Orrery process. Rebuild
-this image after pulling updates that change `sandbox/Dockerfile`, especially for audio/video support.
+The sandbox has no network, a read-only root filesystem, separate read-only input/code mounts,
+dropped Linux capabilities, and memory/CPU/PID/open-file/time limits. Only its scratch and output
+folders are writable. Model-written code and PDF OCR never run inside the Orrery process. Rebuild
+this image after pulling updates that change `sandbox/Dockerfile`; Orrery rejects stale image
+versions instead of silently running without current protections or OCR support.
 
-If the sandbox image is missing, normal chat still works, but code-execution-based file generation is
-limited until the image is built.
+If the sandbox image is missing, normal chat and searchable-text PDFs still work, but scanned-PDF OCR
+and code-execution-based file generation are limited until the image is built.
 
 ## Security
 

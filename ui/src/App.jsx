@@ -207,10 +207,10 @@ export default function App() {
           ))}
           <div className="spacer" />
           <ConnectionCheck db={db} />
-          <div className="rail-meta">{appVersion ? `Orrery v${appVersion} · ` : ""}Open source · MIT License</div>
+          <div className="rail-meta">{appVersion ? `Orrery v${appVersion} · ` : ""}Open source · Apache 2.0</div>
         </nav>
         <Suspense fallback={<section className="view"><div className="s-sub">Loading...</div></section>}>
-          <ActiveView onNavigate={setActive} />
+          <ActiveView onNavigate={setActive} features={features} />
         </Suspense>
       </div>
     </div>

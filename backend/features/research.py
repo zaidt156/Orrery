@@ -1,7 +1,7 @@
 """Deep Research: a multi-step research workflow that produces a cited report.
 
 Flow: decompose the question into focused sub-questions -> gather evidence for each (from the user's
-uploaded documents via RAG today; provider web search is the next increment) -> synthesize one
+uploaded documents via RAG and the universal web-search backend) -> synthesize one
 structured report that cites its evidence with [n] markers and a Sources list.
 
 It is model-agnostic (works on any provider/connection) and emits the same two-layer activity trace
@@ -102,6 +102,8 @@ async def run(
 
     findings: list[tuple[str, list[dict]]] = []
     total_passages = 0
+    web_active = web_search
+    web_failure_reported = False
     for index, subq in enumerate(subqs):
         yield trace.step("Researching", subq, kind="context", status="running", phase="gather",
                          metadata={"step": index + 1, "of": len(subqs)})
@@ -111,11 +113,27 @@ async def run(
                 passages = await rag.search(collection_id, subq, k=PASSAGES_PER_SUBQUESTION)
             except Exception:  # noqa: BLE001 — a retrieval miss shouldn't abort the whole report
                 passages = []
-        if web_search:
+        if web_active:
             try:
-                hits = await websearch.search(subq, max_results=4)
-            except Exception:  # noqa: BLE001 — web is best-effort
-                hits = []
+                search_outcome = await websearch.search_detailed(subq, max_results=4)
+            except Exception:  # noqa: BLE001 - an unexpected search fault must not abort the report
+                search_outcome = {
+                    "status": "error",
+                    "results": [],
+                    "error": "The web-search provider did not respond. Try again later.",
+                }
+            hits = search_outcome["results"] if search_outcome.get("status") == "ok" else []
+            if search_outcome.get("status") != "ok":
+                web_active = False
+                if not web_failure_reported:
+                    web_failure_reported = True
+                    yield trace.step(
+                        "Web search unavailable",
+                        search_outcome.get("error") or "Web evidence is unavailable for this report.",
+                        kind="context",
+                        status="warning",
+                        phase="gather",
+                    )
             for h in hits:
                 body = f"{h.get('title', '')} — {h.get('snippet', '')}".strip(" —")
                 if body:

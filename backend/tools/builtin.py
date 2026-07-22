@@ -42,9 +42,16 @@ class WebSearchTool(Tool):
     config_model = WebSearchConfig
 
     async def execute(self, config: WebSearchConfig) -> dict:
-        from backend.features import websearch
-        results = await websearch.search(config.query, max_results=config.max_results)
-        return {"results": results}
+        from backend.features import admin, websearch
+
+        if not await admin.feature_enabled("web_search"):
+            raise PermissionError("Web search is disabled by the current feature gates.")
+        if not websearch.available():
+            raise RuntimeError("Web search is unavailable because its search dependency is not installed.")
+        outcome = await websearch.search_detailed(config.query, max_results=config.max_results)
+        if outcome["status"] != "ok":
+            raise RuntimeError(outcome["error"] or "Web search is unavailable.")
+        return {"status": "ok", "results": outcome["results"]}
 
 
 class DocSearchConfig(BaseModel):

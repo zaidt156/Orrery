@@ -434,8 +434,19 @@ async function streamSSE(path, { body, signal, method = "POST" } = {}, onEvent) 
   return { done: sawDone };
 }
 
-export const streamMessage = (cid, content, attachments, collectionId, onEvent, signal, siblingOf = null) =>
-  streamSSE(`/api/conversations/${cid}/messages`, { body: { content, attachments, collection_id: collectionId, sibling_of: siblingOf }, signal }, onEvent);
+export const streamMessage = (
+  cid, content, attachments, collectionId, onEvent, signal, siblingOf = null, webSearch = false
+) =>
+  streamSSE(`/api/conversations/${cid}/messages`, {
+    body: {
+      content,
+      attachments,
+      collection_id: collectionId,
+      sibling_of: siblingOf,
+      web_search: Boolean(webSearch),
+    },
+    signal,
+  }, onEvent);
 
 // flip which ‹ › version of a message is visible; returns the refreshed conversation
 export const activateMessageVersion = (cid, mid) =>

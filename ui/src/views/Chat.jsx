@@ -13,6 +13,7 @@ import {
   RefreshCw,
   Repeat2,
   Scale,
+  Globe2,
   Telescope,
   WandSparkles,
   X,
@@ -124,7 +125,9 @@ const CHAT_ATTACHMENT_ACCEPT = [
 const CHAT_TEXT_EXT = /\.(txt|md|markdown|csv|tsv|json|ya?ml|xml|html?|css|js|jsx|ts|tsx|py|java|c|cpp|cs|go|rs|rb|php|sh|sql|ini|toml|log)$/i;
 const CHAT_OFFICE_EXT = /\.(docx|pptx|xlsx|xlsm)$/i;
 
-export default function Chat() {
+export default function Chat({ features = null }) {
+  const researchEnabled = features?.deep_research !== false;
+  const webSearchEnabled = features?.web_search !== false;
   const [convos, setConvos] = useState([]);
   const [activeId, setActiveId] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -145,12 +148,21 @@ export default function Chat() {
   const [attachments, setAttachments] = useState([]);
   const [useData, setUseData] = useState(false);
   const [researchMode, setResearchMode] = useState(false);
+  const [webMode, setWebMode] = useState(false);
   const [collections, setCollections] = useState([]);
   const [dataColl, setDataColl] = useState("");
   const [projects, setProjects] = useState([]);
   const [projectId, setProjectId] = useState("");
   const [effort, setEffort] = useState("");
   const [artifact, setArtifact] = useState(null); // preview sidebar state; iframe capabilities deny by default
+
+  useEffect(() => {
+    if (!researchEnabled) setResearchMode(false);
+  }, [researchEnabled]);
+
+  useEffect(() => {
+    if (!webSearchEnabled) setWebMode(false);
+  }, [webSearchEnabled]);
 
   async function openHtmlPreview(html, title) {
     try {
@@ -593,7 +605,11 @@ export default function Chat() {
     await syncThread(cid);
   }
 
-  async function submitPrompt(rawContent, rawAttachments = [], { clearComposer = false, siblingOf = null } = {}) {
+  async function submitPrompt(
+    rawContent,
+    rawAttachments = [],
+    { clearComposer = false, siblingOf = null, webSearch = false } = {}
+  ) {
     const content = String(rawContent || "").trim();
     if ((!content && rawAttachments.length === 0) || sending) return;
     if (!model) { setBanner("Connect an account or add an API key in Settings to pick a model."); return; }
@@ -632,17 +648,25 @@ export default function Chat() {
     await runStream(cid, (onEvent, signal) =>
       codeImage
         ? streamCodeImage(cid, content, onEvent, signal)
-        : streamMessage(cid, content, atts, collectionId, onEvent, signal, sid)
+        : streamMessage(cid, content, atts, collectionId, onEvent, signal, sid, webSearch)
     );
     await syncThread(cid); // pick up saved ids + ‹ › version metadata
   }
 
   async function send() {
     // Deep Research toggle routes the turn through the decompose→gather→cited-report workflow.
-    const text = researchMode && input.trim() && !/^\s*\/research\b/i.test(input)
+    const text = researchEnabled && researchMode && input.trim() && !/^\s*\/research\b/i.test(input)
       ? `/research ${input.trim()}`
       : input;
-    await submitPrompt(text, attachments, { clearComposer: true });
+    try {
+      await submitPrompt(text, attachments, {
+        clearComposer: true,
+        webSearch: webSearchEnabled && webMode,
+      });
+    } finally {
+      // Web access is approved one message at a time; make the next outbound search explicit too.
+      setWebMode(false);
+    }
   }
 
   async function resubmitPrompt(message) {
@@ -997,14 +1021,29 @@ export default function Chat() {
               onChange={handleFiles}
             />
             <button className="icon-btn" aria-label="Attach file" title="Attach images, PDFs, Office docs, or text files" onClick={() => fileRef.current?.click()}><AttachIcon /></button>
-            <button
-              className={`research-toggle${researchMode ? " on" : ""}`}
-              aria-pressed={researchMode}
-              title="Deep Research: break the question down, search your documents and the web, and write a cited report"
-              onClick={() => setResearchMode((v) => !v)}
-            >
-              <Telescope /> {researchMode ? "Research" : ""}
-            </button>
+            {webSearchEnabled && (
+              <button
+                className={`research-toggle${webMode ? " on" : ""}`}
+                aria-label="Use web search for this message"
+                aria-pressed={webMode}
+                title="Use web search for this message. The screened query leaves this device; common PII and secrets are masked first."
+                onClick={() => setWebMode((v) => !v)}
+              >
+                <Globe2 /> {webMode ? "Web" : ""}
+              </button>
+            )}
+            {researchEnabled && (
+              <button
+                className={`research-toggle${researchMode ? " on" : ""}`}
+                aria-pressed={researchMode}
+                title={webMode
+                  ? "Deep Research: break the question down, search your documents and the web, and write a cited report"
+                  : "Deep Research: break the question down and search your documents. Turn on Web to include current web results."}
+                onClick={() => setResearchMode((v) => !v)}
+              >
+                <Telescope /> {researchMode ? "Research" : ""}
+              </button>
+            )}
             <textarea
               ref={composerRef}
               rows={1}

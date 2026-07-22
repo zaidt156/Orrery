@@ -51,7 +51,17 @@ async def remove_conversation(cid: str) -> dict:
 async def send_message(cid: str, body: NewMessage) -> StreamingResponse:
     await _require_conversation_access(cid)
     attachments = [a.model_dump() for a in body.attachments]
-    return _sse_run(cid, chat.stream_reply(cid, body.content, attachments, body.collection_id, body.sibling_of))
+    return _sse_run(
+        cid,
+        chat.stream_reply(
+            cid,
+            body.content,
+            attachments,
+            body.collection_id,
+            body.sibling_of,
+            web_search=body.web_search,
+        ),
+    )
 
 @router.get("/conversations/{cid}/attachment-text")
 async def conversation_attachment_text(cid: str, source: str) -> dict:
@@ -124,4 +134,3 @@ async def task_routes() -> dict:
 async def cancel_task(task_id: str) -> dict:
     from backend.features import taskbrain
     return {"canceled": await taskbrain.cancel(task_id)}
-
