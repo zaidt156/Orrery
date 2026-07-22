@@ -79,6 +79,17 @@ th{background:#26314f;color:#fff}
   background:#fff8e6;padding:10px 12px;color:#6b4300;font-size:13px;line-height:1.45}
 .source{max-width:1040px;margin:0 auto;background:#fff;border-radius:10px;padding:28px 32px}
 .source pre{white-space:pre-wrap;word-break:break-word;margin:0;font:13px/1.55 Consolas,Menlo,monospace;color:#172033}
+.slide.abs{padding:0}
+.slide-canvas{position:absolute;inset:0}
+.shape{position:absolute;overflow:hidden}
+.shape p{margin:0;line-height:1.3;font-size:17px}
+.shape img{width:100%;height:100%;object-fit:contain;display:block}
+.doc img{max-width:100%;height:auto;margin:8px 0}
+.doc table{border-collapse:collapse;margin:10px 0;width:100%}
+.doc blockquote{border-left:3px solid #c6cfdd;margin:10px 0;padding:4px 14px;color:#4a5670}
+.doc code{background:#eef1f7;border-radius:4px;padding:1px 5px;font:13px Consolas,Menlo,monospace}
+.doc pre{background:#eef1f7;border-radius:8px;padding:12px;overflow:auto}
+.doc pre code{background:none;padding:0}
 """
 
 
@@ -636,52 +647,195 @@ def _pdf_html(name: str, data: bytes) -> bytes:
     return rendered
 
 
+_PPTX_EMU_PER_PT = 12700
+_SLIDE_RENDER_WIDTH = 880  # matches the .slide max-width so font pt→px scaling looks right
+
+
+def _pptx_run_html(run, scale: float, budget: _PreviewBudget) -> str:
+    text = budget.text(run.text)
+    if not text:
+        return ""
+    piece = html.escape(text)
+    if run.font.bold:
+        piece = f"<strong>{piece}</strong>"
+    if run.font.italic:
+        piece = f"<em>{piece}</em>"
+    styles = []
+    try:
+        if run.font.size is not None:
+            styles.append(f"font-size:{max(8, round(run.font.size.pt * scale))}px")
+    except (AttributeError, ValueError):
+        pass
+    try:
+        if run.font.color is not None and run.font.color.type is not None:
+            hex_color = _safe_hex(str(run.font.color.rgb))
+            if hex_color:
+                styles.append(f"color:{hex_color}")
+    except (AttributeError, ValueError, TypeError):
+        pass
+    if styles:
+        piece = f'<span style="{";".join(styles)}">{piece}</span>'
+    return piece
+
+
+def _pptx_shape_box(shape, slide_w: int, slide_h: int) -> str | None:
+    try:
+        left, top, width, height = shape.left, shape.top, shape.width, shape.height
+    except (AttributeError, ValueError):
+        return None
+    if None in (left, top, width, height) or slide_w <= 0 or slide_h <= 0:
+        return None
+    return (
+        f"left:{100 * left / slide_w:.2f}%;top:{100 * top / slide_h:.2f}%;"
+        f"width:{100 * width / slide_w:.2f}%;height:{100 * height / slide_h:.2f}%"
+    )
+
+
+def _pptx_fill(shape) -> str:
+    try:
+        from pptx.enum.dml import MSO_FILL
+        fill = shape.fill
+        if fill.type == MSO_FILL.SOLID and fill.fore_color.type is not None:
+            hex_color = _safe_hex(str(fill.fore_color.rgb))
+            if hex_color:
+                return f";background:{hex_color}"
+    except Exception:  # noqa: BLE001 — fills are cosmetic; theme colors just render unfilled
+        pass
+    return ""
+
+
+def _pptx_shape_html(shape, slide_w: int, slide_h: int, scale: float,
+                     budget: _PreviewBudget, image_state: dict) -> str:
+    from pptx.enum.shapes import MSO_SHAPE_TYPE
+    from pptx.enum.text import PP_ALIGN
+
+    box = _pptx_shape_box(shape, slide_w, slide_h)
+    if box is None:
+        return ""
+    try:
+        if shape.shape_type == MSO_SHAPE_TYPE.PICTURE:
+            image = _inline_image(shape.image.blob, shape.image.content_type, image_state)
+            return f'<div class="shape" style="{box}">{image}</div>' if image else ""
+        if getattr(shape, "has_table", False):
+            rows = []
+            for row_index, row in enumerate(shape.table.rows):
+                if not budget.node():
+                    break
+                tag = "th" if row_index == 0 else "td"
+                cells = []
+                for cell in row.cells:
+                    if not budget.cell():
+                        break
+                    cells.append(f"<{tag}>{html.escape(budget.text(cell.text))}</{tag}>")
+                if cells:
+                    rows.append(f"<tr>{''.join(cells)}</tr>")
+            return f'<div class="shape" style="{box}"><table>{"".join(rows)}</table></div>'
+        if getattr(shape, "has_text_frame", False):
+            paragraphs_html = []
+            for paragraph in shape.text_frame.paragraphs:
+                if not budget.node():
+                    break
+                runs = "".join(_pptx_run_html(run, scale, budget) for run in paragraph.runs)
+                if not runs.strip():
+                    continue
+                align = ""
+                if paragraph.alignment == PP_ALIGN.CENTER:
+                    align = ' style="text-align:center"'
+                elif paragraph.alignment == PP_ALIGN.RIGHT:
+                    align = ' style="text-align:right"'
+                paragraphs_html.append(f"<p{align}>{runs}</p>")
+            if not paragraphs_html:
+                return ""
+            return f'<div class="shape" style="{box}{_pptx_fill(shape)}">{"".join(paragraphs_html)}</div>'
+        fill = _pptx_fill(shape)  # a plain shape with a solid fill still reads as a colored block
+        if fill:
+            return f'<div class="shape" style="{box}{fill}"></div>'
+    except Exception:  # noqa: BLE001 — one bad shape never kills the slide
+        return ""
+    return ""
+
+
 def _pptx_html(data: bytes) -> bytes:
+    """Positioned slide rendering: shapes keep their place, size, text styling, and pictures,
+    so the fallback looks like the deck instead of a text dump."""
     from pptx import Presentation
 
     prs = Presentation(io.BytesIO(data))
     budget = _PreviewBudget()
+    slide_w = int(prs.slide_width or 9144000)
+    slide_h = int(prs.slide_height or 6858000)
+    scale = _SLIDE_RENDER_WIDTH / (slide_w / _PPTX_EMU_PER_PT)  # px per point at render width
+    image_state = {"count": 0, "bytes": 0, "truncated": False}
     cards = []
     for index, slide in enumerate(prs.slides, start=1):
         if not budget.node():
             break
-        title = ""
-        title_shape = None
-        try:
-            if slide.shapes.title is not None and slide.shapes.title.has_text_frame:
-                title = budget.text(slide.shapes.title.text.strip())
-                title_shape = slide.shapes.title
-        except (AttributeError, ValueError):
-            pass
-        bullets: list[str] = []
+        shapes_html = []
         for shape in slide.shapes:
             if not budget.node():
                 break
-            if shape is title_shape or not getattr(shape, "has_text_frame", False):
-                continue
-            for paragraph in shape.text_frame.paragraphs:
-                if not budget.node():
-                    break
-                text = budget.text(paragraph.text.strip())
-                if text:
-                    if len(bullets) >= 14:
-                        budget.truncated = True
-                        break
-                    bullets.append(text)
-        items = "".join(f"<li>{html.escape(b)}</li>" for b in bullets)
-        body = f"<ul>{items}</ul>" if items else ""
+            piece = _pptx_shape_html(shape, slide_w, slide_h, scale, budget, image_state)
+            if piece:
+                shapes_html.append(piece)
         cards.append(
-            f'<div class="slide"><div class="snum">{index}</div>'
-            f'<h2>{html.escape(title or f"Slide {index}")}</h2>{body}</div>'
+            f'<div class="slide abs" style="aspect-ratio:{slide_w}/{slide_h}">'
+            f'<div class="slide-canvas">{"".join(shapes_html)}</div>'
+            f'<div class="snum">{index}</div></div>'
         )
-    body = f'<div class="meta">PowerPoint preview · {len(cards)} slides</div>' + "".join(cards)
-    return _finish_html("PowerPoint", body, truncated=budget.truncated)
+    body = f'<div class="meta">PowerPoint preview · {len(cards)} slide(s)</div>' + "".join(cards)
+    return _finish_html("PowerPoint", body, truncated=budget.truncated or image_state["truncated"])
+
+
+def _xlsx_cell_style(cell) -> str:
+    styles: list[str] = []
+    try:
+        font = cell.font
+        if font is not None:
+            if font.b:
+                styles.append("font-weight:700")
+            if font.i:
+                styles.append("font-style:italic")
+            color = getattr(font.color, "rgb", None) if font.color is not None else None
+            hex_color = _safe_hex(color)
+            if hex_color and hex_color != "#000000":
+                styles.append(f"color:{hex_color}")
+        fill = cell.fill
+        if fill is not None and getattr(fill, "patternType", None) == "solid":
+            hex_fill = _safe_hex(getattr(fill.start_color, "rgb", None))
+            if hex_fill and hex_fill != "#FFFFFF":
+                styles.append(f"background:{hex_fill}")
+        horizontal = getattr(cell.alignment, "horizontal", None)
+        if horizontal in ("center", "right"):
+            styles.append(f"text-align:{horizontal}")
+    except Exception:  # noqa: BLE001 — styling is cosmetic; a strange style never kills the preview
+        return ""
+    return ";".join(styles)
+
+
+def _cell_display(value) -> str:
+    import datetime as _dt
+    if value is None:
+        return ""
+    if isinstance(value, float):
+        return f"{value:g}"
+    if isinstance(value, _dt.datetime):
+        if value.hour or value.minute or value.second:
+            return value.strftime("%Y-%m-%d %H:%M")
+        return value.strftime("%Y-%m-%d")
+    if isinstance(value, _dt.date):
+        return value.strftime("%Y-%m-%d")
+    return str(value)
 
 
 def _xlsx_html(data: bytes) -> bytes:
+    """Styled grid rendering: merged cells span, bold/fill/color/alignment survive, and column
+    widths are honored — the fallback looks like the sheet instead of a bare-values dump."""
     from openpyxl import load_workbook
+    from openpyxl.utils import get_column_letter
 
-    workbook = load_workbook(io.BytesIO(data), read_only=True)
+    # Full (non-read-only) load so merges, styles, and widths are available; the Office archive
+    # screen has already bounded entry counts and uncompressed sizes before this parser runs.
+    workbook = load_workbook(io.BytesIO(data), data_only=True)
     budget = _PreviewBudget()
     parts = []
     try:
@@ -691,31 +845,56 @@ def _xlsx_html(data: bytes) -> bytes:
         for sheet in sheets[:_MAX_OFFICE_SHEETS]:
             if not budget.node():
                 break
+            max_row = min(sheet.max_row or 0, _MAX_OFFICE_ROWS)
+            max_col = min(sheet.max_column or 0, _MAX_OFFICE_COLUMNS)
             if (sheet.max_row or 0) > _MAX_OFFICE_ROWS or (sheet.max_column or 0) > _MAX_OFFICE_COLUMNS:
                 budget.truncated = True
-            rows = []
-            for row_index, row in enumerate(
-                sheet.iter_rows(
-                    max_row=_MAX_OFFICE_ROWS,
-                    max_col=_MAX_OFFICE_COLUMNS,
-                    values_only=True,
-                )
-            ):
+            spans: dict[tuple[int, int], tuple[int, int]] = {}
+            covered: set[tuple[int, int]] = set()
+            for merged in list(sheet.merged_cells.ranges)[:512]:
+                anchor = (merged.min_row, merged.min_col)
+                spans[anchor] = (merged.max_row - merged.min_row + 1, merged.max_col - merged.min_col + 1)
+                for row in range(merged.min_row, min(merged.max_row, _MAX_OFFICE_ROWS) + 1):
+                    for col in range(merged.min_col, min(merged.max_col, _MAX_OFFICE_COLUMNS) + 1):
+                        if (row, col) != anchor:
+                            covered.add((row, col))
+            columns = []
+            for col in range(1, max_col + 1):
+                dimension = sheet.column_dimensions.get(get_column_letter(col))
+                width = getattr(dimension, "width", None) if dimension is not None else None
+                columns.append(f'<col style="width:{min(round(width * 7), 400)}px">' if width else "<col>")
+            rows_html = []
+            for row_index in range(1, max_row + 1):
                 if not budget.node():
                     break
-                tag = "th" if row_index == 0 else "td"
                 cells = []
-                for value in row:
+                for col_index in range(1, max_col + 1):
+                    if (row_index, col_index) in covered:
+                        continue
                     if not budget.cell():
                         break
-                    value_text = budget.text("" if value is None else value)
-                    cells.append(f"<{tag}>{html.escape(value_text)}</{tag}>")
+                    cell = sheet.cell(row=row_index, column=col_index)
+                    span_attr = ""
+                    if (row_index, col_index) in spans:
+                        rowspan, colspan = spans[(row_index, col_index)]
+                        if rowspan > 1:
+                            span_attr += f' rowspan="{min(rowspan, max_row - row_index + 1)}"'
+                        if colspan > 1:
+                            span_attr += f' colspan="{min(colspan, max_col - col_index + 1)}"'
+                    style = _xlsx_cell_style(cell)
+                    style_attr = f' style="{style}"' if style else ""
+                    tag = "th" if row_index == 1 else "td"
+                    value_text = budget.text(_cell_display(cell.value))
+                    cells.append(f"<{tag}{span_attr}{style_attr}>{html.escape(value_text)}</{tag}>")
                 if cells:
-                    rows.append(f"<tr>{''.join(cells)}</tr>")
+                    rows_html.append(f"<tr>{''.join(cells)}</tr>")
                 if budget.cells >= _MAX_OFFICE_CELLS:
                     break
             title = html.escape(budget.text(sheet.title))
-            parts.append(f'<div class="sheet"><h3>{title}</h3><table>{"".join(rows)}</table></div>')
+            parts.append(
+                f'<div class="sheet"><h3>{title}</h3>'
+                f'<table><colgroup>{"".join(columns)}</colgroup>{"".join(rows_html)}</table></div>'
+            )
             if budget.cells >= _MAX_OFFICE_CELLS:
                 break
     finally:
@@ -724,13 +903,68 @@ def _xlsx_html(data: bytes) -> bytes:
     return _finish_html("Excel", body, truncated=budget.truncated)
 
 
+def _docx_run_html(run, budget: _PreviewBudget) -> str:
+    text = budget.text(run.text)
+    if not text:
+        return ""
+    piece = html.escape(text)
+    styles = []
+    try:
+        if run.font.color is not None and run.font.color.rgb is not None:
+            hex_color = _safe_hex(str(run.font.color.rgb))
+            if hex_color and hex_color != "#000000":
+                styles.append(f"color:{hex_color}")
+    except (AttributeError, ValueError):
+        pass
+    if run.underline:
+        styles.append("text-decoration:underline")
+    if styles:
+        piece = f'<span style="{";".join(styles)}">{piece}</span>'
+    if run.italic:
+        piece = f"<em>{piece}</em>"
+    if run.bold:
+        piece = f"<strong>{piece}</strong>"
+    return piece
+
+
+_DOCX_BLIP = "{http://schemas.openxmlformats.org/drawingml/2006/main}blip"
+_DOCX_EMBED = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}embed"
+
+
+def _docx_paragraph_images(paragraph, document, image_state: dict) -> list[str]:
+    """Pictures embedded in this paragraph, inlined as bounded data URIs."""
+    pieces = []
+    for blip in paragraph._p.iter(_DOCX_BLIP):  # noqa: SLF001 — python-docx has no drawing API
+        rid = blip.get(_DOCX_EMBED)
+        if not rid:
+            continue
+        try:
+            part = document.part.related_parts[rid]
+            image = _inline_image(part.blob, part.content_type, image_state)
+        except Exception:  # noqa: BLE001 — a broken relationship just skips the picture
+            continue
+        if image:
+            pieces.append(image)
+    return pieces
+
+
+def _docx_align(paragraph, align_enum) -> str:
+    if paragraph.alignment == align_enum.CENTER:
+        return ' style="text-align:center"'
+    if paragraph.alignment == align_enum.RIGHT:
+        return ' style="text-align:right"'
+    return ""
+
+
 def _docx_html(data: bytes) -> bytes:
     from docx import Document
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
     from docx.table import Table
     from docx.text.paragraph import Paragraph
 
     document = Document(io.BytesIO(data))
     budget = _PreviewBudget()
+    image_state = {"count": 0, "bytes": 0, "truncated": False}
     parts = ['<div class="doc">']
     in_list = False
     # Iterate body XML so tables stay where Word placed them. document.tables would append every
@@ -740,8 +974,9 @@ def _docx_html(data: bytes) -> bytes:
             break
         if child.tag.endswith("}p"):
             paragraph = Paragraph(child, document)
-            text = budget.text(paragraph.text.strip())
-            if not text:
+            plain = paragraph.text.strip()
+            images = _docx_paragraph_images(paragraph, document, image_state)
+            if not plain and not images:
                 continue
             style = (paragraph.style.name or "").lower() if paragraph.style else ""
             runs = [run for run in paragraph.runs if run.text.strip()]
@@ -750,25 +985,34 @@ def _docx_html(data: bytes) -> bytes:
             all_bold = bool(runs) and all(run.bold is True for run in runs)
             direct_section = (
                 all_bold
-                and len(text) <= 80
-                and text.upper() == text
-                and any(character.isalpha() for character in text)
+                and len(plain) <= 80
+                and plain.upper() == plain
+                and any(character.isalpha() for character in plain)
             )
-            is_list = "list" in style or "bullet" in style or bool(_DOCX_BULLET.match(text))
+            is_list = "list" in style or "bullet" in style or bool(_DOCX_BULLET.match(plain))
             if is_list and not in_list:
                 parts.append("<ul>")
                 in_list = True
             elif not is_list and in_list:
                 parts.append("</ul>")
                 in_list = False
+            align = _docx_align(paragraph, WD_ALIGN_PARAGRAPH)
+            if is_list:
+                parts.append(
+                    f"<li>{html.escape(_DOCX_BULLET.sub('', budget.text(plain)))}{''.join(images)}</li>"
+                )
+                continue
             if "title" in style or "heading 1" in style or max_size >= 18:
-                parts.append(f"<h1>{html.escape(text)}</h1>")
+                parts.append(f"<h1{align}>{html.escape(budget.text(plain))}{''.join(images)}</h1>")
             elif "heading" in style or direct_section:
-                parts.append(f"<h2>{html.escape(text)}</h2>")
-            elif is_list:
-                parts.append(f"<li>{html.escape(_DOCX_BULLET.sub('', text))}</li>")
+                parts.append(f"<h2{align}>{html.escape(budget.text(plain))}{''.join(images)}</h2>")
             else:
-                parts.append(f"<p>{html.escape(text)}</p>")
+                run_text = "".join(run.text for run in paragraph.runs)
+                if paragraph.runs and run_text.strip() == plain:
+                    content = "".join(_docx_run_html(run, budget) for run in paragraph.runs).strip()
+                else:  # hyperlink/field text lives outside .runs — never drop it
+                    content = html.escape(budget.text(plain))
+                parts.append(f"<p{align}>{content}{''.join(images)}</p>")
         elif child.tag.endswith("}tbl"):
             if in_list:
                 parts.append("</ul>")
@@ -792,7 +1036,96 @@ def _docx_html(data: bytes) -> bytes:
     if in_list:
         parts.append("</ul>")
     parts.append("</div>")
-    return _finish_html("Document", "".join(parts), truncated=budget.truncated)
+    return _finish_html(
+        "Document", "".join(parts), truncated=budget.truncated or image_state["truncated"],
+    )
+
+
+_HEX_RGB = re.compile(r"^[0-9A-Fa-f]{6}$")
+_EMBED_IMAGE_LIMIT = 12
+_EMBED_IMAGE_TOTAL_BYTES = 2_500_000
+_EMBED_IMAGE_TYPES = {"image/png", "image/jpeg", "image/gif", "image/webp", "image/bmp"}
+
+
+def _safe_hex(value) -> str | None:
+    """#RRGGBB only for a clean hex value — style attributes never carry raw document input."""
+    text = str(value or "")
+    if len(text) == 8:  # openpyxl uses ARGB
+        text = text[2:]
+    if _HEX_RGB.fullmatch(text):
+        return f"#{text.upper()}"
+    return None
+
+
+def _inline_image(blob: bytes, content_type: str, image_state: dict) -> str:
+    """A bounded data-URI <img>: raster formats only, capped in count and total bytes."""
+    if content_type not in _EMBED_IMAGE_TYPES:
+        return ""
+    if image_state["count"] >= _EMBED_IMAGE_LIMIT or \
+            image_state["bytes"] + len(blob) > _EMBED_IMAGE_TOTAL_BYTES:
+        image_state["truncated"] = True
+        return ""
+    image_state["count"] += 1
+    image_state["bytes"] += len(blob)
+    encoded = base64.b64encode(blob).decode("ascii")
+    return f'<img src="data:{content_type};base64,{encoded}" alt="Embedded image">'
+
+
+def _csv_html(name: str, data: bytes) -> bytes:
+    import csv as _csv
+
+    input_truncated = len(data) > _MAX_SOURCE_INPUT_BYTES
+    text = data[:_MAX_SOURCE_INPUT_BYTES].decode("utf-8-sig", errors="replace")
+    delimiter = "\t" if Path(name).suffix.lower() == ".tsv" else ","
+    try:
+        sample = text[:4096]
+        if sample.strip():
+            delimiter = _csv.Sniffer().sniff(sample, delimiters=",;\t|").delimiter
+    except _csv.Error:
+        pass
+    budget = _PreviewBudget()
+    rows_html = []
+    for row_index, row in enumerate(_csv.reader(io.StringIO(text), delimiter=delimiter)):
+        if row_index >= _MAX_OFFICE_ROWS or not budget.node():
+            budget.truncated = True
+            break
+        if len(row) > _MAX_OFFICE_COLUMNS:
+            budget.truncated = True
+        tag = "th" if row_index == 0 else "td"
+        cells = []
+        for value in row[:_MAX_OFFICE_COLUMNS]:
+            if not budget.cell():
+                break
+            cells.append(f"<{tag}>{html.escape(budget.text(value))}</{tag}>")
+        if cells:
+            rows_html.append(f"<tr>{''.join(cells)}</tr>")
+    if not rows_html:
+        return _source_html(name, data)
+    body = (
+        f'<main data-renderer="csv-table"><div class="meta">Table preview · {html.escape(name)}</div>'
+        f'<div class="sheet"><table>{"".join(rows_html)}</table></div></main>'
+    )
+    return _finish_html(name, body, truncated=budget.truncated or input_truncated)
+
+
+def _markdown_html(name: str, data: bytes) -> bytes:
+    from markdown_it import MarkdownIt
+
+    input_truncated = len(data) > _MAX_SOURCE_INPUT_BYTES
+    text = data[:_MAX_SOURCE_INPUT_BYTES].decode("utf-8", errors="replace")
+    char_truncated = len(text) > _MAX_PREVIEW_CHARS
+    text = text[:_MAX_PREVIEW_CHARS]
+    # html=False escapes any raw HTML in the document; the image rule is disabled so a preview
+    # never fetches a remote resource (the markdown source of the image shows instead).
+    parser = MarkdownIt("commonmark", {"html": False, "linkify": False})
+    parser.enable(["table", "strikethrough"])
+    parser.disable("image")
+    rendered = parser.render(text)
+    body = (
+        f'<main data-renderer="markdown"><div class="meta">Markdown preview · {html.escape(name)}</div>'
+        f'<div class="doc">{rendered}</div></main>'
+    )
+    return _finish_html(name, body, truncated=input_truncated or char_truncated)
 
 
 def _source_html(name: str, data: bytes) -> bytes:
@@ -847,6 +1180,10 @@ def to_preview(
             return _xlsx_html(data), "text/html; charset=utf-8"
         if ext == "docx":
             return _docx_html(data), "text/html; charset=utf-8"
+        if ext in ("csv", "tsv"):
+            return _csv_html(name, data), "text/html; charset=utf-8"
+        if ext in ("md", "markdown"):
+            return _markdown_html(name, data), "text/html; charset=utf-8"
         if ext in ("tex", "bib", "sty", "cls"):
             return _source_html(name, data), "text/html; charset=utf-8"
     except Exception:  # noqa: BLE001 — on any parse failure, fall back to the raw bytes
@@ -856,7 +1193,7 @@ def to_preview(
         )
 
     source_extensions = {
-        "bib", "cls", "css", "csv", "html", "htm", "js", "json", "md", "markdown",
+        "bib", "cls", "css", "html", "htm", "js", "json",
         "py", "svg", "sty", "tex", "txt", "xhtml", "xml", "yaml", "yml",
     }
     normalized_mime = mime.lower().split(";", 1)[0].strip()

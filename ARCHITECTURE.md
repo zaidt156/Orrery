@@ -349,6 +349,15 @@ Small apps receive extra controls:
 
 Generated files live under the per-user `tmp/generated` directory and expire after the configured TTL, seven days by default. File bytes are not stored in PostgreSQL.
 
+Previews render locally with Python libraries so documents look like documents even without the
+optional LibreOffice converter: PDFs rasterize to page images (QtPdf); Word previews keep run
+formatting (bold/italic/underline/color), alignment, and bounded inline images; Excel previews keep
+merged cells, cell styles, and column widths; PowerPoint previews position each shape on the slide
+with its text styling, pictures, and tables; CSV/TSV render as real tables; and Markdown renders as
+HTML with raw HTML escaped and remote image loading disabled. When LibreOffice is installed, Office
+files convert to PDF for pixel-faithful pages instead. All preview parsing runs under fixed input,
+node, cell, and output budgets.
+
 Code anchors: `backend/features/docgen.py`, `backend/features/filegen.py`, `backend/features/sandbox.py`, `backend/features/files.py`, `backend/features/filepreview.py`.
 
 ---

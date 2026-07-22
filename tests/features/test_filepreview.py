@@ -701,3 +701,115 @@ def test_preview_cache_path_prunes_oldest_entries_to_a_fixed_limit(monkeypatch, 
     assert newer.exists()
     assert target.exists()
     assert len(list(tmp_path.glob("*.preview.pdf"))) == 2
+
+
+# --- faithful Python-library previews (Workstream 2: documents render, not text dumps) ---
+
+import base64 as _b64
+
+_PNG_1PX = _b64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+)
+
+
+def _preview_html(name, mime, data):
+    content, media = filepreview.to_preview(name, mime, data)
+    assert media.startswith("text/html")
+    return content.decode("utf-8")
+
+
+def test_csv_previews_as_a_table_not_raw_text():
+    page = _preview_html("results.csv", "text/csv", b"name,score\nAda,99\nGrace,97\n")
+    assert "<table>" in page
+    assert "<pre>" not in page
+    assert "<th>name</th>" in page
+    assert "<td>Ada</td>" in page
+
+
+def test_tsv_previews_as_a_table():
+    page = _preview_html("data.tsv", "text/tab-separated-values", b"a\tb\n1\t2\n")
+    assert "<th>a</th>" in page and "<td>2</td>" in page
+
+
+def test_markdown_renders_with_raw_html_escaped():
+    data = "# Title\n\nSome **bold** text.\n\n<script>alert(1)</script>\n".encode()
+    page = _preview_html("notes.md", "text/markdown", data)
+    assert "<h1>Title</h1>" in page
+    assert "<strong>bold</strong>" in page
+    assert "<script>alert" not in page  # raw HTML is escaped, never executed
+
+
+def test_markdown_never_fetches_remote_images():
+    page = _preview_html("readme.md", "text/markdown", b"![logo](https://evil.example/x.png)\n")
+    assert 'src="https://' not in page
+
+
+def test_xlsx_fallback_keeps_merges_styles_and_widths(monkeypatch):
+    monkeypatch.setattr(filepreview, "_office_pdf", lambda *a, **k: None)  # force the Python path
+    from openpyxl import Workbook as _Workbook
+    from openpyxl.styles import Font, PatternFill
+
+    workbook = _Workbook()
+    sheet = workbook.active
+    sheet.title = "Report"
+    sheet.merge_cells("A1:B1")
+    header = sheet["A1"]
+    header.value = "Quarter"
+    header.font = Font(bold=True, color="FFFFFFFF")
+    header.fill = PatternFill(fill_type="solid", start_color="FF26314F")
+    sheet["A2"] = "North"
+    sheet["B2"] = 1234.5
+    sheet.column_dimensions["A"].width = 24
+    stream = io.BytesIO()
+    workbook.save(stream)
+
+    page = _preview_html("report.xlsx", "application/octet-stream", stream.getvalue())
+    assert 'colspan="2"' in page
+    assert "font-weight:700" in page
+    assert "background:#26314F" in page
+    assert "1234.5" in page
+    assert "<col style=" in page
+
+
+def test_docx_fallback_keeps_run_formatting_and_images(monkeypatch):
+    monkeypatch.setattr(filepreview, "_office_pdf", lambda *a, **k: None)
+    from docx.shared import RGBColor
+
+    document = Document()
+    paragraph = document.add_paragraph()
+    bold_run = paragraph.add_run("Important")
+    bold_run.bold = True
+    color_run = paragraph.add_run(" note")
+    color_run.font.color.rgb = RGBColor(0x33, 0x66, 0xFF)
+    document.add_picture(io.BytesIO(_PNG_1PX), width=Pt(72))
+    stream = io.BytesIO()
+    document.save(stream)
+
+    page = _preview_html("memo.docx", "application/octet-stream", stream.getvalue())
+    assert "<strong>Important</strong>" in page
+    assert "color:#3366FF" in page
+    assert '<img src="data:image/png;base64,' in page
+
+
+def test_pptx_fallback_positions_shapes_and_inlines_pictures(monkeypatch):
+    monkeypatch.setattr(filepreview, "_office_pdf", lambda *a, **k: None)
+    from pptx import Presentation
+    from pptx.util import Inches
+    from pptx.util import Pt as PptxPt
+
+    prs = Presentation()
+    slide = prs.slides.add_slide(prs.slide_layouts[6])  # blank layout
+    box = slide.shapes.add_textbox(Inches(1), Inches(1), Inches(4), Inches(1))
+    run = box.text_frame.paragraphs[0].add_run()
+    run.text = "Hello deck"
+    run.font.bold = True
+    run.font.size = PptxPt(32)
+    slide.shapes.add_picture(io.BytesIO(_PNG_1PX), Inches(6), Inches(2), Inches(1), Inches(1))
+    stream = io.BytesIO()
+    prs.save(stream)
+
+    page = _preview_html("deck.pptx", "application/octet-stream", stream.getvalue())
+    assert "<strong>Hello deck</strong>" in page
+    assert 'class="shape"' in page
+    assert "left:" in page and "top:" in page  # shapes keep their slide position
+    assert '<img src="data:image/png;base64,' in page

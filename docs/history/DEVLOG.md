@@ -2893,3 +2893,23 @@ common names like pwd, pass, jwt, bearer, and session — the match list is broa
 toward over-masking because the display URL is cosmetic while the real URL lives in the keychain.
 
 Verified: 651 backend tests pass (3 new regressions), the production UI builds.
+
+## Step 153 - Documents preview like documents, not text dumps (July 22, 2026)
+
+The user's Workstream 2 priority: files Orrery creates or receives should look right in the
+viewer using Python libraries alone, without depending on the optional LibreOffice converter.
+The Python fallback renderers were rebuilt for fidelity, all inside the existing preview budgets.
+
+Word previews now keep bold/italic/underline and font color at the run level, paragraph alignment,
+and embedded pictures (inlined with count and byte caps); headings stay clean plain text. Excel
+previews keep merged cells (real row/column spans), bold/fill/color/alignment per cell, column
+widths, and readable number/date formatting. PowerPoint previews place every shape at its true
+position and size on a correctly proportioned slide, with per-run font size/color scaled to the
+render width, pictures inlined, and tables rendered — instead of the old title-plus-bullets card.
+CSV and TSV files render as real tables with delimiter sniffing, and Markdown renders as formatted
+HTML where raw HTML is escaped and remote images are never fetched. File creation already used
+Python libraries (reportlab, python-docx, openpyxl, python-pptx) plus the sandbox; this closes the
+viewing half of that promise.
+
+Verified: 658 backend tests pass (7 new preview-fidelity regressions and one adjusted heading
+assertion), the full suite stays green. ODF/RTF coverage remains tracked in TODO.md.

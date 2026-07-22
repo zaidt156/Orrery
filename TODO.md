@@ -11,6 +11,8 @@ do not keep a second checklist of completed tasks here.
 
 - [ ] Move DOCX/XLSX/PPTX ingestion and Office/PDF preview parsing into the offline bounded document
       worker; document and time-box any compatibility fallback that remains on the host.
+- [ ] Extend faithful previews to ODT/ODS/ODP/RTF (today only the optional LibreOffice converter
+      covers them; the Python renderers cover OOXML, CSV/TSV, and Markdown).
 - [ ] Add real-container CI fixtures for embedded, scanned, mixed, encrypted, malformed, oversized,
       and multilingual documents.
 - [ ] Split the backend suite into named deterministic groups with per-test timeouts and publish the
