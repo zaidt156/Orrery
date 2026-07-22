@@ -2,7 +2,7 @@
 // thinking/working indicators. Kept out of Chat.jsx to keep that file focused.
 import { useEffect, useState } from "react";
 import {
-  AlertTriangle, Brain, CheckCircle2, Cog, Download, Eye, FileText, GitBranch, Loader2, Scale, Search, ShieldCheck, Terminal, X,
+  AlertTriangle, AppWindow, Brain, CheckCircle2, Cog, Download, Eye, FileText, GitBranch, Loader2, Scale, Search, ShieldCheck, Terminal, X,
 } from "lucide-react";
 import { saveClientFile, getTasks, cancelTask, evaluateMessage, adoptAnswer } from "../lib/api.js";
 
@@ -209,12 +209,16 @@ export function LazyAttachmentImg({ fileId, name, onClick }) {
   );
 }
 
-export function GeneratedFileCard({ file, onPreview, onDownload }) {
+export function GeneratedFileCard({ file, onPreview, onDownload, onOpenApp }) {
   const [busy, setBusy] = useState(null);
   const [thumb, setThumb] = useState("");
-  const canPreview = PREVIEWABLE_FILE.test(file.name || "");
+  const isApp = file.artifact_type === "app_bundle";
+  const canPreview = !isApp && PREVIEWABLE_FILE.test(file.name || "");
   const ext = (file.name?.split(".").pop() || "file").toUpperCase();
-  const meta = [fileTypeLabel(file.name), ext, file.size ? formatBytes(file.size) : ""].filter(Boolean).join(" · ");
+  const appMeta = isApp
+    ? ["App", file.member_count ? `${file.member_count} files` : "", file.size ? formatBytes(file.size) : ""]
+    : [fileTypeLabel(file.name), ext, file.size ? formatBytes(file.size) : ""];
+  const meta = appMeta.filter(Boolean).join(" · ");
   async function run(kind, fn) { setBusy(kind); try { await fn(); } finally { setBusy(null); } }
 
   // real thumbnails for generated images, so "which image is which" is visible at a glance
@@ -238,13 +242,18 @@ export function GeneratedFileCard({ file, onPreview, onDownload }) {
         <span className="file-card2-sub">{meta}</span>
       </span>
       <span className="file-card2-actions">
+        {isApp && onOpenApp && (
+          <button className="file-btn primary" disabled={!!busy} onClick={() => run("open", onOpenApp)} title="Run this app in a sandboxed panel">
+            <AppWindow /> {busy === "open" ? "Opening…" : "Open app"}
+          </button>
+        )}
         {canPreview && (
           <button className="file-btn ghost" disabled={!!busy} onClick={() => run("preview", onPreview)} title="Preview in side panel">
             <Eye /> {busy === "preview" ? "Opening…" : "Preview"}
           </button>
         )}
-        <button className="file-btn primary" disabled={!!busy} onClick={() => run("dl", onDownload)} title="Download to your computer">
-          <Download /> {busy === "dl" ? "Saving…" : "Download"}
+        <button className={`file-btn ${isApp ? "ghost" : "primary"}`} disabled={!!busy} onClick={() => run("dl", onDownload)} title={isApp ? "Download the app as a ZIP" : "Download to your computer"}>
+          <Download /> {busy === "dl" ? "Saving…" : isApp ? "Download ZIP" : "Download"}
         </button>
       </span>
     </div>

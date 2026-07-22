@@ -40,6 +40,17 @@ def test_build_user_content_bad_pdf_gives_placeholder():
     assert "x.pdf (PDF)" in out
 
 
+def test_build_user_content_pdf_uses_shared_extractor(monkeypatch):
+    from backend.features import rag
+
+    monkeypatch.setattr(rag, "extract_pdf_text", lambda _content: "OCR PDF BODY")
+    atts = [{"kind": "pdf", "name": "scan.pdf", "content": "data:application/pdf;base64,AAAA"}]
+
+    out = chat._build_user_content("summarize", atts)
+
+    assert "OCR PDF BODY" in out
+
+
 def test_build_user_content_docx_file_inlined():
     from docx import Document
 

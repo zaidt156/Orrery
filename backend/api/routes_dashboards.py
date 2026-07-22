@@ -1,17 +1,11 @@
 """/dashboards API routes (split from the api.py monolith; same behavior)."""
-import asyncio
 
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
+from fastapi.responses import StreamingResponse
 
-from backend.api.deps import _require_conversation_access, _sse, _sse_run
+from backend.api.deps import _sse
 from backend.api.schemas import *  # noqa: F401,F403 — request models
-from backend.core import appconfig, database
-from backend.core.config import settings
-from backend.features import admin, app_updates, artifacts, chat, dashboards, data, datamodels, datasets, evaluate, exports, feedback, filepreview, local_models, mcp, projects, rag, route_telemetry, skills, team, usage
-from backend.features import files as file_library
-from backend.providers import accounts, ai, catalog
-from backend.security import secrets
+from backend.features import dashboards
 
 router = APIRouter()
 
@@ -25,6 +19,12 @@ async def dashboard_create(body: DashboardCreate) -> dict:
         return await dashboards.create_dashboard(body.model, body.connection_ids, body.description)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+@router.post("/dashboards/stream")
+async def dashboard_create_stream(body: DashboardCreate) -> StreamingResponse:
+    """Same as POST /dashboards but streams status + the model's reasoning while it designs, so the
+    build shows what it is doing instead of a blank wait. The final `result` event carries the board."""
+    return _sse(dashboards.create_dashboard_stream(body.model, body.connection_ids, body.description))
 
 @router.get("/dashboards/{did}")
 async def dashboard_get(did: str) -> dict:
@@ -49,6 +49,10 @@ async def dashboard_revise(did: str, body: DashboardRevise) -> dict:
     if out is None:
         raise HTTPException(status_code=404, detail="Dashboard not found")
     return out
+
+@router.post("/dashboards/{did}/revise/stream")
+async def dashboard_revise_stream(did: str, body: DashboardRevise) -> StreamingResponse:
+    return _sse(dashboards.revise_dashboard_stream(did, body.model, body.instruction))
 
 @router.put("/dashboards/{did}/transforms")
 async def dashboard_set_transforms(did: str, body: TransformsBody) -> dict:

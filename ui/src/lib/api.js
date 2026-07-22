@@ -224,9 +224,14 @@ export const setDashboardLayout = (id, order) => apiSend(`/api/dashboards/${id}/
 export const listDashboards = () => apiGet("/api/dashboards");
 export const createDashboard = (model, connection_ids, description) =>
   apiSend("/api/dashboards", "POST", { model, connection_ids, description });
+// Streaming builds: onEvent gets {status}/{reasoning_delta}/{result:{dashboard}}/{error}/{done}.
+export const createDashboardStream = (model, connection_ids, description, onEvent, signal) =>
+  streamSSE("/api/dashboards/stream", { body: { model, connection_ids, description }, signal }, onEvent);
 export const runDashboard = (id) => apiSend(`/api/dashboards/${id}/run`, "POST");
 export const reviseDashboard = (id, model, instruction) =>
   apiSend(`/api/dashboards/${id}/revise`, "POST", { model, instruction });
+export const reviseDashboardStream = (id, model, instruction, onEvent, signal) =>
+  streamSSE(`/api/dashboards/${id}/revise/stream`, { body: { model, instruction }, signal }, onEvent);
 export const rollbackDashboard = (id) => apiSend(`/api/dashboards/${id}/rollback`, "POST");
 export const deleteDashboard = (id) => apiSend(`/api/dashboards/${id}`, "DELETE");
 
@@ -371,6 +376,11 @@ export async function previewGeneratedFile(fileId) {
   return { ...data, url: `${API_BASE}${data.url}` };
 }
 
+// Entry URL for a generated app bundle (Task 9). No token: the route is unauthenticated by design
+// (a sandboxed iframe's sub-resource requests can't carry the header) and confined server-side by a
+// strict CSP + traversal-proof resolution. Load it only in a sandboxed iframe.
+export const appBundleUrl = (fileId) => `${API_BASE}/api/apps/${fileId}/index.html`;
+
 // render a reply as a temporary preview artifact for the requested export format
 export async function previewExport(conversationId, messageId, format) {
   const data = await apiGet(`/api/conversations/${conversationId}/messages/${messageId}/preview/${format}`);
@@ -424,8 +434,19 @@ async function streamSSE(path, { body, signal, method = "POST" } = {}, onEvent) 
   return { done: sawDone };
 }
 
-export const streamMessage = (cid, content, attachments, collectionId, onEvent, signal, siblingOf = null) =>
-  streamSSE(`/api/conversations/${cid}/messages`, { body: { content, attachments, collection_id: collectionId, sibling_of: siblingOf }, signal }, onEvent);
+export const streamMessage = (
+  cid, content, attachments, collectionId, onEvent, signal, siblingOf = null, webSearch = false
+) =>
+  streamSSE(`/api/conversations/${cid}/messages`, {
+    body: {
+      content,
+      attachments,
+      collection_id: collectionId,
+      sibling_of: siblingOf,
+      web_search: Boolean(webSearch),
+    },
+    signal,
+  }, onEvent);
 
 // flip which ‹ › version of a message is visible; returns the refreshed conversation
 export const activateMessageVersion = (cid, mid) =>

@@ -13,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from backend.core.config import settings
 from backend.core.observability import new_request_id
 from backend.core.paths import resource_path
-from backend.features import artifacts, team
+from backend.features import artifacts, files, team
 
 _UI_DIST = resource_path("ui", "dist")
 
@@ -99,8 +99,9 @@ def create_app(session_token: str) -> FastAPI:
             if too_big:
                 return JSONResponse({"detail": "Request too large"}, status_code=413)
         response = await call_next(request)
-        # sandboxed HTML artifacts set their own headers (must be framable + run their own JS)
-        if request.url.path.startswith("/artifacts/"):
+        # Sandboxed HTML artifacts and app bundles set their own headers (they must be framable and
+        # run their own JS); the blanket X-Frame-Options: DENY below would otherwise stop the iframe.
+        if request.url.path.startswith(("/artifacts/", "/api/apps/")):
             return response
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
@@ -153,6 +154,46 @@ def create_app(session_token: str) -> FastAPI:
             # which otherwise names the file after the uuid in the URL. Sanitized in artifacts.py.
             headers["Content-Disposition"] = f'inline; filename="{filename}"'
         return Response(content=data, media_type=media_type, headers=headers)
+
+    # Strict CSP for served app bundles (Task 9). The validator already forbids inline JS, inline
+    # event handlers, fetch/XHR/WebSocket, browser storage, and any external reference, so this can
+    # be tight: everything comes from 'self' (the bundle's own files), and connect-src 'none' means
+    # the app has NO way to reach the network — it cannot phone home even if it tried. No
+    # 'unsafe-inline' for scripts (inline JS is forbidden); 'unsafe-eval' is allowed only because a
+    # few small vanilla-JS apps use it and egress is already denied.
+    _APP_BUNDLE_CSP = (
+        "default-src 'none'; "
+        "script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data: blob:; font-src 'self' data:; media-src 'self' data: blob:; "
+        "connect-src 'none'; form-action 'none'; base-uri 'none'; object-src 'none'; "
+        "frame-ancestors 'self'"
+    )
+
+    # Unauthenticated for the same reason as serve_artifact above: an app bundle is loaded into a
+    # sandboxed <iframe>, and the iframe's sub-resource requests (its own js/css/images, by relative
+    # path) cannot carry the session-token header — so the route cannot be header-gated and still
+    # work. The boundary instead is: a 128-bit unguessable id, the strict CSP above (no egress), the
+    # sandboxed opaque-origin iframe (no access to the app or its token), traversal-proof path
+    # resolution in files.read_app_bundle_file, read-only, and the localhost bind. Registered here on
+    # `api` directly, so it stays OUT of the require_token include_router loop below.
+    @api.get("/api/apps/{artifact_id}")
+    @api.get("/api/apps/{artifact_id}/{path:path}")
+    async def serve_app_bundle(artifact_id: str, path: str = "index.html") -> Response:
+        item = files.read_app_bundle_file(artifact_id, path)
+        if item is None:
+            return Response("This app is unavailable or has expired.", status_code=404)
+        data, mime = item
+        return Response(
+            content=data,
+            media_type=mime,
+            headers={
+                "Content-Security-Policy": _APP_BUNDLE_CSP,
+                "X-Content-Type-Options": "nosniff",
+                "X-Frame-Options": "SAMEORIGIN",
+                "Referrer-Policy": "no-referrer",
+                "Cache-Control": "no-store",
+            },
+        )
 
 
     from backend.api import (

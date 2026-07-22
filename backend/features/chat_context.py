@@ -22,15 +22,11 @@ def _title_from(text: str) -> str:
 
 
 def _pdf_text(data_url: str) -> str:
-    """Extract text from a base64 data-URL PDF locally (no cloud parsing)."""
+    """Use the shared validated extractor, including sandboxed OCR for scanned pages."""
     try:
-        b64 = data_url.split(",", 1)[1] if "," in data_url else data_url
-        raw = base64.b64decode(b64)
-        from pypdf import PdfReader
+        from backend.features.rag import extract_pdf_text
 
-        reader = PdfReader(io.BytesIO(raw))
-        pages = [(p.extract_text() or "").strip() for p in reader.pages]
-        return "\n\n".join(t for t in pages if t).strip()
+        return extract_pdf_text(data_url)
     except Exception:  # noqa: BLE001 — a bad/encrypted PDF shouldn't break the turn
         return ""
 

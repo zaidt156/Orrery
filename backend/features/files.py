@@ -185,6 +185,74 @@ def load(file_id: str) -> tuple[dict, bytes] | None:
     return meta, blob.read_bytes()
 
 
+# Explicit map, not mimetypes.guess_type: the serving route sets X-Content-Type-Options: nosniff, so
+# a wrong type stops the file from loading (a browser will not run a script served as text/plain).
+# guess_type reads the OS registry on Windows, where .js has been observed as text/plain — so the
+# critical bundle types are pinned here. Every key must stay within filegen._APP_ALLOWED_EXTENSIONS.
+_APP_MIME = {
+    "html": "text/html; charset=utf-8", "htm": "text/html; charset=utf-8",
+    "js": "text/javascript; charset=utf-8", "mjs": "text/javascript; charset=utf-8",
+    "css": "text/css; charset=utf-8", "json": "application/json; charset=utf-8",
+    "txt": "text/plain; charset=utf-8", "svg": "image/svg+xml",
+    "png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "gif": "image/gif",
+    "webp": "image/webp", "ico": "image/x-icon",
+    "woff": "font/woff", "woff2": "font/woff2", "ttf": "font/ttf", "otf": "font/otf",
+    "mp3": "audio/mpeg", "wav": "audio/wav", "mp4": "video/mp4", "webm": "video/webm",
+}
+
+
+def app_bundle_meta(artifact_id: str) -> dict | None:
+    """Return an app bundle's metadata, or None unless it exists and is genuinely an app_bundle."""
+    if not re.fullmatch(r"[0-9a-f]{32}", artifact_id or ""):
+        return None
+    meta_path = _DIR / f"{artifact_id}.meta"
+    if not meta_path.is_file():
+        return None
+    try:
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return meta if meta.get("artifact_type") == "app_bundle" else None
+
+
+def read_app_bundle_file(artifact_id: str, rel_path: str = "index.html") -> tuple[bytes, str] | None:
+    """Read one file from a bundle's extracted preview dir, confined to that dir.
+
+    Returns (data, mime) or None if the bundle/file is missing or the path escapes the directory.
+    Confinement is by resolved real path: resolve() collapses `..` and follows symlinks, so anything
+    that would land outside the bundle root fails the is_relative_to check and is refused. This is the
+    load-bearing traversal guard for the (necessarily unauthenticated) app-serving route.
+    """
+    if app_bundle_meta(artifact_id) is None:
+        return None
+    try:
+        root = (_DIR / "apps" / artifact_id).resolve(strict=True)
+    except (OSError, RuntimeError):
+        return None
+    if not root.is_dir():
+        return None
+
+    candidate = (rel_path or "").strip().lstrip("/")
+    if not candidate or candidate.endswith("/"):
+        candidate = f"{candidate}index.html"
+    if "\x00" in candidate or "\\" in candidate:  # NUL and backslash are never legitimate here
+        return None
+
+    try:
+        target = (root / candidate).resolve(strict=True)
+    except (OSError, RuntimeError, ValueError):
+        return None
+    if not (target == root or target.is_relative_to(root)):
+        return None
+    if not target.is_file():
+        return None
+    try:
+        data = target.read_bytes()
+    except OSError:
+        return None
+    return data, _APP_MIME.get(target.suffix.lstrip(".").lower(), "application/octet-stream")
+
+
 def office_preview_cache_path(file_id: str, data: bytes) -> Path:
     """Return the content-addressed PDF sidecar path, removing stale variants for this artifact."""
     if not re.fullmatch(r"[0-9a-f]{32}", file_id or ""):

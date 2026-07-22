@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import binascii
 import io
 import logging
 import uuid
@@ -122,15 +123,70 @@ def _vec(v: list[float]) -> str:
     return "[" + ",".join(f"{x:.7g}" for x in v) + "]"
 
 
-def _pdf_text(data_url: str) -> str:
-    try:
-        b64 = data_url.split(",", 1)[1] if "," in data_url else data_url
-        from pypdf import PdfReader
+class DocumentExtractionError(ValueError):
+    """The uploaded document cannot be safely converted to searchable text."""
 
-        reader = PdfReader(io.BytesIO(base64.b64decode(b64)))
-        return "\n\n".join((p.extract_text() or "").strip() for p in reader.pages).strip()
-    except Exception:  # noqa: BLE001
-        return ""
+
+_MAX_DOCUMENT_BYTES = 50_000_000
+_MAX_PDF_PAGES = 500
+
+
+def _decode_document(data_url: str) -> bytes:
+    encoded = data_url.split(",", 1)[1] if "," in data_url else data_url
+    try:
+        payload = base64.b64decode(encoded, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise DocumentExtractionError("The uploaded document is not valid base64 data.") from exc
+    if not payload:
+        raise DocumentExtractionError("The uploaded document is empty.")
+    if len(payload) > _MAX_DOCUMENT_BYTES:
+        raise DocumentExtractionError("The uploaded document exceeds the 50 MB extraction limit.")
+    return payload
+
+
+def extract_pdf_text(data_url: str) -> str:
+    raw = _decode_document(data_url)
+    if not raw.startswith(b"%PDF-"):
+        raise DocumentExtractionError("The uploaded file is not a valid PDF.")
+
+    # Prefer the fixed, offline document worker. It parses untrusted PDFs outside the Orrery
+    # process and performs per-page OCR for mixed text/scan documents.
+    from backend.features import sandbox
+
+    if sandbox.image_ready():
+        try:
+            extracted = sandbox.extract_pdf_text(raw)
+        except sandbox.SandboxError as exc:
+            raise DocumentExtractionError("The PDF could not be processed safely.") from exc
+        if not extracted:
+            raise DocumentExtractionError("PDF extraction and OCR found no readable text.")
+        return extracted
+
+    from pypdf import PdfReader
+    from pypdf.errors import PdfReadError
+
+    try:
+        reader = PdfReader(io.BytesIO(raw), strict=False)
+        if reader.is_encrypted and reader.decrypt("") == 0:
+            raise DocumentExtractionError("Password-protected PDFs must be unlocked before upload.")
+        if len(reader.pages) > _MAX_PDF_PAGES:
+            raise DocumentExtractionError("The PDF exceeds the 500-page extraction limit.")
+        extracted = "\n\n".join((page.extract_text() or "").strip() for page in reader.pages).strip()
+    except DocumentExtractionError:
+        raise
+    except (PdfReadError, OSError, ValueError) as exc:
+        raise DocumentExtractionError("The PDF is damaged or uses an unsupported encoding.") from exc
+
+    if not extracted:
+        raise DocumentExtractionError(
+            "No searchable text was found. This appears to be a scanned PDF; "
+            "start Docker and build the Orrery sandbox to enable local OCR."
+        )
+    return extracted
+
+
+# Compatibility for older internal callers and focused extraction tests.
+_pdf_text = extract_pdf_text
 
 
 def _office_text(name: str, data_url: str) -> str:
@@ -177,7 +233,7 @@ def _extract(f: dict) -> str:
     name = (f.get("name") or "").lower()
     content = f.get("content") or ""
     if f.get("kind") == "pdf" or name.endswith(".pdf"):
-        return _pdf_text(content)
+        return extract_pdf_text(content)
     if name.endswith((".docx", ".xlsx", ".xls", ".xlsm", ".pptx")):
         return _office_text(name, content)
     if f.get("kind") == "text":
@@ -338,7 +394,6 @@ async def enqueue_ingest(cid: str, files: list[dict]) -> dict:
     The upload request returns immediately; the UI polls ingest_progress. Payloads are spooled
     as a file because large base64 bodies don't belong in queue-job arguments."""
     import json as _json
-    from pathlib import Path
 
     from backend.core.paths import user_data_dir
 

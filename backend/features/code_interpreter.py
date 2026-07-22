@@ -323,10 +323,20 @@ async def run(
                 urls = [r["url"] for r in results if r.get("url")][:8]
                 if urls:
                     yield stream_events.sources(urls)
+                search_ok = bool(search_res.get("ok"))
+                if not search_ok:
+                    result_title = "Web search failed"
+                    result_detail = str(search_res.get("error") or "Web search is unavailable.")
+                elif results:
+                    result_title = "Web results"
+                    result_detail = f"{len(results)} result(s) for: {query}"
+                else:
+                    result_title = "No web results"
+                    result_detail = f"0 result(s) for: {query}"
                 yield trace.step(
-                    "Web results" if results else "No web results",
-                    f"{len(results)} result(s) for: {query}",
-                    kind="result", status="done" if results else "warning", phase="gather",
+                    result_title,
+                    result_detail,
+                    kind="result", status="done" if search_ok else "warning", phase="gather",
                     metadata={"results": len(results), "sources": urls},
                 )
                 echo += f"\n\n```orrery-search\n{query}\n```"

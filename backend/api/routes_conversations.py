@@ -1,17 +1,11 @@
 """/conversations API routes (split from the api.py monolith; same behavior)."""
-import asyncio
 
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
+from fastapi.responses import StreamingResponse
 
 from backend.api.deps import _require_conversation_access, _sse, _sse_run
 from backend.api.schemas import *  # noqa: F401,F403 — request models
-from backend.core import appconfig, database
-from backend.core.config import settings
-from backend.features import admin, app_updates, artifacts, chat, dashboards, data, datamodels, datasets, evaluate, exports, feedback, filepreview, local_models, mcp, projects, rag, route_telemetry, skills, team, usage
-from backend.features import files as file_library
-from backend.providers import accounts, ai, catalog
-from backend.security import secrets
+from backend.features import chat, evaluate, route_telemetry
 
 router = APIRouter()
 
@@ -57,7 +51,17 @@ async def remove_conversation(cid: str) -> dict:
 async def send_message(cid: str, body: NewMessage) -> StreamingResponse:
     await _require_conversation_access(cid)
     attachments = [a.model_dump() for a in body.attachments]
-    return _sse_run(cid, chat.stream_reply(cid, body.content, attachments, body.collection_id, body.sibling_of))
+    return _sse_run(
+        cid,
+        chat.stream_reply(
+            cid,
+            body.content,
+            attachments,
+            body.collection_id,
+            body.sibling_of,
+            web_search=body.web_search,
+        ),
+    )
 
 @router.get("/conversations/{cid}/attachment-text")
 async def conversation_attachment_text(cid: str, source: str) -> dict:
@@ -130,4 +134,3 @@ async def task_routes() -> dict:
 async def cancel_task(task_id: str) -> dict:
     from backend.features import taskbrain
     return {"canceled": await taskbrain.cancel(task_id)}
-

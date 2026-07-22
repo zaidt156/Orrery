@@ -2,9 +2,9 @@
 
 Model-written Python runs inside a throwaway Docker container that is locked down hard:
 no network, capped memory/CPU/PIDs, read-only root filesystem, non-root user, all Linux
-capabilities dropped, no privilege escalation, and a wall-clock timeout. The only writable
-surface is a per-run host temp dir mounted at /work; we hand back whatever files the code
-writes to /work/out plus its stdout/stderr. Nothing the model writes touches the host.
+capabilities dropped, no privilege escalation, and a wall-clock timeout. Generated code and input
+are read-only mounts; only per-run scratch and output directories are writable. We hand back files
+from /work/out plus bounded stdout/stderr. Nothing can reach the user's normal host files.
 """
 
 from __future__ import annotations
@@ -24,6 +24,7 @@ from backend.core import proc
 from backend.core.config import settings
 
 IMAGE = "orrery-sandbox:latest"
+SANDBOX_VERSION = "2"
 TIMEOUT_SECONDS = settings.sandbox_timeout_seconds
 _MEMORY = "640m"
 _CPUS = "1.0"
@@ -31,6 +32,7 @@ _PIDS = "256"
 _MAX_OUTPUT_FILES = 12
 _MAX_TOTAL_OUTPUT_BYTES = 30_000_000
 _MAX_FILE_BYTES = 25_000_000
+_MAX_INPUT_FILE_BYTES = 50_000_000
 _MAX_LOG_CHARS = 6_000
 _MAX_CODE_CHARS = 200_000
 _LAYOUT = {
@@ -39,6 +41,25 @@ _LAYOUT = {
     "workspace": "/work/workspace",
     "output": "/work/out",
 }
+
+_PDF_EXTRACTOR = r"""
+from pathlib import Path
+
+import pypdfium2 as pdfium
+import pytesseract
+
+source = pdfium.PdfDocument("/work/input/document.pdf")
+parts = []
+for page in source:
+    text_page = page.get_textpage()
+    text = text_page.get_text_range().strip()
+    if not text:
+        image = page.render(scale=200 / 72).to_pil()
+        text = pytesseract.image_to_string(image, lang="eng").strip()
+    if text:
+        parts.append(text)
+Path("/work/out/document.txt").write_text("\n\n".join(parts), encoding="utf-8")
+""".strip()
 
 
 def _docker_bin() -> str:
@@ -81,10 +102,14 @@ _ready_cache: tuple[bool, float] | None = None  # (value, monotonic expiry)
 def _probe_image_ready() -> bool:
     try:
         result = proc.run(
-            [_docker_bin(), "image", "inspect", IMAGE],
+            [
+                _docker_bin(), "image", "inspect",
+                "--format", '{{ index .Config.Labels "org.orrery.sandbox.version" }}', IMAGE,
+            ],
             capture_output=True, timeout=25,
         )
-        return result.returncode == 0
+        version = result.stdout.decode("utf-8", "replace").strip() if isinstance(result.stdout, bytes) else str(result.stdout).strip()
+        return result.returncode == 0 and version == SANDBOX_VERSION
     except Exception:  # noqa: BLE001 — any failure means "not ready"
         return False
 
@@ -158,6 +183,7 @@ def _build_manifest(
         "run_id": run_id,
         "engine": "docker",
         "image": IMAGE,
+        "version": SANDBOX_VERSION,
         "layout": dict(_LAYOUT),
         "limits": {
             "timeout_seconds": TIMEOUT_SECONDS,
@@ -167,6 +193,7 @@ def _build_manifest(
             "max_output_files": _MAX_OUTPUT_FILES,
             "max_total_output_bytes": _MAX_TOTAL_OUTPUT_BYTES,
             "max_file_bytes": _MAX_FILE_BYTES,
+            "max_input_file_bytes": _MAX_INPUT_FILE_BYTES,
         },
         "status": {
             "ok": ok,
@@ -185,42 +212,79 @@ def _build_manifest(
 
 def run_code(code: str) -> SandboxResult:
     """Run Python in the sandbox and return its logs plus any files it wrote to out/."""
-    return _run_entry(code, "main.py", ["python", "main.py"])
+    return _run_entry(code, "main.py", ["python", "/runner/main.py"])
 
 
 def run_shell(script: str) -> SandboxResult:
     """Run a shell script in the SAME hardened container (no network, read-only root, dropped caps,
     non-root, cpu/memory/pids caps). Shell adds no exposure Python didn't already have inside the
     box — it just lets the model use the container's CLI tools directly."""
-    return _run_entry(script, "script.sh", ["sh", "script.sh"])
+    return _run_entry(script, "script.sh", ["sh", "/runner/script.sh"])
 
 
-def _run_entry(entry_content: str, entry_name: str, argv: list[str]) -> SandboxResult:
+def extract_pdf_text(data: bytes) -> str:
+    """Extract each page's text, OCRing only image-only pages, in the locked container."""
+    result = _run_entry(
+        _PDF_EXTRACTOR,
+        "extract_pdf.py",
+        ["python", "/runner/extract_pdf.py"],
+        input_files={"document.pdf": data},
+    )
+    if not result.ok:
+        raise SandboxError(result.stderr or "The PDF OCR sandbox failed.")
+    output = next((item for item in result.files if item.name == "document.txt"), None)
+    if output is None:
+        return ""
+    return output.data.decode("utf-8", "replace").strip()
+
+
+def _run_entry(
+    entry_content: str,
+    entry_name: str,
+    argv: list[str],
+    *,
+    input_files: dict[str, bytes] | None = None,
+) -> SandboxResult:
     if not entry_content or not entry_content.strip():
         raise SandboxError("There is no code to run.")
     if len(entry_content) > _MAX_CODE_CHARS:
         raise SandboxError("The generated code is too large to run.")
+    for filename, payload in (input_files or {}).items():
+        if Path(filename).name != filename or not filename:
+            raise SandboxError("Sandbox input filename is invalid.")
+        if len(payload) > _MAX_INPUT_FILE_BYTES:
+            raise SandboxError("Sandbox input contains a file over the size limit.")
 
     run_id = uuid.uuid4().hex[:12]
     workdir = Path(tempfile.mkdtemp(prefix=f"orrery-sbx-{run_id}-"))
+    runner_dir = workdir / "runner"
     input_dir = workdir / "input"
     workspace_dir = workdir / "workspace"
     out_dir = workdir / "out"
+    runner_dir.mkdir()
     input_dir.mkdir()
     workspace_dir.mkdir()
     out_dir.mkdir()
-    (workdir / entry_name).write_text(entry_content, encoding="utf-8", newline="\n")
+    (runner_dir / entry_name).write_text(entry_content, encoding="utf-8", newline="\n")
+    for filename, payload in (input_files or {}).items():
+        (input_dir / filename).write_bytes(payload)
     name = f"orrery-sbx-{run_id}"
 
     command = [
-        _docker_bin(), "run", "--rm", "--name", name,
+        _docker_bin(), "run", "--rm", "--pull", "never", "--name", name,
         "--network", "none",
         "--memory", _MEMORY, "--memory-swap", _MEMORY,
         "--cpus", _CPUS, "--pids-limit", _PIDS,
-        "--read-only", "--tmpfs", "/tmp:size=256m,exec",
-        "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
+        "--ulimit", "nofile=256:256",
+        "--read-only", "--tmpfs", "/tmp:rw,noexec,nosuid,nodev,size=256m",
+        "--cap-drop", "ALL",
+        "--security-opt", "no-new-privileges", "--security-opt", "seccomp=builtin",
         "--user", "1000:1000",
-        "-v", f"{workdir}:/work", "-w", "/work",
+        "--mount", f"type=bind,source={runner_dir},target=/runner,readonly",
+        "--mount", f"type=bind,source={input_dir},target=/work/input,readonly",
+        "--mount", f"type=bind,source={workspace_dir},target=/work/workspace",
+        "--mount", f"type=bind,source={out_dir},target=/work/out",
+        "-w", "/work/workspace",
         IMAGE, *argv,
     ]
 
@@ -236,7 +300,10 @@ def _run_entry(entry_content: str, entry_name: str, argv: list[str]) -> SandboxR
         timed_out = True
         stdout = (exc.stdout or b"").decode("utf-8", "replace")[:_MAX_LOG_CHARS] if exc.stdout else ""
         stderr = f"Execution exceeded the {TIMEOUT_SECONDS}s limit and was stopped."
-        proc.run([_docker_bin(), "kill", name], capture_output=True, timeout=25)
+        try:
+            proc.run([_docker_bin(), "kill", name], capture_output=True, timeout=25)
+        except (OSError, subprocess.TimeoutExpired):
+            pass
     except FileNotFoundError as exc:
         shutil.rmtree(workdir, ignore_errors=True)
         raise SandboxError("Docker was not found. Is Docker Desktop installed and running?") from exc

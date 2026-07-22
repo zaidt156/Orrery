@@ -26,15 +26,25 @@ vertically: each task lands a complete, testable path and leaves the suite green
 | 7 | No pagination/indexes on lists | **OPEN → Task 2** |
 | 8 | Duplicate chunks on re-upload | **OPEN → Task 3** (counts N+1 already fixed) |
 
-## Progress reconciliation (July 15, 2026)
+## Progress reconciliation (July 16, 2026)
 
 - **Task 1: IMPLEMENTED / automated verification complete.** Stable message-row identity,
   animation-frame delta coalescing, and plain-text in-flight rendering are covered by the 100-row
   UI regression test; all UI tests and the production build pass. Manual React Profiler capture
   remains a Checkpoint 1 runtime check.
+- **Task 2: DONE** (was listed OPEN; verified in code 2026-07-16). `list_conversations` takes
+  clamped `limit/offset` (`conversations.py:42`) and the sidebar has `loadMoreConvos()` +
+  a "load more" button (`Chat.jsx:209,823`).
 - **Task 3: IMPLEMENTED / stress verification pending.** Re-upload deduplication, queued ingestion,
   progress polling, and offline fallback tests pass. Re-run the 300-file stress harness at
   Checkpoint 1 before marking the task fully complete.
+- **Task 4: DONE** (was listed OPEN; verified in code 2026-07-16). `team.py` memoizes
+  team_mode/current_user in a request-scoped contextvar (`_request_cache`), the safe per-request
+  approach the plan called for (not a TTL cache).
+- **Task 5: PARTIAL / now unblocked.** The E1/E2 privacy-boundary channel work shipped (DEVLOG
+  Step ~138, `prepare_request_for_model`). Still owed by this task: the agent run-engine
+  prompt-injection/approval-bypass/budget review, automated team-mode authorization tests, and the
+  docgen-vs-sandbox routing verification (#6). With Tasks 1-4 all landed, its dependency is clear.
 - **Tasks 6-7: COMPLETE.** LibreOffice status/guided install and faithful Office-to-PDF previews
   shipped in DEVLOG Step 141 with backend/UI tests.
 - **Task 8: COMPLETE** (as of Step 145; the earlier "COMPLETE" here was premature). Static app

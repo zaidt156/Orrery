@@ -131,6 +131,7 @@ PYINSTALLER_ARGS=(
   --collect-all litellm
   --collect-all tiktoken
   --collect-submodules tiktoken_ext
+  --collect-submodules sqlglot.dialects
   --collect-all fastembed
   --collect-all webview
   --collect-data procrastinate
