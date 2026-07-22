@@ -30,9 +30,8 @@ packaging while that migration finishes.
 The whole design rests on two things you bring: **your own model accounts or API keys**, and **your
 own PostgreSQL database**. Orrery is the framework between them. When you pick a cloud model, only the
 prompt and context that request needs is sent to that provider. Orrery has no hosted account,
-telemetry, or phone-home service. Credentials are intended to stay in the OS keychain; until the
-dataset-URL hardening item in [`TODO.md`](TODO.md) is complete, do not embed credentials in import
-URLs.
+telemetry, or phone-home service. Credentials stay in the OS keychain — including secrets embedded
+in dataset import URLs, which are stripped into the keychain and shown only in redacted form.
 
 ## What Orrery Does
 

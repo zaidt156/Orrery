@@ -22,7 +22,7 @@ async def test_tool_block_runs_through_registry_and_persists_final_answer(monkey
         else:
             yield "Final answer from observation."
 
-    async def fake_run_tool(key, args=None, *, allowed=None):
+    async def fake_run_tool(key, args=None, *, allowed=None, approval_id=None):
         calls.append((key, args, allowed))
         return {"ok": True, "results": [{"title": "Result", "url": "https://example.com", "snippet": "Safe data"}]}
 

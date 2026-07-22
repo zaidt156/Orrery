@@ -10,6 +10,8 @@ from __future__ import annotations
 from typing import Any, Literal
 
 EventName = Literal[
+    "approval",
+    "approval_resolved",
     "artifact",
     "delta",
     "done",
@@ -33,6 +35,14 @@ ChatEvent = dict[str, Any]
 
 def _event(name: EventName, value: Any) -> ChatEvent:
     return {name: value}
+
+
+def approval(value: dict[str, Any]) -> ChatEvent:
+    return _event("approval", value)
+
+
+def approval_resolved(value: dict[str, Any]) -> ChatEvent:
+    return _event("approval_resolved", value)
 
 
 def artifact(value: dict[str, Any]) -> ChatEvent:

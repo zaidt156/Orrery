@@ -40,7 +40,10 @@ def check_for_updates(timeout: float = 6.0) -> dict[str, Any]:
     }
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
-            payload = json.loads(response.read().decode("utf-8"))
+            raw = response.read(2_000_001)  # fixed GitHub endpoint, but still cap the body
+            if len(raw) > 2_000_000:
+                raise OSError("Update metadata response is too large.")
+            payload = json.loads(raw.decode("utf-8"))
     except (OSError, urllib.error.URLError, json.JSONDecodeError) as exc:
         return {
             **base,

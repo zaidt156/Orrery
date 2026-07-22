@@ -43,7 +43,7 @@ import {
 } from "./chatHelpers.jsx";
 import {
   ReplyFiles, InlineSvg, CodeImageArtifact, GeneratedFileCard, ThinkingPulse, ReasoningPanel, TaskBrainPanel,
-  EvaluatePanel, LazyAttachmentImg,
+  EvaluatePanel, LazyAttachmentImg, ApprovalCard,
 } from "./chatWidgets.jsx";
 import {
   appendRawThinking,
@@ -528,6 +528,12 @@ export default function Chat({ features = null }) {
         else if (ev.status) appendStep(setMessages, ev.status);
         else if (ev.title) setConvos((p) => p.map((c) => (c.id === cid ? { ...c, title: ev.title } : c)));
         else if (ev.sources) setLast({ sources: ev.sources });
+        else if (ev.approval) setLast({ approval: { ...ev.approval, status: "pending" } });
+        else if (ev.approval_resolved) setMessages((p) => p.map((m) => (
+          m.approval && m.approval.id === ev.approval_resolved.id
+            ? { ...m, approval: { ...m.approval, status: ev.approval_resolved.status } }
+            : m
+        )));
         else if (ev.message_id) setLast({ id: ev.message_id });
         else if (ev.message_usage) setLast({ tokens: ev.message_usage });
         else if (ev.resumed) appendStep(setMessages, "Resuming background generation…");
@@ -1254,6 +1260,7 @@ function AssistantMessageRow({
           streaming={message.streaming}
         />
       )}
+      {message.approval && <ApprovalCard approval={message.approval} />}
       <div className="ai-text">
         {message.streaming
           ? (body ? <div className="stream-live">{body}</div> : null)

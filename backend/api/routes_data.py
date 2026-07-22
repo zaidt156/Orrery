@@ -62,9 +62,9 @@ async def dataset_from_api(body: DatasetApiBody) -> dict:
     try:
         return await datasets.create_from_api(body.name, body.url, body.headers or None, body.workspace_id or None)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:  # noqa: BLE001
-        raise HTTPException(status_code=400, detail=f"API import failed: {str(e)[:200]}")
+        raise HTTPException(status_code=400, detail=secrets.redact_secrets(str(e))[:300])
+    except Exception as e:  # noqa: BLE001 — provider errors can embed the full (credentialed) URL
+        raise HTTPException(status_code=400, detail=f"API import failed: {secrets.redact_secrets(str(e))[:200]}")
 
 @router.post("/datasets/mongo")
 async def dataset_from_mongo(body: DatasetMongoBody) -> dict:
@@ -121,9 +121,9 @@ async def dataset_refresh(did: str) -> dict:
     try:
         return await datasets.refresh_dataset(did)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:  # noqa: BLE001
-        raise HTTPException(status_code=400, detail=f"Refresh failed: {str(e)[:200]}")
+        raise HTTPException(status_code=400, detail=secrets.redact_secrets(str(e))[:300])
+    except Exception as e:  # noqa: BLE001 — connector errors can embed the credentialed URL
+        raise HTTPException(status_code=400, detail=f"Refresh failed: {secrets.redact_secrets(str(e))[:200]}")
 
 @router.delete("/datasets/{did}")
 async def dataset_delete(did: str) -> dict:

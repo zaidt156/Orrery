@@ -25,6 +25,7 @@ class Tool:
     category: str = "tools"       # ai | data | code | net | tools
     writes: bool = False          # affects the world outside Orrery → approval-gated in agent flows
     risk: str = "read"            # read | sensitive_read | local_write | external_write | destructive | credential_use | network
+    feature_flag: str | None = None  # admin feature gate checked before approval/execution
     resource_fields: tuple[str, ...] = ()  # config fields an agent grant must constrain
     config_model: type[BaseModel] | None = None
 
@@ -75,17 +76,25 @@ async def run_tool(
     *,
     allowed: set[str] | None = None,
     grant: dict | None = None,
+    approval_id: str | None = None,
 ) -> dict:
     """Execute one tool call. Returns {"ok": bool, ...} — never raises to the caller.
 
     `allowed` is the caller's scope allow-list (an agent's granted tools, a workflow's node set).
-    Enforcement lives HERE, in code, not in any prompt (security.md §4).
+    Enforcement lives HERE, in code, not in any prompt (security.md §4). Non-Agent callers
+    (grant is None) additionally pass the central approval gate for external/destructive tools:
+    the result then carries "approval" for the caller to surface, and a granted `approval_id`
+    (digest-bound, single-use) authorizes exactly one retry of the same arguments.
     """
     if allowed is not None and key not in allowed:
         return {"ok": False, "error": f"Tool '{key}' is not in this scope's allow-list."}
     tool = _TOOLS.get(key)
     if tool is None:
         return {"ok": False, "error": f"Unknown tool '{key}'."}
+    if tool.feature_flag:  # cheap deterministic refusal BEFORE asking a human for approval
+        from backend.features import admin
+        if not await admin.feature_enabled(tool.feature_flag):
+            return {"ok": False, "error": f"Tool '{key}' is disabled by the current feature gates."}
     values = args or {}
     if grant is not None:
         actions = set(grant.get("actions") or [])
@@ -108,6 +117,14 @@ async def run_tool(
     except ValidationError as exc:
         problems = "; ".join(f"{'.'.join(str(p) for p in e['loc'])}: {e['msg']}" for e in exc.errors()[:3])
         return {"ok": False, "error": f"Invalid arguments for '{key}': {problems}"}
+    if grant is None:  # Chat/Automations: the central approval gate. Agent runs have their own.
+        from backend.features import approvals
+        verdict = await approvals.gate(tool, config.model_dump() if config else {}, approval_id)
+        if not verdict["allowed"]:
+            out = {"ok": False, "error": verdict.get("error") or "This action needs your approval."}
+            if verdict.get("approval"):
+                out["approval"] = verdict["approval"]
+            return out
     try:
         result = await tool.execute(config)
     except Exception as exc:  # noqa: BLE001 — tool failures surface as data, sanitized

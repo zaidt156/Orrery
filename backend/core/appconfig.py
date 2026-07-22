@@ -21,6 +21,7 @@ _ALLOWED_SETTINGS: dict[str, type] = {
     "defaults": dict,       # workspace defaults: {"model": "<id>", "effort": ""|low|high|xhigh}
     "crabbox": dict,        # optional remote executor settings; never contains broker/provider secrets
     "life_onboarding": dict,  # {"done": ["solo" | owner-id, ...]} — first-run questions shown once ever
+    "tool_approval_allowlist": dict,  # {owner: [remember_key, ...]} — "always allow" tool decisions
 }
 
 

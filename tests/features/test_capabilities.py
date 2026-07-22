@@ -55,7 +55,7 @@ async def test_model_self_selects_file_generate_and_gets_context_injected(monkey
         else:
             yield "Here is your resume."
 
-    async def fake_run_tool(key, args=None, *, allowed=None):
+    async def fake_run_tool(key, args=None, *, allowed=None, approval_id=None):
         seen["key"] = key
         seen["args"] = args
         return {"ok": True, "summary": "Built resume.tex", "files": ["resume.tex"],

@@ -7,21 +7,6 @@ implemented behavior lives in [`ARCHITECTURE.md`](ARCHITECTURE.md), and complete
 [`DEVLOG`](docs/history/DEVLOG.md). Remove an item when it is completed and recorded in the DEVLOG;
 do not keep a second checklist of completed tasks here.
 
-## P0 — production security and correctness
-
-- [ ] Add a registry-level approval gate for Chat/non-Agent side effects; bind approval to the exact
-      validated-argument digest, expire it, prevent replay, and treat unknown MCP tools as destructive.
-- [ ] Make `team_mode`, current identity, admin flags, and feature gates fail closed on database or
-      configuration errors; preserve solo mode only for an explicit first-run bootstrap state.
-- [ ] Add outage/migration regression tests proving locked/member/admin authorization cannot become
-      solo/admin or all-features-enabled after a broad exception.
-- [ ] Disable automatic redirects in dataset imports and Automation HTTP nodes; validate every hop,
-      scheme, resolved address, and destination port before connecting.
-- [ ] Stream outbound HTTP responses into a hard byte cap instead of buffering first; cover redirect
-      loops, private-address redirects, DNS rebinding-style resolution changes, and oversized bodies.
-- [ ] Reject or extract credentials from dataset API URLs, store secret parts in the OS keychain,
-      persist/return only a redacted canonical URL, and sanitize connector errors.
-
 ## P1 — bounded documents and deterministic verification
 
 - [ ] Move DOCX/XLSX/PPTX ingestion and Office/PDF preview parsing into the offline bounded document
@@ -37,7 +22,10 @@ do not keep a second checklist of completed tasks here.
 
 - [ ] Add authenticated Workflow CRUD/list/get/run routes with owner filtering and validation.
 - [ ] Connect Automations UI state to the Workflow API; render the registered node catalog rather
-      than hard-coded nodes and show durable run-step input/output/error data.
+      than hard-coded nodes and show durable run-step input/output/error data. Surface tool-approval
+      requests from gated nodes (headless runs currently fail them safely) so a user can decide.
+- [ ] Add a small management view for the remembered "always allow" tool approvals so grants can be
+      reviewed and revoked without re-approving.
 - [ ] Add an Automation schedule tick and support only trigger types the runtime actually implements.
 - [ ] Build Media Hub generation adapters and a local media library; keep the screen disabled/honest
       until an end-to-end generation path exists.

@@ -13,7 +13,7 @@ class _Response:
     def __exit__(self, *args):
         return False
 
-    def read(self):
+    def read(self, n=-1):
         return json.dumps(self.payload).encode("utf-8")
 
 

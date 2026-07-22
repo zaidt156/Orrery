@@ -2842,3 +2842,40 @@ widths, and an independent five-axis review found no Critical or Required issues
 
 Next: execute `TODO.md` from P0 downward, beginning with the shared approval gate and fail-closed
 team/admin authorization; keep future status changes in the four canonical documents only.
+
+## Step 151 - P0 trust boundary closed: approvals, fail-closed identity, guarded fetches, clean URLs (July 22, 2026)
+
+All six P0 security items landed as one pass, designed so day-to-day use barely notices them.
+
+A central approval gate now sits in the shared tool registry, below the model. It is risk-tiered so
+it rarely asks: read-only tools, sandboxed code, and file generation never prompt; only tools with
+external or destructive effects (MCP calls, Crabbox) pause the chat turn with an inline card. An
+approval is bound to a digest of the exact validated arguments, is single-use, and expires — so a
+granted click cannot be replayed or repointed at different arguments. "Always allow" is remembered
+per user (and per server+tool for MCP), so a trusted tool asks once, not per call. Agent runs keep
+their existing durable approval flow; a disabled tool refuses cheaply before any prompt appears.
+
+Identity now fails closed. A database or configuration error reports team mode with a locked
+identity instead of silently promoting the caller to solo-admin; feature gates disable for team
+callers when their restrictions cannot be read; and founding a team requires a successful query
+proving no team exists — an outage is not first-run evidence. Solo mode on a healthy machine is
+unchanged.
+
+Outbound fetches for dataset imports and the Automation HTTP node go through one guarded helper:
+every redirect hop is re-validated (scheme, credentials, host, port, and every resolved address),
+the connection is pinned to the validated IP so a DNS answer cannot change between check and
+connect, bodies stream into a hard byte cap instead of buffering first, low service ports are
+blocked, and auth headers are dropped when a redirect leaves the original host. The Google Sheets
+refresh path, which previously had no size cap at all, now shares the same guard.
+
+Dataset API URLs no longer persist credentials: secret-looking query parameters are stripped into
+the OS keychain, only a redacted canonical URL is stored and shown (legacy rows are redacted on
+read), refresh resolves the real URL from the keychain, and import/refresh errors are scrubbed
+before they reach the interface.
+
+Verified: 648 backend tests pass (31 new abuse-case regressions covering approval replay/tampering/
+expiry, database outages, redirect chains to blocked hosts, redirect loops, oversized bodies, pinned
+connections, and credential-bearing URLs), 38 UI tests pass, and the production UI builds.
+
+Next: Workstream 2 — the bounded document worker, deterministic test groups, and the web-search
+provider interface.

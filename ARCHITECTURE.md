@@ -619,7 +619,21 @@ Other implemented controls include:
 - OS-keychain secret storage and error-string secret scrubbing.
 - Team keys stored as SHA-256 hashes; the local unlock copy stays in the keychain.
 - Owner filtering for private team resources and admin approval for member-authored skills/MCP servers.
-- Server-side URL guards for custom model endpoints and import/HTTP fetches.
+- Server-side URL guards for custom model endpoints and import/HTTP fetches. Dataset imports and the
+  Automation HTTP node use a guarded fetch that re-validates every redirect hop (scheme, credentials,
+  host, port, every resolved address), pins the connection to the validated IP, streams the body into
+  a hard byte cap, and drops custom auth headers when a redirect leaves the original host.
+- A central registry-level approval gate for non-Agent tool side effects: external/destructive tools
+  (MCP calls, Crabbox) pause the chat turn for an inline user decision bound to the sha256 digest of
+  the exact validated arguments — single-use, expiring, replay-refused. Read-only and sandboxed tools
+  never prompt; "always allow" is remembered per owner (per server+tool for MCP). Agent runs keep
+  their own durable AgentApproval flow.
+- Identity and authorization fail closed: a database/config error reports team mode with a locked
+  identity (never solo-admin), disables all feature gates for team callers, and refuses team
+  bootstrap unless a successful query proves the team table is empty.
+- Dataset API source URLs never persist credentials: secret-looking query parameters are stripped to
+  the OS keychain, only a redacted canonical URL is stored/returned (legacy rows are redacted on
+  read), refresh resolves the real URL from the keychain, and connector errors are scrubbed.
 - Untrusted-context labeling for retrieved documents and tool output.
 - Read-only query enforcement and row/time caps for connected data.
 - Hardened offline Docker execution for model-written code.
@@ -630,14 +644,11 @@ Other implemented controls include:
 
 Known security gaps are kept explicit rather than hidden in separate review documents:
 
-- Agent runs suspend risky actions for approval, but ordinary Chat tool execution does not yet have a
-  shared approval pause below the model. Risk metadata alone is not enforcement.
-- Team/admin helpers still contain broad error fallbacks that can treat database/config failures as
-  solo mode or enabled defaults. These paths must fail closed before production team/agent use.
-- Some outbound import/Automation HTTP paths validate only the initial URL, follow redirects, or
-  buffer before enforcing size. Redirect-by-redirect SSRF validation and streaming caps remain open.
-- Dataset API source URLs can still carry credentials in persisted/returned text. Secret extraction
-  and canonical redacted URLs remain open.
+- Pending tool approvals live in memory, like detached chat runs: a backend restart clears them and
+  the affected tool call fails safely. Headless Automation runs cannot pause for a decision, so a
+  gated node fails with an approval-required error until the Automations product surface exists.
+- The "always allow" tool list is enforced per owner but is editable only by re-approving; a
+  management UI to review/revoke remembered grants has not been built yet.
 
 Code anchors: `backend/api/__init__.py`, `backend/security`, `backend/features/team.py`, `backend/features/prompting.py`, `backend/features/sandbox.py`, `ui/src/lib/officePreview.js`.
 

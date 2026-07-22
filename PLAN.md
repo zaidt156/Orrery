@@ -67,8 +67,10 @@ before it.
 
 ### Workstream 1 — Close production trust-boundary gaps
 
-This is the current priority. Finish the shared enforcement layer before exposing more agent,
-automation, connector, or MCP power.
+**Complete (22 July 2026).** The shared enforcement layer now exists: the checkpoint below is met by
+abuse-case regression tests in `tests/features/test_approvals.py`, `tests/features/test_team_failclosed.py`,
+`tests/security/test_netguard_fetch.py`, and the dataset credential tests. Workstream 2 is the
+current priority.
 
 1. Add a central approval gate for Chat and every non-Agent tool execution path that can write,
    contact an external system, use credentials, or has unknown MCP risk. The approval must bind to a
@@ -84,6 +86,8 @@ automation, connector, or MCP power.
 chains to private hosts, DNS changes, oversized bodies, and credential-bearing URLs.
 
 ### Workstream 2 — Finish the untrusted-document and reliability boundary
+
+This is the current priority.
 
 1. Move Office ingestion and Office/PDF preview parsing into an offline, read-only, resource-bounded
    worker. Keep any host fallback explicit and temporary.

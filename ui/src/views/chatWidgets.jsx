@@ -4,7 +4,48 @@ import { useEffect, useState } from "react";
 import {
   AlertTriangle, AppWindow, Brain, CheckCircle2, Cog, Download, Eye, FileText, GitBranch, Loader2, Scale, Search, ShieldCheck, Terminal, X,
 } from "lucide-react";
-import { saveClientFile, getTasks, cancelTask, evaluateMessage, adoptAnswer } from "../lib/api.js";
+import { saveClientFile, getTasks, cancelTask, evaluateMessage, adoptAnswer, decideToolApproval } from "../lib/api.js";
+
+// Inline approval card for the central tool gate: an external/destructive tool call pauses the
+// turn until the user decides. "Always allow" remembers the tool so it asks once, not per call.
+export function ApprovalCard({ approval }) {
+  const [busy, setBusy] = useState(false);
+  const [remember, setRemember] = useState(false);
+  const status = approval.status || "pending";
+  const pending = status === "pending";
+
+  async function decide(approve) {
+    setBusy(true);
+    try { await decideToolApproval(approval.id, approve, remember); } catch { /* the stream event reconciles */ }
+  }
+
+  return (
+    <div className={`approval-card ${status}`} role="group" aria-label="Tool approval">
+      <div className="approval-head">
+        <ShieldCheck aria-hidden="true" />
+        <span className="approval-title">
+          {pending ? "Approval needed" : status === "approved" ? "Approved" : status === "denied" ? "Denied" : "Expired"}
+          {" — "}{approval.label || approval.tool}
+        </span>
+      </div>
+      {approval.summary && <div className="approval-summary">{approval.summary}</div>}
+      {pending && (
+        <div className="approval-actions">
+          <button className="approval-approve" disabled={busy} onClick={() => decide(true)}>Approve</button>
+          <button className="approval-deny" disabled={busy} onClick={() => decide(false)}>Deny</button>
+          <label className="approval-remember">
+            <input
+              type="checkbox"
+              checked={remember}
+              onChange={(event) => setRemember(event.target.checked)}
+            />
+            Always allow this tool
+          </label>
+        </div>
+      )}
+    </div>
+  );
+}
 
 // Task Brain: a live, collapsible ledger of background work (chat generations, jobs, automations)
 // so the user can see what's running, jump to it, or cancel it. Polls; also refreshes on demand.

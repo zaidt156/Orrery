@@ -136,6 +136,9 @@ export const getAgentRun = (runId) => apiGet(`/api/agent-runs/${runId}`);
 export const cancelAgentRun = (runId) => apiSend(`/api/agent-runs/${runId}/cancel`, "POST", {});
 export const listAgentApprovals = () => apiGet("/api/agent-approvals");
 export const decideAgentApproval = (id, approve) => apiSend(`/api/agent-approvals/${id}/decide`, "POST", { approve });
+export const listToolApprovals = () => apiGet("/api/tool-approvals");
+export const decideToolApproval = (id, approve, remember = false) =>
+  apiSend(`/api/tool-approvals/${id}/decide`, "POST", { approve, remember });
 export const cancelTask = (id) => apiSend(`/api/tasks/${id}/cancel`, "POST");
 export const getUsage = () => apiGet("/api/usage");
 export const setSpendCap = (cap) => apiSend("/api/usage/cap", "PUT", cap);

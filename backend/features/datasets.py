@@ -234,25 +234,21 @@ def _flatten_json(payload) -> tuple[list, list[list]]:
 
 
 async def _fetch_api(url: str, headers: dict[str, str] | None) -> tuple[list, list[list]]:
-    import httpx
-
     from backend.features import team
     from backend.security import netguard
     # SSRF guard: metadata/link-local always blocked; in team mode members can't probe the host's
     # LAN or loopback through imports (solo users may legitimately import from their own local APIs).
+    # fetch_checked validates every redirect hop, pins the connection to the validated address, and
+    # streams the body into the byte cap instead of buffering first.
+    resp = await netguard.fetch_checked(
+        url, headers=headers or None,
+        allow_private=not await team.team_mode(), max_bytes=MAX_API_BYTES,
+    )
+    resp.raise_for_status()
     try:
-        url = netguard.validate_fetch_url(url, allow_private=not await team.team_mode())
-    except netguard.UnsafeUrlError as exc:
-        raise ValueError(str(exc))
-    async with httpx.AsyncClient(timeout=25, follow_redirects=True) as client:
-        resp = await client.get(url, headers=headers or {})
-        resp.raise_for_status()
-        if len(resp.content) > MAX_API_BYTES:
-            raise ValueError("The API response is too large (8 MB cap).")
-        try:
-            payload = resp.json()
-        except ValueError:
-            raise ValueError("The API didn't return JSON.")
+        payload = resp.json()
+    except ValueError:
+        raise ValueError("The API didn't return JSON.")
     return _flatten_json(payload)
 
 
@@ -262,11 +258,37 @@ def _headers_secret(did: str) -> str:
     return f"dataset_headers:{did}"
 
 
+def _url_secret(did: str) -> str:
+    return f"dataset_url:{did}"
+
+
+_SECRET_PARAM_RX = re.compile(
+    r"key|token|secret|password|signature|sig$|^auth|credential", re.IGNORECASE
+)
+
+
+def _split_secret_url(url: str) -> tuple[str, str]:
+    """(full_url, display_url): secret-looking query params are masked in the display form.
+
+    The display form is what gets persisted/returned; when it differs, the full URL belongs in
+    the OS keychain (models.py: Dataset.source carries no secrets)."""
+    from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
+    parsed = urlparse(url or "")
+    if not parsed.query:
+        return url, url
+    pairs = parse_qsl(parsed.query, keep_blank_values=True)
+    masked = [(k, "redacted" if _SECRET_PARAM_RX.search(k) else v) for k, v in pairs]
+    if masked == pairs:
+        return url, url
+    return url, urlunparse(parsed._replace(query=urlencode(masked)))
+
+
 def _dict(d: Dataset) -> dict:
     return {
         "id": str(d.id), "name": d.name, "table": d.table_name, "kind": d.kind,
         "schema": getattr(d, "db_schema", SCHEMA) or SCHEMA,
-        "source": d.source or "", "rows": int(d.row_count or 0),
+        # redact-on-read so a legacy row that predates keychain URL storage never shows secrets
+        "source": _split_secret_url(d.source or "")[1], "rows": int(d.row_count or 0),
         "updated_at": d.updated_at.isoformat() if d.updated_at else None,
     }
 
@@ -431,17 +453,18 @@ async def create_from_api(name: str, url: str, headers: dict[str, str] | None = 
     # A shared Google Sheets link imports via its CSV export (no auth; sheet must be link-visible).
     gs = _GSHEET.search(url or "")
     if gs:
-        import httpx
+        from backend.security import netguard
         export = f"https://docs.google.com/spreadsheets/d/{gs.group(1)}/export?format=csv"
-        async with httpx.AsyncClient(timeout=25, follow_redirects=True) as client:
-            resp = await client.get(export)
-            resp.raise_for_status()
-            if len(resp.content) > MAX_API_BYTES:
-                raise ValueError("The sheet is too large (8 MB cap).")
+        resp = await netguard.fetch_checked(export, max_bytes=MAX_API_BYTES)
+        resp.raise_for_status()
         header, rows = _parse_csv(resp.text)
         return await _register(name or "google sheet", "api", export, header, rows, workspace_id)
     header, rows = await _fetch_api(url, headers)
-    out = await _register(name or url, "api", url, header, rows, workspace_id)
+    full_url, display_url = _split_secret_url(url)
+    out = await _register(name or display_url, "api", display_url, header, rows, workspace_id)
+    if full_url != display_url:
+        # the credentialed URL is load-bearing for refresh — keychain only, never the DB/UI
+        secrets.set_secret(_url_secret(out["id"]), full_url)
     if headers:
         secrets.set_secret(_headers_secret(out["id"]), json.dumps(headers))
     return out
@@ -472,14 +495,15 @@ async def refresh_dataset(did: str) -> dict:
         raise ValueError("Dataset not found.")
     raw = secrets.get_secret(_headers_secret(did))
     headers = json.loads(raw) if raw else None
-    if "docs.google.com/spreadsheets" in url:
-        import httpx
-        async with httpx.AsyncClient(timeout=25, follow_redirects=True) as client:
-            resp = await client.get(url)
-            resp.raise_for_status()
+    # Prefer the keychain URL (the stored source is redacted); legacy rows still carry the full URL.
+    fetch_url = secrets.get_secret(_url_secret(did)) or url
+    if "docs.google.com/spreadsheets" in fetch_url:
+        from backend.security import netguard
+        resp = await netguard.fetch_checked(fetch_url, max_bytes=MAX_API_BYTES)
+        resp.raise_for_status()
         header, rows = _parse_csv(resp.text)
     else:
-        header, rows = await _fetch_api(url, headers)
+        header, rows = await _fetch_api(fetch_url, headers)
     count = await _materialize(table, header, rows, schema=schema)
     async with get_sessionmaker()() as s:
         row = await s.get(Dataset, uuid.UUID(did))
@@ -504,4 +528,5 @@ async def delete_dataset(did: str) -> bool:
         await conn.execute(text(f"DROP TABLE IF EXISTS {_quote(schema)}.{_quote(table)}"))
     secrets.delete_secret(_headers_secret(did))
     secrets.delete_secret(_mongo_secret(did))
+    secrets.delete_secret(_url_secret(did))
     return True

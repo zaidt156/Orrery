@@ -105,36 +105,47 @@ async def apply_user_feature_flags(users: list[dict]) -> list[dict]:
     return out
 
 
+def _nothing_enabled() -> dict[str, bool]:
+    return {name: False for name in FEATURES}
+
+
 async def effective_flags() -> dict[str, bool]:
     """Feature flags for the current caller.
 
     Solo mode uses workspace defaults. Team admins also use workspace defaults so they cannot be
     locked out of administration by a member-level override. Team members receive their explicit
-    override when present, otherwise the workspace default.
+    override when present, otherwise the workspace default. Fail closed: when team identity or a
+    member's restrictions cannot be read, a team caller gets NO features rather than default-on.
     """
-    flags = await get_flags()
-    try:
-        from backend.features import team
+    from backend.features import team
 
-        if not await team.team_mode():
-            return flags
-        user = await team.current_user()
-        if not user:
-            return {name: False for name in FEATURES}
-        if user.get("role") == "admin":
-            return flags
-        overrides = await get_user_feature_flags(user["id"])
-        return {name: bool(overrides.get(name, flags.get(name, True))) for name in FEATURES}
-    except Exception:  # noqa: BLE001 - do not break solo/local chat if the admin layer is unavailable
-        return flags
+    try:
+        in_team = await team.team_mode()
+        user = await team.current_user() if in_team else None
+    except Exception:  # noqa: BLE001 — unknown identity must never widen to default-on
+        return _nothing_enabled()
+    if not in_team:
+        return await get_flags()
+    if not user:
+        return _nothing_enabled()
+    if user.get("role") == "admin":
+        return await get_flags()
+    try:
+        stored_flags = await appconfig.get_setting(_FLAGS_KEY, {}) or {}
+        stored_overrides = await appconfig.get_setting(_USER_FLAGS_KEY, {}) or {}
+    except Exception:  # noqa: BLE001 — member restrictions unreadable → fail closed
+        return _nothing_enabled()
+    flags = {name: bool(stored_flags.get(name, default)) for name, (_label, default) in FEATURES.items()}
+    overrides = _clean_flags(stored_overrides.get(str(user["id"]), {}))
+    return {name: bool(overrides.get(name, flags.get(name, True))) for name in FEATURES}
 
 
 async def feature_enabled(name: str) -> bool:
-    """Best-effort gate using the current caller's effective feature flags."""
+    """Gate on the caller's effective flags; an unknown state disables rather than enables."""
     try:
         return (await effective_flags()).get(name, True)
-    except Exception:  # noqa: BLE001
-        return True
+    except Exception:  # noqa: BLE001 — fail closed
+        return False
 
 
 async def apply_flags(flags: dict) -> None:

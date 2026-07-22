@@ -81,14 +81,14 @@ class HttpRequestNode(Node):
     config_model = HttpRequestConfig
 
     async def execute(self, inputs: dict, config: HttpRequestConfig) -> dict:
-        import httpx
-
         from backend.features import team
         from backend.security import netguard
-        url = netguard.validate_fetch_url(config.url, allow_private=not await team.team_mode())
         method = config.method.upper() if config.method.upper() in ("GET", "HEAD") else "GET"
-        async with httpx.AsyncClient(timeout=20, follow_redirects=True) as client:
-            resp = await client.request(method, url)
+        # every redirect hop validated, connection pinned, body streamed into a hard cap
+        resp = await netguard.fetch_checked(
+            config.url, method=method, timeout=20,
+            allow_private=not await team.team_mode(), max_bytes=2_000_000,
+        )
         body = resp.text[:20_000]
         try:
             data = resp.json()

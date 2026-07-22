@@ -120,8 +120,10 @@ The implementation follows a few SOLID-style boundaries:
   duplicating role logic.
 - Dependency inversion: UI components consume backend permission state instead of hard-coding team
   policy.
-- Known locked or revoked team clients fail closed. Database/configuration outage paths still need the
-  P0 fail-closed hardening tracked in the root TODO before production team use.
+- Locked or revoked team clients fail closed, and so do database/configuration outages: an
+  unverifiable team state reports team mode with a locked identity (never solo-admin), feature gates
+  disable for team callers on read failures, and team bootstrap requires a successful query proving
+  the team table is empty. Outage regression tests live in `tests/features/test_team_failclosed.py`.
 
 ## Current Follow-Ups
 

@@ -39,6 +39,7 @@ class WebSearchTool(Tool):
     label = "Web search"
     category = "net"
     risk = "network"
+    feature_flag = "web_search"
     config_model = WebSearchConfig
 
     async def execute(self, config: WebSearchConfig) -> dict:
@@ -210,6 +211,7 @@ class CrabboxRunTool(Tool):
     category = "code"
     writes = True
     risk = "destructive"
+    feature_flag = "crabbox"
     config_model = CrabboxRunConfig
 
     async def execute(self, config: CrabboxRunConfig) -> dict:
@@ -262,6 +264,7 @@ class McpCallTool(Tool):
     category = "net"
     writes = True  # external side effects are unknown → approval-gated wherever gates apply
     risk = "external_write"
+    feature_flag = "mcp"
     resource_fields = ("server_id",)
     config_model = McpCallConfig
 

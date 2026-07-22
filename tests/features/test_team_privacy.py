@@ -105,20 +105,19 @@ async def test_set_conversation_project_rejects_foreign_project(monkeypatch):
 
 @pytest.mark.anyio
 async def test_effective_flags_apply_member_override(monkeypatch):
-    async def workspace_flags():
-        return {name: True for name in admin.FEATURES}
-
     async def team_mode_on():
         return True
 
     async def current_member():
         return {"id": "member-1", "name": "Member", "role": "member", "team_mode": True}
 
-    async def member_overrides(_user_id):
-        return {"file_gen": False}
+    # the member path reads stored flags strictly (fail-closed), so patch the storage seam
+    async def fake_setting(key, default=None):
+        if key == admin._USER_FLAGS_KEY:
+            return {"member-1": {"file_gen": False}}
+        return default
 
-    monkeypatch.setattr(admin, "get_flags", workspace_flags)
-    monkeypatch.setattr(admin, "get_user_feature_flags", member_overrides)
+    monkeypatch.setattr(admin.appconfig, "get_setting", fake_setting)
     monkeypatch.setattr(team, "team_mode", team_mode_on)
     monkeypatch.setattr(team, "current_user", current_member)
 

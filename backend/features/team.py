@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import contextvars
 import hashlib
+import logging
 import secrets as pysecrets
 import uuid
 
@@ -25,6 +26,8 @@ from sqlalchemy import func, select, update
 from backend.core.database import get_sessionmaker
 from backend.core.models import Collection, Conversation, Project, TeamUser
 from backend.security import secrets
+
+log = logging.getLogger("orrery.team")
 
 _UNLOCK_KEY = "team_access_key"  # keychain entry: this client's own access key
 
@@ -71,15 +74,21 @@ def _invalidate_request_cache() -> None:
 
 
 async def team_mode() -> bool:
-    """True once a team has been set up (at least one user row exists)."""
+    """True once a team has been set up (at least one user row exists).
+
+    Fail closed: when the database cannot PROVE the answer, report team mode ON so the caller
+    resolves to a locked identity instead of being silently promoted to solo-admin. Solo mode is
+    granted only when a successful query proves no team user exists (the first-run state).
+    """
     cache = _request_cache.get()
     if cache is not None and "team_mode" in cache:
         return cache["team_mode"]
     try:
         async with get_sessionmaker()() as s:
             result = bool((await s.execute(select(func.count(TeamUser.id)))).scalar_one())
-    except Exception:  # noqa: BLE001 — no DB / not migrated yet → treat as solo (single-user)
-        result = False
+    except Exception:  # noqa: BLE001 — unknown state locks; it never grants solo-admin
+        log.warning("team state unavailable (database error); failing closed to locked")
+        result = True
     if cache is not None:
         cache["team_mode"] = result
     return result
@@ -109,7 +118,11 @@ async def current_user() -> dict | None:
     if not await team_mode():
         user = SOLO_USER
     else:
-        user = await _authenticate(secrets.get_secret(_UNLOCK_KEY) or "")
+        try:
+            user = await _authenticate(secrets.get_secret(_UNLOCK_KEY) or "")
+        except Exception:  # noqa: BLE001 — key unverifiable (DB/keychain down) → locked, never solo
+            log.warning("identity lookup unavailable; failing closed to locked")
+            user = None
     if cache is not None:
         cache["user"] = user
     return user
@@ -163,8 +176,15 @@ async def status() -> dict:
 
 
 async def setup_team(admin_name: str) -> dict:
-    """Found the team: create the first admin, unlock this client, return the key once. No-op if set up."""
-    if await team_mode():
+    """Found the team: create the first admin, unlock this client, return the key once.
+
+    Bootstrap requires a PROVEN empty team table — a database error is not first-run evidence."""
+    try:
+        async with get_sessionmaker()() as s:
+            existing = (await s.execute(select(func.count(TeamUser.id)))).scalar_one()
+    except Exception:  # noqa: BLE001 — cannot prove first-run → refuse bootstrap
+        return {"ok": False, "error": "Cannot verify the team state — check the database connection."}
+    if existing:
         return {"ok": False, "error": "Team access is already set up."}
     key = generate_key()
     async with get_sessionmaker()() as s:

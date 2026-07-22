@@ -19,6 +19,7 @@ import json
 from collections.abc import AsyncIterator, Awaitable, Callable
 
 from backend import tools as tool_registry
+from backend.features import approvals
 from backend.features import events as stream_events
 from backend.features.prompting import strip_think
 from backend.features.reasoning_trace import ThinkStream
@@ -125,6 +126,7 @@ async def _run_registry_tool(
     *,
     allowed_tools: set[str] | None,
     context: dict,
+    approval_id: str | None = None,
 ) -> dict:
     """Parse an orrery-tool request and execute through the shared registry."""
     try:
@@ -145,14 +147,18 @@ async def _run_registry_tool(
             "mcp_call",
             {"server_id": server["id"], "tool": tool, "args": args},
             allowed=allowed_tools,
+            approval_id=approval_id,
         )
         artifacts = _tool_artifacts(result)
-        return {
+        out = {
             "ok": result.get("ok", False),
             "label": f"{name}::{tool}",
             "observation": _tool_observation("mcp_call", result, artifacts),
             "artifacts": artifacts,
         }
+        if result.get("approval"):
+            out["approval"] = result["approval"]
+        return out
 
     key = str(spec.get("tool") or spec.get("key") or "").strip()
     args = spec.get("args") if isinstance(spec.get("args"), dict) else {}
@@ -165,14 +171,17 @@ async def _run_registry_tool(
         args.setdefault("effort", context.get("effort") or "")
         args.setdefault("trusted_context", context.get("trusted_context") or "")
         args.setdefault("untrusted_context", context.get("untrusted_context") or "")
-    result = await tool_registry.run_tool(key, args, allowed=allowed_tools)
+    result = await tool_registry.run_tool(key, args, allowed=allowed_tools, approval_id=approval_id)
     artifacts = _tool_artifacts(result)
-    return {
+    out = {
         "ok": result.get("ok", False),
         "label": key,
         "observation": _tool_observation(key, result, artifacts),
         "artifacts": artifacts,
     }
+    if result.get("approval"):
+        out["approval"] = result["approval"]
+    return out
 
 
 async def run(
@@ -343,18 +352,45 @@ async def run(
                 observations.append(_tool_observation("web_search", search_res))
             else:  # tool (MCP)
                 echo += f"\n\n```orrery-tool\n{body.strip()}\n```"
+                tool_context = {
+                    "model": model,
+                    "system_prompt": system_prompt or "",
+                    "effort": effort or "",
+                    "trusted_context": trusted_context or "",
+                    "untrusted_context": untrusted_context or "",
+                }
                 tool_res = await _run_registry_tool(
-                    mcp_servers or [],
-                    body,
-                    allowed_tools=allowed_tools,
-                    context={
-                        "model": model,
-                        "system_prompt": system_prompt or "",
-                        "effort": effort or "",
-                        "trusted_context": trusted_context or "",
-                        "untrusted_context": untrusted_context or "",
-                    },
+                    mcp_servers or [], body, allowed_tools=allowed_tools, context=tool_context,
                 )
+                if tool_res.get("approval"):
+                    # The registry gate wants a human decision. Surface the card, wait for the
+                    # user, then retry once with the granted (digest-bound, single-use) approval.
+                    request = tool_res["approval"]
+                    yield stream_events.approval(request)
+                    yield trace.step(
+                        "Waiting for your approval",
+                        request.get("summary") or request.get("label", ""),
+                        kind="tool", status="running", phase="execute",
+                        metadata={"approval_id": request["id"]},
+                    )
+                    decision = await approvals.wait(request["id"])
+                    yield stream_events.approval_resolved({"id": request["id"], "status": decision})
+                    if decision == "approved":
+                        yield trace.step("Approval granted", request.get("label", ""),
+                                         kind="tool", status="done", phase="execute")
+                        tool_res = await _run_registry_tool(
+                            mcp_servers or [], body, allowed_tools=allowed_tools,
+                            context=tool_context, approval_id=request["id"],
+                        )
+                    else:
+                        verb = "denied" if decision == "denied" else "did not approve in time"
+                        yield trace.step("Not approved", request.get("label", ""),
+                                         kind="result", status="warning", phase="execute")
+                        tool_res = {
+                            "ok": False, "label": request.get("label", "tool"),
+                            "observation": f"[tool] The user {verb} this action. Do not retry it; "
+                                           "continue without it or say what you could not do.",
+                        }
                 produced = _tool_artifacts(tool_res)
                 if produced:
                     all_files.extend(produced)
