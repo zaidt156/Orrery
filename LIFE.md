@@ -55,6 +55,7 @@ material, or raw authentication headers.
 ## History pointers
 
 - Human-readable implementation history: `docs/history/DEVLOG.md`
-- Current interface plan: `docs/planning/UI_INTERFACE_AND_COLOR_SYSTEM.md`
-- Agent platform plan: `docs/planning/ORRERY_LIFE_AND_AGENT_PLATFORM.md`
+- Implemented system map: `ARCHITECTURE.md`
+- Product direction and delivery order: `PLAN.md`
+- Current unfinished work: `TODO.md`
 - Architectural decisions: `docs/decisions/`

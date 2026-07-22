@@ -5,9 +5,9 @@
 ### A local-first desktop AI workspace — bring your own models and your own database
 
 Orrery ties your own AI accounts and your own PostgreSQL database together into one desktop app:
-chat with any model, retrieve your documents, build dashboards and automations from your data, run
-goal-driven agents, and generate real files — all while your data, files, and credentials stay on
-your machine.
+chat with connected models, retrieve your documents, build dashboards from your data, run bounded
+agents, and generate real files. Automations and Media remain visible work in progress; the exact
+implemented surface is documented in [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
 ![Version](https://img.shields.io/badge/version-0.2.1-E5A93F)
 ![License](https://img.shields.io/badge/License-Apache_2.0-F2B14E)
@@ -29,18 +29,20 @@ packaging while that migration finishes.
 
 The whole design rests on two things you bring: **your own model accounts or API keys**, and **your
 own PostgreSQL database**. Orrery is the framework between them. When you pick a cloud model, only the
-prompt and context that request needs is sent to that one provider. Your conversations, files,
-database connection details, generated documents, and credentials stay in your environment — there is
-no Orrery account, no telemetry, and no phone-home.
+prompt and context that request needs is sent to that provider. Orrery has no hosted account,
+telemetry, or phone-home service. Credentials are intended to stay in the OS keychain; until the
+dataset-URL hardening item in [`TODO.md`](TODO.md) is complete, do not embed credentials in import
+URLs.
 
 ## What Orrery Does
 
 Orrery is organized as a set of workspace tabs. Each keeps the same local, private-by-default rules.
 
 - **Chat** — talk to any connected model with streaming responses, a model picker, effort modes, and
-  context-window controls. Chat is also a command surface: from the chat box you can generate a file,
-  build a dashboard, start an agent, or run an automation, all through the same approval and scope
-  checks as everywhere else. Point it at your document collections to answer from your own material.
+  context-window controls. With the relevant feature gates and consent, Chat can search the web or
+  documents, query connected data, generate files, run sandboxed code, call approved MCP tools, and
+  refresh an existing dashboard. Starting Agents or Automations and creating dashboards from Chat are
+  still planned. Point it at your document collections to answer from your own material.
 - **Data** — connect local or remote PostgreSQL databases, browse tables read-only, and build
   document collections for retrieval (RAG) using pgvector plus PostgreSQL full-text search. Untrusted
   document text is kept separate from system instructions.
@@ -49,15 +51,14 @@ Orrery is organized as a set of workspace tabs. Each keeps the same local, priva
 - **Dashboards** — describe the dashboard you want and pick a model; the model writes the SQL and
   chooses the charts, and Orrery saves it as a spec. Refreshes re-run the saved queries against your
   live data with no additional model cost. The AI is the designer, not the renderer.
-- **Automations** — fixed-recipe visual workflows on a canvas, triggered manually or on a schedule.
-  Nodes include LLM prompt, document search, database query, HTTP request, sandboxed Python, shell,
-  web search, branch, delay, dashboard refresh, and MCP tool calls, with a run/debug view.
-- **Agents** — goal-driven workers built on a durable run engine: they plan, act, self-check, and
-  improve within a strict scope until done, stopped, or a budget limit is hit. Tool use passes
-  through grant enforcement; runs support approval pauses, cancellation, scheduled ticks, and
-  crash-safe resume from an immutable step trace.
-- **Media Hub** — a playground for image and video generation on your own media-model keys, with
-  prompts and settings saved alongside the generated assets.
+- **Automations** — the backend has fixed-recipe workflow storage, execution nodes, and durable run
+  records. The product API, schedule tick, and live editor/debug UI are not connected end to end yet.
+- **Agents** — goal-driven workers run manually or on a schedule through a durable, scoped engine.
+  Tool use passes through grant enforcement; runs support approval pauses, cancellation, budget
+  limits, scheduled ticks, and crash-safe resume from an immutable step trace. API, Slack, and Gmail
+  receivers plus learning/LIFE consumption remain unfinished.
+- **Media Hub** — currently a static product screen. Chat can create media artifacts, but the provider
+  adapters and saved local media-library path are still planned.
 - **Projects** — durable project context: a chat hierarchy plus reusable instructions and files that
   related conversations share.
 - **Skills** — reusable instruction playbooks that guide chat, file generation, research, coding,
@@ -88,6 +89,13 @@ and validated before they are attached.
 
 ## Architecture
 
+The repository has four canonical project documents:
+
+- [`ARCHITECTURE.md`](ARCHITECTURE.md) — what the executable system does today.
+- [`PLAN.md`](PLAN.md) — product direction, sequencing, and architectural decisions.
+- [`TODO.md`](TODO.md) — unfinished, actionable work only.
+- [`docs/history/DEVLOG.md`](docs/history/DEVLOG.md) — append-only history of completed work.
+
 | Layer | Technology |
 |---|---|
 | Desktop shell | Electron migration shell; PyInstaller/Qt WebEngine release path remains during transition |
@@ -101,9 +109,9 @@ and validated before they are attached.
 
 Orrery is a modular monolith with sidecars, not microservices. The backend modules run as one local
 application, while risky or heavy capabilities such as sandboxed file generation, local model runtimes,
-and provider CLIs stay isolated as local sidecar processes. Automations and agents run as durable
-background jobs through the Procrastinate worker, so a scheduled workflow or a long agent run survives
-restarts and resumes from its recorded state.
+and provider CLIs stay isolated as local sidecar processes. The worker already stores durable Workflow
+run records and runs scheduled Agents with restart-safe state; the Automation product API, schedule
+tick, and live UI are still unfinished.
 
 ## Download A Desktop Build
 
@@ -365,7 +373,7 @@ Orrery uses PostgreSQL as the main data layer. You can:
 - Use pgvector and PostgreSQL full-text search for hybrid retrieval.
 - Use retrieved context in chat while keeping untrusted document text separated from system
   instructions.
-- Build dashboards and automations directly from connected data sources.
+- Build dashboards directly from connected data sources; end-to-end Automations remain planned.
 
 ## File Generation And Sandbox
 

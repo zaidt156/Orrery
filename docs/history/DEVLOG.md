@@ -2793,3 +2793,52 @@ Verified: all 562 backend tests pass; the UI builds; the app-serving route was c
 real server for headers, MIME, and traversal.
 
 Next: Task 10 - app-intent routing polish and the heavy-scenario tests, then Checkpoint 3.
+
+## Step 149 - Connected Chat tools hardened and long history preserved (July 22, 2026)
+
+The remaining Chat, retrieval, MCP, web-search, and sandbox review work landed as one verified
+security pass. Web search now requires a visible choice for each message and resets after sending;
+common personal details and secret-looking values are masked before a search query leaves the
+computer. Web and approved MCP tools no longer depend on Docker being available, while Python and
+shell execution still require the current locked-down sandbox.
+
+MCP servers now launch as fixed argument lists without a shell, inherit only a small operating-system
+environment plus that server's own keychain values, refuse pending/disabled execution, bound their
+messages and output, and terminate timed-out process trees. The sandbox now verifies its image
+version and tightens code/input, scratch/output, file, process, memory, CPU, network, and time
+boundaries. PDF ingestion prefers that same offline boundary and adds scanned-page OCR.
+
+Long conversations now hydrate history backward until the selected model's token budget is covered,
+instead of silently losing early facts at a fixed message count. Retrieval also rejects weak vector
+matches more carefully, and the architecture map was added to version control.
+
+Verified: 616 backend tests passed, including 96 focused Chat/security tests; the production UI build
+succeeded. Commit `f6f1c2d` was pushed to `feature/plan-remaining`.
+
+## Step 150 - One architecture, one plan, one TODO, one completed-work log (July 22, 2026)
+
+Orrery's work documents had grown into several overlapping plans. Some described features that had
+already shipped, some still called working screens “not started”, and one checklist said the root
+architecture file was untracked after it had already been reviewed, committed, and pushed. That made
+the next task depend on which old file someone happened to open.
+
+The repository now has four clear sources of truth: `ARCHITECTURE.md` describes executable behavior,
+`PLAN.md` holds direction and dependency order, `TODO.md` contains unfinished actions only, and this
+DEVLOG remains the append-only completed-work history. Valid security and product gaps were reconciled
+against code before being moved. Superseded planning, migration, architecture-review, and duplicate
+task files were removed; READMEs, the documentation site, LIFE pointers, code comments, and ignore
+rules now point to the canonical files. The local Orrery development skill also points to those files
+instead of carrying a second architecture and roadmap that could drift.
+
+The audit also corrected two misleading product claims. Agent API, Slack, and Gmail receivers are now
+reported as unavailable until they actually exist, and Chat no longer promises that `/` can “run
+anything” while agent/workflow/dashboard command paths are still unfinished. A regression test locks
+the Agent catalog contract. The public feature summary now distinguishes live paths from backend-only
+or static screens and calls out the temporary dataset-URL credential limitation.
+
+Verified: 617 backend tests and 38 UI tests pass, the production UI builds, Markdown links and stale
+document references are clean, the revised documentation page renders at desktop and narrow browser
+widths, and an independent five-axis review found no Critical or Required issues.
+
+Next: execute `TODO.md` from P0 downward, beginning with the shared approval gate and fail-closed
+team/admin authorization; keep future status changes in the four canonical documents only.

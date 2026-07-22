@@ -247,7 +247,7 @@ class Workflow(Base):
 
     spec: {"nodes": [{"id","type","config",{"position"}}], "edges": [{"source","target"}]}.
     Execution runs as a durable Procrastinate job; every node's input/output lands in
-    workflow_run_steps to power the run-debug view (architecture.md §Automations)."""
+    workflow_run_steps to power the run-debug view (ARCHITECTURE.md, Automations section)."""
     __tablename__ = "workflows"
 
     id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)

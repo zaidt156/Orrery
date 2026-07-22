@@ -6,7 +6,7 @@ file, or fails quality checks, feed the failure reason back and retry (bounded) 
 files from ./out.
 
 This is the open-source "code interpreter" mechanism; no model code ever runs in the backend
-(see backend/features/sandbox.py and docs/FILE_GENERATION_ARCHITECTURE.md).
+(see backend/features/sandbox.py and ARCHITECTURE.md section 9).
 """
 
 from __future__ import annotations

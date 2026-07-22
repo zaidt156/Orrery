@@ -120,11 +120,11 @@ The implementation follows a few SOLID-style boundaries:
   duplicating role logic.
 - Dependency inversion: UI components consume backend permission state instead of hard-coding team
   policy.
-- Fail closed for team identity: a locked or revoked team client is not treated as solo mode.
+- Known locked or revoked team clients fail closed. Database/configuration outage paths still need the
+  P0 fail-closed hardening tracked in the root TODO before production team use.
 
 ## Current Follow-Ups
 
-- Add route-level feature checks to more non-chat feature APIs as each tab is hardened.
-- Consider per-user active model preferences later; the current active model catalog is workspace-wide.
-- Add automated tests for member/admin route authorization when the test harness has a clean team-mode
-  fixture.
+Unfinished access-control work is tracked only in the root [`TODO.md`](../../TODO.md). Product order
+and security checkpoints are defined in [`PLAN.md`](../../PLAN.md); this document remains the durable
+access contract rather than a second task list.

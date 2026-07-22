@@ -42,7 +42,6 @@ secrets*.json
 # Internal design/security/research docs, prompt skills, + local agent tooling — keep private
 .claude/
 docs/
-architecture_imp/
 skills/
 .codex/
 .agents/
@@ -67,13 +66,6 @@ docs/assets/*
 !docs/history/
 docs/history/*
 !docs/history/DEVLOG.md
-!docs/planning/
-docs/planning/*
-!docs/planning/TASK_ROUTING_ARCHITECTURE.md
-!docs/planning/ORRERY_PLAN.md
-!docs/planning/AGENT_COMPUTER_ARCHITECTURE.md
-!docs/planning/UI_INTERFACE_AND_COLOR_SYSTEM.md
-!docs/planning/ORRERY_LIFE_AND_AGENT_PLATFORM.md
 !docs/decisions/
 docs/decisions/*
 !docs/decisions/001-independent-interface-and-color.md

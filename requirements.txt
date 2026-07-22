@@ -5,7 +5,7 @@
 # (security.md §8 — pinned, reproducible builds). Install from the lock file
 # once it exists; use this file to add/upgrade a dependency.
 
-# Desktop window (pure Python; Tauri comes later per roadmap.md Phase 8)
+# Desktop window (pure Python fallback; packaging direction is tracked in PLAN.md)
 pywebview>=5.3
 PySide6>=6.10; sys_platform == "win32" or sys_platform == "darwin"
 qtpy>=2.4; sys_platform == "win32"

@@ -1,6 +1,9 @@
 # Orrery architecture — as implemented
 
-This document describes the code that exists in this repository on **16 July 2026**. It is not a product roadmap. When a planning document or a UI mock disagrees with executable code, the code wins here.
+This document describes the code that exists in this repository on **22 July 2026**. It is the
+single source of truth for implemented architecture, not a product roadmap. Future work belongs in
+[`PLAN.md`](PLAN.md) and [`TODO.md`](TODO.md). When a plan or UI mock disagrees with executable code,
+the code wins here.
 
 The diagrams are intentionally split by responsibility. Each one answers one question instead of connecting every feature to every other feature.
 
@@ -31,7 +34,7 @@ flowchart LR
 
     api --> models["Local or cloud model routes"]
     api --> sources["User databases + import sources"]
-    api --> docker["Docker sandbox<br/>generated code only"]
+    api --> docker["Docker sandbox<br/>generated code + PDF extraction/OCR"]
 
     classDef core fill:#e8f0fe,stroke:#4f6f9f,color:#172033;
     classDef store fill:#edf7ed,stroke:#5f8a65,color:#172033;
@@ -143,7 +146,7 @@ flowchart TB
 | Projects | Live | CRUD, instructions, project files, and project-scoped chat context. |
 | Data | Live | External connections, table browsing, imported datasets, and document collections. |
 | Ontology | Live | Collection CRUD, ingestion, and connected standing knowledge. |
-| Skills and MCP | Live | Skill CRUD/generation and stdio MCP configuration, discovery, and tool calls. |
+| Skills and MCP | Live | Skill CRUD/generation and approved stdio MCP configuration, discovery, and tool calls. HTTP transport is not implemented. |
 | Dashboards | Live | AI-authored specs, read-only execution, layout saves, revisions, rollback, and data models. |
 | Agents | Live | Versioned definitions, manual/scheduled runs, trace, budgets, cancellation, and approvals. |
 | Local Models | Live | Ollama detection, install/start on Windows, pull, activate, and remove. |
@@ -186,7 +189,8 @@ Important boundaries:
 
 - Chat does **not** have a direct route for starting an agent or running a workflow.
 - Chat does **not** create dashboards. When the model-guided capability flag is enabled, it can query data or refresh an existing dashboard.
-- `/research` is an explicit command, not an automatic mode.
+- `/research` is an explicit command, not an automatic mode. Web access within it still requires the
+  workspace feature and explicit Web consent for that message; without consent it is document-only.
 - A client disconnect does not cancel generation: the in-process run continues and persists the answer. The user must press Stop to cancel it.
 - Only detached chat runs currently create rows in the Task Brain ledger, despite the broader wording in that module's docstring.
 
@@ -289,7 +293,7 @@ Registered tools:
 
 | Tool | Purpose | Main enforcement |
 |---|---|---|
-| `web_search` | Current web lookup | Turn allow-list; network risk label. |
+| `web_search` | Current web lookup | Workspace gate, explicit per-turn consent, query screening, turn allow-list. |
 | `doc_search` | Search a collection | Collection resource constraint for agents. |
 | `db_query` | One read-only query | SQL parse gate plus database-enforced read-only path. |
 | `run_python` | Python in Docker | Offline hardened container and output caps. |
@@ -297,13 +301,16 @@ Registered tools:
 | `file_generate` | Produce validated files | Sandbox, format validators, and artifact storage. |
 | `crabbox_run` | Optional external executor | Off by default; destructive risk. |
 | `dashboard_refresh` | Run an existing dashboard | Dashboard resource constraint for agents. |
-| `mcp_call` | Call a stdio MCP tool | Chat advertises only enabled/approved servers; agent grants can constrain the server ID. |
+| `mcp_call` | Call a stdio MCP tool | Chat advertises only enabled/approved servers; server-specific secrets and a minimal child environment; agent grants can constrain the server ID. |
 
 Current Chat gating matters:
 
 - Web search and approved MCP calls can be offered without the model-guided capability flag.
 - File, data, document, dashboard, and Crabbox tools are added only when `capability_agent` is enabled; it defaults to off.
-- The general tool loop currently runs only when the Docker sandbox is ready **and** Chat code execution is enabled. Otherwise Chat falls back to a plain model response, so web and MCP tools are not reached through this loop either.
+- Web and approved MCP tools can enter the model/tool loop without Docker. Python and shell tools are
+  advertised only when the current versioned sandbox image is ready and Chat code execution is
+  enabled. The loop itself is provider-agnostic, so this rule is the same for API, CLI-plan, and local
+  models.
 
 Code anchors: `backend/features/code_interpreter.py`, `backend/features/capabilities.py`, `backend/tools/registry.py`, `backend/tools/builtin.py`, `backend/features/chat/router.py`.
 
@@ -328,7 +335,10 @@ flowchart TD
     store --> chat["Persist artifact metadata with chat message"]
 ```
 
-The Docker execution boundary uses no network, a read-only root filesystem, a non-root user, dropped Linux capabilities, no privilege escalation, CPU/memory/PID limits, a wall-clock timeout, and a bounded `/work/out` handoff.
+The Docker execution boundary uses no network, a read-only root filesystem, separate read-only
+code/input mounts, a non-root user, dropped Linux capabilities, no privilege escalation,
+CPU/memory/PID/open-file/time limits, and bounded scratch/output handoffs. Orrery refuses a stale
+image version rather than silently running without current controls.
 
 Small apps receive extra controls:
 
@@ -393,7 +403,7 @@ Large document uploads are spooled to disk and queued. Retrieval combines vector
 flowchart LR
     upload["Text · PDF · DOCX · XLSX · PPTX"] --> spool["Spool payload under user data"]
     spool --> queue["Procrastinate ingest job"]
-    queue --> extract["Extract text and split overlapping chunks"]
+    queue --> extract["Extract text and split overlapping chunks<br/>PDF prefers sandboxed extraction/OCR"]
     extract --> embed["FastEmbed on device<br/>384 dimensions"]
     embed --> chunks[("Chunk text + source + pgvector")]
 ```
@@ -411,7 +421,11 @@ flowchart LR
     top --> untrusted["UNTRUSTED REFERENCE CONTEXT"]
 ```
 
-Each collection records its embedding model so older and newer collections can be searched in the correct vector space. Re-uploading the same source replaces its chunks transactionally.
+Each collection records its embedding model so older and newer collections can be searched in the
+correct vector space. Re-uploading the same source replaces its chunks transactionally. PDFs prefer
+the versioned offline sandbox and run OCR only on pages without usable embedded text. Office
+ingestion and Office/PDF preview still use host-side parsers/renderers in some paths; moving all
+untrusted document work behind the bounded worker remains planned work.
 
 Code anchors: `backend/features/rag.py`, `backend/features/chat/retrieval.py`, `backend/core/models.py`, `backend/core/queue.py`.
 
@@ -609,6 +623,21 @@ Other implemented controls include:
 - Untrusted-context labeling for retrieved documents and tool output.
 - Read-only query enforcement and row/time caps for connected data.
 - Hardened offline Docker execution for model-written code.
+- Approved MCP processes launch without a shell, inherit only a small runtime environment plus their
+  own keychain secrets, bound messages/output, and have timed-out process groups terminated.
+- Chat web search is disabled by default per message; its bounded query is screened for common PII
+  and secrets before the third-party search call.
+
+Known security gaps are kept explicit rather than hidden in separate review documents:
+
+- Agent runs suspend risky actions for approval, but ordinary Chat tool execution does not yet have a
+  shared approval pause below the model. Risk metadata alone is not enforcement.
+- Team/admin helpers still contain broad error fallbacks that can treat database/config failures as
+  solo mode or enabled defaults. These paths must fail closed before production team/agent use.
+- Some outbound import/Automation HTTP paths validate only the initial URL, follow redirects, or
+  buffer before enforcing size. Redirect-by-redirect SSRF validation and streaming caps remain open.
+- Dataset API source URLs can still carry credentials in persisted/returned text. Secret extraction
+  and canonical redacted URLs remain open.
 
 Code anchors: `backend/api/__init__.py`, `backend/security`, `backend/features/team.py`, `backend/features/prompting.py`, `backend/features/sandbox.py`, `ui/src/lib/officePreview.js`.
 
@@ -629,5 +658,8 @@ flowchart LR
 ```
 
 In plain English: Orrery already has a substantial local-first core. Chat, retrieval, data, dashboards, file generation, model routing, team controls, MCP, and bounded agents are implemented. The largest architectural mismatch is not inside those systems; it is at the product edge, where Automations and Media look connected in the UI but are not yet wired end to end.
+
+The ordered remediation and product roadmap are maintained only in [`PLAN.md`](PLAN.md); the current
+unchecked work is maintained only in [`TODO.md`](TODO.md).
 
 That distinction should remain visible in future diagrams so the architecture describes the software people can actually run—not the software the mockups imply.

@@ -1,4 +1,4 @@
-"""Dashboards: the AI is the designer, not the renderer (plan §3, architecture.md).
+"""Dashboards: the AI is the designer, not the renderer (PLAN.md and ARCHITECTURE.md).
 
 The user describes a dashboard in plain words, picks the model that builds it, and selects one or
 more data connections. The model reads each connection's schema and returns a widget spec — per
