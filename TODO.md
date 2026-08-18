@@ -30,10 +30,11 @@ do not keep a second checklist of completed tasks here.
 
 ## P1 — complete visible product gaps
 
-- [ ] Connect the Automations UI to the Workflow API that now exists: replace its hard-coded node
-      list with `GET /api/workflow-nodes`, save specs through `PATCH /api/workflows/{id}`, and show
-      the durable per-node input/output/error from `GET /api/workflows/{id}/runs/{run_id}`. Surface
-      tool-approval requests from gated nodes (headless runs currently fail them safely).
+- [ ] Build canvas editing for Automations: the screen now reads real workflows, the registered node
+      catalog, and durable run steps, but a spec can only be changed through the API — there is no
+      way to add, connect, configure, or position a node in the UI.
+- [ ] Surface tool-approval requests from gated Automation nodes (headless runs currently fail them
+      safely) so a user can decide.
 - [ ] Add a small management view for the remembered "always allow" tool approvals so grants can be
       reviewed and revoked without re-approving.
 - [ ] Add an Automation schedule tick and support only trigger types the runtime actually implements.

@@ -513,3 +513,16 @@ export const resumeGeneration = (cid, onEvent, signal) =>
 
 // explicitly cancel backend generation (the Stop button — navigating away does NOT cancel)
 export const stopGeneration = (cid) => apiSend(`/api/conversations/${cid}/stop`, "POST").catch(() => {});
+
+// --- Automations (workflows) ---------------------------------------------------------------
+// The node catalog comes from the backend registry, so adding a node class server-side puts it in
+// the palette with no matching list to maintain here.
+export const getWorkflowNodes = () => apiGet("/api/workflow-nodes");
+export const getWorkflows = () => apiGet("/api/workflows");
+export const createWorkflow = (name) => apiSend("/api/workflows", "POST", { name });
+export const getWorkflow = (wid) => apiGet(`/api/workflows/${wid}`);
+export const updateWorkflow = (wid, patch) => apiSend(`/api/workflows/${wid}`, "PATCH", patch);
+export const deleteWorkflow = (wid) => apiSend(`/api/workflows/${wid}`, "DELETE");
+export const runWorkflow = (wid) => apiSend(`/api/workflows/${wid}/runs`, "POST", {});
+export const getWorkflowRuns = (wid) => apiGet(`/api/workflows/${wid}/runs`);
+export const getWorkflowRun = (wid, runId) => apiGet(`/api/workflows/${wid}/runs/${runId}`);

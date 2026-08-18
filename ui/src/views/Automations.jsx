@@ -1,80 +1,106 @@
-import { useState, useRef, useLayoutEffect, useCallback } from "react";
+import { useState, useRef, useLayoutEffect, useCallback, useEffect } from "react";
 
-const SIDE = [
-  { name: "Morning sales digest", pip: ["live", "ACTIVE"], meta: ["cron · weekdays 9:00", "last run 9:00 ✓ · 98% ok"] },
-  { name: "Ticket triage", pip: ["live", "ACTIVE"], meta: ["on new row · tickets", "live trigger · 124 runs"] },
-  { name: "Doc reply drafts", pip: ["paused", "PAUSED"], meta: ["webhook · /hooks/drafts"] },
-];
+import {
+  createWorkflow, deleteWorkflow, getWorkflow, getWorkflowNodes, getWorkflowRun,
+  getWorkflowRuns, getWorkflows, runWorkflow, updateWorkflow,
+} from "../lib/api.js";
 
-const PALETTE = [
-  ["var(--ice)", "Schedule"], ["var(--ice)", "On new row"],
-  ["var(--amber)", "LLM prompt"], ["var(--amber)", "Search docs"],
-  ["#7FD4C0", "DB query"], ["#7FD4C0", "HTTP request"],
-  ["#C49DF0", "If / branch"], ["#C49DF0", "Python snippet"],
-];
+// This screen used to be a mockup: a fixed list of workflows, a fixed node palette, and invented
+// run history. Everything below now comes from the Workflow API, so what you see is what the
+// database and the node registry actually contain.
 
-const NODES = [
-  { id: "n1", kind: "k-trigger", k: "Trigger", title: "Every weekday", sub: "cron 0 9 * * 1-5", left: 170, top: 118, ports: ["out"] },
-  { id: "n2", kind: "k-data", k: "Data", title: "Query orders", sub: "SELECT … WHERE created_at…", left: 392, top: 118, ports: ["in", "out"] },
-  { id: "n3", kind: "k-ai", k: "AI", title: "Write the digest", sub: "claude-sonnet-4-6 · {{n2.rows}}", left: 614, top: 110, ports: ["in", "out"] },
-  { id: "n4", kind: "k-logic", k: "Logic", title: "Any decline?", sub: "if growth < 0 → flag", left: 836, top: 118, ports: ["in", "out"] },
-  { id: "n5", kind: "k-data", k: "Data", title: "Post to Slack", sub: "POST hooks.slack.com/…", left: 836, top: 268, ports: ["in"] },
-  { id: "n6", kind: "k-data", k: "Data", title: "Save digest", sub: "INSERT INTO digests", left: 614, top: 268, ports: ["in"] },
-];
-
-const EDGES = [["n1", "n2"], ["n2", "n3"], ["n3", "n4"], ["n4", "n5"], ["n3", "n6"]];
-
-const CFG = {
-  n1: { kind: "k-trigger", k: "Trigger", title: "Every weekday", fields: [
-    { l: "Schedule (cron)", t: "input", v: "0 9 * * 1-5" },
-    { l: "Timezone", t: "input", v: "Asia/Kolkata" },
-    { l: "Powered by", t: "note", v: "Built-in scheduler — stored in your database" }] },
-  n2: { kind: "k-data", k: "Data", title: "Query orders", fields: [
-    { l: "Connection", t: "input", v: "main" },
-    { l: "SQL", t: "area", v: "SELECT product, SUM(total)\nFROM orders\nWHERE created_at >= now() - interval '1 day'\nGROUP BY product;" },
-    { l: "On failure", t: "input", v: "Retry ×3, exponential backoff" }] },
-  n3: { kind: "k-ai", k: "AI", title: "Write the digest", fields: [
-    { l: "Model", t: "input", v: "claude-sonnet-4-6  (via litellm)" },
-    { l: "Prompt", t: "area", v: "Summarize yesterday’s sales for the team.\nHighlight movers and one risk.\n\nData: {{n2.rows}}" },
-    { l: "Insert a variable", t: "vars", v: ["{{n2.rows}}", "{{n1.fired_at}}", "{{run.id}}"] },
-    { l: "On failure", t: "input", v: "Retry ×3, exponential backoff" }] },
-  n4: { kind: "k-logic", k: "Logic", title: "Any decline?", fields: [
-    { l: "Condition", t: "input", v: "{{n3.growth_min}} < 0" },
-    { l: "If true", t: "note", v: "continue to flag · if false, skip" }] },
-  n5: { kind: "k-data", k: "Data", title: "Post to Slack", fields: [
-    { l: "Method · URL", t: "input", v: "POST hooks.slack.com/T0…/B8…" },
-    { l: "Body", t: "area", v: '{ "text": "{{n3.text}}" }' },
-    { l: "On failure", t: "input", v: "Retry ×3, exponential backoff" }] },
-  n6: { kind: "k-data", k: "Data", title: "Save digest", fields: [
-    { l: "Connection · table", t: "input", v: "main · digests" },
-    { l: "Insert", t: "area", v: '{ "body": "{{n3.text}}",\n  "run_id": "{{run.id}}" }' }] },
+// Node categories are a backend concept (registry.py: ai | data | code | net | logic | tools).
+// The colours and the `k-*` classes are this screen's presentation of them.
+const CATEGORY_STYLE = {
+  ai: { color: "var(--amber)", cls: "k-ai", label: "AI" },
+  data: { color: "#7FD4C0", cls: "k-data", label: "Data" },
+  code: { color: "#C49DF0", cls: "k-logic", label: "Code" },
+  net: { color: "#7FD4C0", cls: "k-data", label: "Net" },
+  logic: { color: "#C49DF0", cls: "k-logic", label: "Logic" },
+  tools: { color: "var(--ice)", cls: "k-trigger", label: "Tools" },
 };
 
-const RUNS = [
-  { id: "s1", ok: true, when: "Today 9:00 — completed", time: "4.2s", steps: [
-    ["Every weekday", "fired on schedule · 0.0s"],
-    ["Query orders", "312 rows · 0.4s"],
-    ["Write the digest", "486 tokens · 2.9s"],
-    ["Any decline?", "false → skip flag · 0.0s"],
-    ["Post to Slack · Save digest", "200 OK · inserted 1 row · 0.9s"],
-  ] },
-  { id: "s2", ok: false, when: "Jun 11, 9:00 — failed, then recovered", time: "31.8s", steps: [
-    ["Post to Slack", "HTTP 500 — retried ×3 with backoff, succeeded on attempt 4", true],
-  ] },
-  { id: "s3", ok: true, when: "Jun 10, 9:00 — completed", time: "3.9s", steps: [
-    ["All 6 nodes", "completed without retries"],
-  ] },
-];
+const styleFor = (category) => CATEGORY_STYLE[category] || CATEGORY_STYLE.logic;
+
+// A saved spec does not have to carry positions, so lay out anything without one on a grid.
+// Editing positions belongs to the dedicated editing workspace, which does not exist yet.
+const COL = 222;
+const ROW = 150;
+const layout = (nodes) => nodes.map((n, i) => ({
+  ...n,
+  left: (n.position?.left ?? 170) + (n.position ? 0 : (i % 4) * COL),
+  top: (n.position?.top ?? 118) + (n.position ? 0 : Math.floor(i / 4) * ROW),
+}));
+
+function relative(iso) {
+  if (!iso) return "";
+  const then = Date.parse(iso);
+  if (Number.isNaN(then)) return "";
+  const secs = Math.max(0, (Date.now() - then) / 1000);
+  if (secs < 60) return "just now";
+  if (secs < 3600) return `${Math.floor(secs / 60)}m ago`;
+  if (secs < 86400) return `${Math.floor(secs / 3600)}h ago`;
+  return new Date(then).toLocaleDateString();
+}
+
+function duration(run) {
+  if (!run.started_at || !run.finished_at) return "";
+  const ms = Date.parse(run.finished_at) - Date.parse(run.started_at);
+  return Number.isNaN(ms) ? "" : `${(ms / 1000).toFixed(1)}s`;
+}
 
 export default function Automations() {
-  const [selected, setSelected] = useState("n3");
-  const [open, setOpen] = useState({});
+  const [catalog, setCatalog] = useState([]);
+  const [workflows, setWorkflows] = useState(null);
+  const [activeId, setActiveId] = useState(null);
+  const [detail, setDetail] = useState(null);
+  const [runs, setRuns] = useState([]);
+  const [openRun, setOpenRun] = useState({});
+  const [runSteps, setRunSteps] = useState({});
+  const [selected, setSelected] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
   const [paths, setPaths] = useState([]);
   const canvasRef = useRef(null);
   const nodeRefs = useRef({});
 
+  const loadWorkflows = useCallback(async (preferId) => {
+    const body = await getWorkflows().catch(() => ({ workflows: [] }));
+    const list = body.workflows || [];
+    setWorkflows(list);
+    setActiveId((current) => preferId || current || list[0]?.id || null);
+    return list;
+  }, []);
+
+  useEffect(() => {
+    getWorkflowNodes().then((b) => setCatalog(b.nodes || [])).catch(() => setCatalog([]));
+    loadWorkflows();
+  }, [loadWorkflows]);
+
+  // Everything below the sidebar depends on which workflow is selected.
+  useEffect(() => {
+    if (!activeId) { setDetail(null); setRuns([]); return undefined; }
+    let live = true;
+    setOpenRun({});
+    setRunSteps({});
+    Promise.all([
+      getWorkflow(activeId).catch(() => null),
+      getWorkflowRuns(activeId).catch(() => ({ runs: [] })),
+    ]).then(([wf, runBody]) => {
+      if (!live) return;
+      setDetail(wf);
+      setRuns(runBody.runs || []);
+      setSelected((wf?.spec?.nodes || [])[0]?.id || null);
+    });
+    return () => { live = false; };
+  }, [activeId]);
+
+  const nodes = layout(detail?.spec?.nodes || []);
+  const edges = (detail?.spec?.edges || []).map((e) => [e.source, e.target]);
+
   const drawEdges = useCallback(() => {
-    const next = EDGES.map(([a, b]) => {
+    setPaths(edges.map(([a, b]) => {
       const ea = nodeRefs.current[a];
       const eb = nodeRefs.current[b];
       if (!ea || !eb) return "";
@@ -84,9 +110,9 @@ export default function Automations() {
       const y2 = eb.offsetTop + eb.offsetHeight / 2;
       const dx = Math.max(36, (x2 - x1) / 2);
       return `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`;
-    });
-    setPaths(next);
-  }, []);
+    }));
+    // edges are derived from the spec, so this must re-run whenever the spec does
+  }, [JSON.stringify(edges)]);
 
   useLayoutEffect(() => {
     drawEdges();
@@ -98,17 +124,82 @@ export default function Automations() {
     };
   }, [drawEdges]);
 
-  const c = CFG[selected];
+  const act = async (fn) => {
+    setBusy(true);
+    setError("");
+    try {
+      await fn();
+    } catch (e) {
+      setError(e?.message || "That did not work.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onNew = () => act(async () => {
+    const created = await createWorkflow("New workflow");
+    await loadWorkflows(created.id);
+  });
+
+  const onRun = () => act(async () => {
+    await runWorkflow(activeId);
+    setRuns((await getWorkflowRuns(activeId)).runs || []);
+  });
+
+  const onTogglePause = () => act(async () => {
+    const updated = await updateWorkflow(activeId, { enabled: !detail.enabled });
+    setDetail(updated);
+    await loadWorkflows(activeId);
+  });
+
+  const onDelete = () => act(async () => {
+    await deleteWorkflow(activeId);
+    const list = await loadWorkflows(null);
+    setActiveId(list.filter((w) => w.id !== activeId)[0]?.id || null);
+  });
+
+  const toggleRun = (rid) => {
+    setOpenRun((o) => ({ ...o, [rid]: !o[rid] }));
+    if (runSteps[rid] || !activeId) return;
+    getWorkflowRun(activeId, rid)
+      .then((d) => setRunSteps((s) => ({ ...s, [rid]: d.steps || [] })))
+      .catch(() => setRunSteps((s) => ({ ...s, [rid]: [] })));
+  };
+
+  const selectedNode = nodes.find((n) => n.id === selected) || null;
+  const selectedSpec = catalog.find((c) => c.key === selectedNode?.type) || null;
+  const selectedStyle = styleFor(selectedSpec?.category);
 
   return (
     <section className="view">
       <aside className="auto-side">
-        <button className="btn primary">+ New workflow</button>
+        <button className="btn primary" onClick={onNew} disabled={busy}>+ New workflow</button>
         <div className="convo-list">
-          {SIDE.map((w, i) => (
-            <div key={w.name} className={`wf${i === 0 ? " active" : ""}`} tabIndex={0}>
-              <div className="w-name">{w.name} <span className={`status-pip ${w.pip[0]}`}>{w.pip[1]}</span></div>
-              <div className="w-meta">{w.meta[0]}{w.meta[1] && <><br />{w.meta[1]}</>}</div>
+          {workflows === null && <div className="w-meta" style={{ padding: "8px 2px" }}>Loading…</div>}
+          {workflows?.length === 0 && (
+            <div className="w-meta" style={{ padding: "8px 2px" }}>
+              No workflows yet. Create one to get started.
+            </div>
+          )}
+          {(workflows || []).map((w) => (
+            <div
+              key={w.id}
+              className={`wf${w.id === activeId ? " active" : ""}`}
+              tabIndex={0}
+              onClick={() => setActiveId(w.id)}
+              onKeyDown={(e) => e.key === "Enter" && setActiveId(w.id)}
+            >
+              <div className="w-name">
+                {w.name}
+                <span className={`status-pip ${w.enabled ? "live" : "paused"}`}>
+                  {w.enabled ? "ACTIVE" : "PAUSED"}
+                </span>
+              </div>
+              <div className="w-meta">
+                {w.schedule ? `cron · ${w.schedule}` : "manual runs only"}
+                <br />
+                {`${(w.spec?.nodes || []).length} nodes · updated ${relative(w.updated_at)}`}
+              </div>
             </div>
           ))}
         </div>
@@ -116,14 +207,27 @@ export default function Automations() {
 
       <div className="auto-main">
         <div className="auto-toolbar">
-          <span className="view-title">Morning sales digest</span>
-          <span className="pill"><span className="sdot badge-on" style={{ background: "var(--green)", width: "6px", height: "6px" }} />Active</span>
+          <span className="view-title">{detail?.name || "Automations"}</span>
+          {detail && (
+            <span className="pill">
+              <span
+                className="sdot badge-on"
+                style={{ background: detail.enabled ? "var(--green)" : "var(--muted)", width: "6px", height: "6px" }}
+              />
+              {detail.enabled ? "Active" : "Paused"}
+            </span>
+          )}
           <div className="grow" />
-          <button className="btn primary">▶ Run now</button>
-          <button className="btn">Pause</button>
-          <button className="btn ghost">Export JSON</button>
-          <button className="btn ghost" aria-label="More">⋯</button>
+          <button className="btn primary" onClick={onRun} disabled={!detail || busy || !detail.enabled}>
+            ▶ Run now
+          </button>
+          <button className="btn" onClick={onTogglePause} disabled={!detail || busy}>
+            {detail?.enabled ? "Pause" : "Resume"}
+          </button>
+          <button className="btn ghost" onClick={onDelete} disabled={!detail || busy}>Delete</button>
         </div>
+
+        {error && <div className="w-meta" style={{ color: "var(--red)", padding: "0 2px 6px" }}>{error}</div>}
 
         <div className="canvas-zone">
           <div className="canvas" ref={canvasRef}>
@@ -132,67 +236,127 @@ export default function Automations() {
             </svg>
 
             <div className="palette">
-              <div className="p-label">Add a node</div>
-              {PALETTE.map(([color, label]) => (
-                <div className="p-item" key={label}><i style={{ background: color }} />{label}</div>
+              <div className="p-label">Registered nodes</div>
+              {catalog.map((n) => (
+                <div className="p-item" key={n.key} title={n.key}>
+                  <i style={{ background: styleFor(n.category).color }} />{n.label}
+                </div>
               ))}
+              {catalog.length === 0 && <div className="p-item">Loading…</div>}
             </div>
 
-            {NODES.map((n) => (
-              <div
-                key={n.id}
-                ref={(el) => (nodeRefs.current[n.id] = el)}
-                className={`node${selected === n.id ? " selected" : ""}`}
-                style={{ left: `${n.left}px`, top: `${n.top}px` }}
-                tabIndex={0}
-                onClick={() => setSelected(n.id)}
-              >
-                <div className={`n-kind ${n.kind}`}><span className="k-star" />{n.k}</div>
-                <div className="n-title">{n.title}</div>
-                <div className="n-sub">{n.sub}</div>
-                {n.ports.includes("in") && <span className="port in" />}
-                {n.ports.includes("out") && <span className="port out" />}
+            {nodes.map((n) => {
+              const spec = catalog.find((c) => c.key === n.type);
+              const s = styleFor(spec?.category);
+              const hasIn = edges.some(([, t]) => t === n.id);
+              const hasOut = edges.some(([f]) => f === n.id);
+              return (
+                <div
+                  key={n.id}
+                  ref={(el) => (nodeRefs.current[n.id] = el)}
+                  className={`node${selected === n.id ? " selected" : ""}`}
+                  style={{ left: `${n.left}px`, top: `${n.top}px` }}
+                  tabIndex={0}
+                  onClick={() => setSelected(n.id)}
+                  onKeyDown={(e) => e.key === "Enter" && setSelected(n.id)}
+                >
+                  <div className={`n-kind ${s.cls}`}><span className="k-star" />{s.label}</div>
+                  <div className="n-title">{spec?.label || n.type}</div>
+                  <div className="n-sub">{n.id}</div>
+                  {hasIn && <span className="port in" />}
+                  {hasOut && <span className="port out" />}
+                </div>
+              );
+            })}
+
+            {detail && nodes.length === 0 && (
+              <div className="w-meta" style={{ position: "absolute", left: 170, top: 118, maxWidth: 320 }}>
+                This workflow has no nodes yet. Editing the canvas is not built — a spec saved
+                through the API appears here.
               </div>
-            ))}
+            )}
           </div>
 
           <aside className="config">
-            <div className="cfg-head">
-              <div className={`n-kind ${c.kind}`}><span className="k-star" />{c.k} node</div>
-              <div className="cfg-title">{c.title}</div>
-            </div>
-            {c.fields.map((f, i) => (
-              <div className="field" key={i}>
-                <label>{f.l}</label>
-                {f.t === "input" && <div className="input mono" style={{ fontSize: "11px" }}>{f.v}</div>}
-                {f.t === "area" && <textarea rows={5} readOnly value={f.v} />}
-                {f.t === "note" && <div style={{ fontSize: "11.5px", color: "var(--muted)", lineHeight: 1.55 }}>{f.v}</div>}
-                {f.t === "vars" && <div className="var-chips">{f.v.map((x) => <span className="var-chip" key={x}>{x}</span>)}</div>}
+            {selectedNode ? (
+              <>
+                <div className="cfg-head">
+                  <div className={`n-kind ${selectedStyle.cls}`}>
+                    <span className="k-star" />{selectedStyle.label} node
+                  </div>
+                  <div className="cfg-title">{selectedSpec?.label || selectedNode.type}</div>
+                </div>
+                <div className="field">
+                  <label>Node id</label>
+                  <div className="input mono" style={{ fontSize: "11px" }}>{selectedNode.id}</div>
+                </div>
+                <div className="field">
+                  <label>Type</label>
+                  <div className="input mono" style={{ fontSize: "11px" }}>{selectedNode.type}</div>
+                </div>
+                <div className="field">
+                  <label>Saved configuration</label>
+                  <textarea rows={8} readOnly value={JSON.stringify(selectedNode.config || {}, null, 2)} />
+                </div>
+                <div className="field">
+                  <label>Accepted settings</label>
+                  <div className="var-chips">
+                    {Object.keys(selectedSpec?.schema?.properties || {}).map((k) => (
+                      <span className="var-chip" key={k}>{k}</span>
+                    ))}
+                    {!Object.keys(selectedSpec?.schema?.properties || {}).length && (
+                      <span className="var-chip">no settings</span>
+                    )}
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className="w-meta" style={{ padding: "6px 2px" }}>
+                {detail ? "Select a node to inspect it." : "Select a workflow."}
               </div>
-            ))}
-            <button className="btn" style={{ marginTop: "2px" }}>Test this node</button>
+            )}
           </aside>
         </div>
 
         <div className="runs">
-          <div className="runs-head">Run history <span style={{ color: "var(--line)" }}>·</span> stored in your database — runs survive app restarts</div>
-          {RUNS.map((r) => (
-            <div key={r.id}>
-              <div className="run-row" onClick={() => setOpen((o) => ({ ...o, [r.id]: !o[r.id] }))}>
-                <span className={r.ok ? "run-ok" : "run-fail"}>{r.ok ? "✓" : "✕"}</span>
-                <span className="r-when">{r.when}</span>
-                <span className="r-time">{r.time}</span>
-              </div>
-              <div className={`run-steps${open[r.id] ? " open" : ""}`}>
-                {r.steps.map((s, i) => (
-                  <div className="step" key={i}>
-                    <b>{s[0]}</b>
-                    {s[2] ? <span className="fail-note">{s[1]}</span> : <span>{s[1]}</span>}
-                  </div>
-                ))}
-              </div>
+          <div className="runs-head">
+            Run history <span style={{ color: "var(--line)" }}>·</span> stored in your database — runs survive app restarts
+          </div>
+          {runs.length === 0 && (
+            <div className="w-meta" style={{ padding: "8px 2px" }}>
+              {detail ? "No runs yet." : "Select a workflow to see its runs."}
             </div>
-          ))}
+          )}
+          {runs.map((r) => {
+            const ok = r.status === "done";
+            return (
+              <div key={r.id}>
+                <div className="run-row" onClick={() => toggleRun(r.id)}>
+                  <span className={ok ? "run-ok" : "run-fail"}>{ok ? "✓" : "✕"}</span>
+                  <span className="r-when">
+                    {relative(r.started_at || r.finished_at)} — {r.status}
+                    {r.trigger ? ` · ${r.trigger}` : ""}
+                  </span>
+                  <span className="r-time">{duration(r)}</span>
+                </div>
+                <div className={`run-steps${openRun[r.id] ? " open" : ""}`}>
+                  {r.error && <div className="step"><b>Run error</b><span className="fail-note">{r.error}</span></div>}
+                  {(runSteps[r.id] || []).map((s, i) => (
+                    <div className="step" key={i}>
+                      <b>{s.node_id}{s.node_type ? ` · ${s.node_type}` : ""}</b>
+                      {s.error
+                        ? <span className="fail-note">{s.error}</span>
+                        : <span>{s.status}{s.output ? ` · ${String(s.output).slice(0, 160)}` : ""}</span>}
+                    </div>
+                  ))}
+                  {openRun[r.id] && !runSteps[r.id] && <div className="step"><b>Loading…</b></div>}
+                  {openRun[r.id] && runSteps[r.id]?.length === 0 && !r.error && (
+                    <div className="step"><b>No steps recorded</b><span>this run finished without executing a node</span></div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
     </section>

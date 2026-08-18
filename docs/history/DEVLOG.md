@@ -3318,3 +3318,33 @@ validation refusals, junk ids on every route that takes one, and that a real run
 steps. `ruff check .` is clean.
 
 Next: the Automations screen itself - the TODO entry now names the exact endpoints it needs.
+
+## Step 167 - The Automations screen shows the database instead of a mockup (August 18, 2026)
+
+Automations was a design mockup wearing the app's styling: a fixed list of three invented workflows,
+an eight-item node palette written by hand, a canvas of six fake nodes posting to an imaginary Slack
+webhook, and three fabricated run histories. None of it touched the engine that has been able to
+execute workflows for months. With the API from Step 166 in place, the screen now renders what
+actually exists.
+
+The sidebar lists real workflows with their real enabled state, node count, and last-updated time,
+and creating one writes a row. The palette is `GET /api/workflow-nodes`, so it lists the eleven
+registered node types across all six categories the registry defines - add a node class to
+`backend/automation/nodes.py` and it appears here with no second list to update. The canvas draws
+the selected workflow's saved spec, with edges derived from the spec rather than a hard-coded list,
+and the inspector shows a node's real saved configuration beside the setting names its JSON schema
+accepts. Run history is real runs with real statuses and durations; expanding one fetches that run's
+durable steps and shows each node's status, output, and error.
+
+The visual design is untouched - same markup, same classes - because the point of this step was to
+stop the screen lying about what it contains, not to redesign it.
+
+It is honest about what it still cannot do. There is no canvas editing: a workflow with no nodes
+says so and explains that a spec saved through the API will appear, rather than implying a drag
+target that does not exist. Node positions come from the spec when present and fall back to a grid
+when absent. "Run now" is disabled on a paused workflow because the API refuses that anyway, so the
+button reflects the rule rather than discovering it in an error.
+
+Verified: 752 backend tests and 38 UI tests pass, `ruff check .` is clean, the bundle builds, and an
+end-to-end pass through the API - create, save a two-node spec with an edge, run it, read the run -
+returned exactly the shapes this screen reads, with both nodes recorded as done.
