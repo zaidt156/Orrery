@@ -1,5 +1,14 @@
 import { useEffect, useRef, useState } from "react";
-import * as echarts from "echarts";
+// Modular echarts: the full bundle is ~1.1MB of chunk for three chart types. Only what the
+// options below can actually produce is registered. `chartOption` maps every widget onto pie,
+// line, or bar and nothing else - if a new widget type is added there, register its chart here
+// too, or it will render an empty canvas rather than fail loudly.
+import * as echarts from "echarts/core";
+import { BarChart, LineChart, PieChart } from "echarts/charts";
+import { GridComponent, TooltipComponent } from "echarts/components";
+import { CanvasRenderer } from "echarts/renderers";
+
+echarts.use([BarChart, LineChart, PieChart, GridComponent, TooltipComponent, CanvasRenderer]);
 import { Code2, Database, LayoutDashboard, Layers, Plus, RefreshCw, Search, Trash2, Undo2, WandSparkles } from "lucide-react";
 import {
   addDataConnection, createDashboard, createDashboardStream, createDataModel, createDatasetFromApi, createDatasetFromFile, createDatasetFromMongo,

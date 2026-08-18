@@ -3233,3 +3233,31 @@ agree again, and the README documents the `db` marker alongside them.
 
 Verified: 744 backend tests pass, `ruff check .` is clean, the production UI builds, and every
 relative link in the README resolves.
+
+## Step 164 - The frontend stopped making you wait for it (August 18, 2026)
+
+With the backend answering in about four milliseconds, the remaining delay when switching tabs was
+entirely on the client, and it was two things.
+
+Every view is its own lazily-loaded chunk, which is right for the first paint but meant each tab's
+first visit paid a network round trip plus a parse. The chunks are now warmed while the browser is
+idle: one at a time, each waiting for the next idle slot so the warm never competes with the tab the
+user is actually looking at, in a deliberate order with Dashboards last because it is much the
+largest and paying for it early is the one prefetch a person could feel. A failed warm is swallowed
+- the real visit retries it.
+
+Dashboards imported all of echarts for three chart types. `chartOption()` maps every widget onto
+pie, line, or bar and nothing else, so the modular build registers exactly those plus the grid,
+tooltip, and canvas renderer they need: the chunk fell from 1143KB to 566KB. The registration list
+carries a comment saying that a new widget type has to be registered there too, because the failure
+mode is an empty canvas rather than a loud error.
+
+One thing measured and deliberately left alone: the Home view fires eleven API calls when it mounts.
+That looked alarming while the backend floor was half a second, but they run concurrently against an
+endpoint that now answers in milliseconds, so the whole burst finishes well inside a tenth of a
+second. Adding a cache layer would be complexity without a measured problem. The Chat chunk is
+390KB, most of it highlight.js grammars, and narrowing that set is a real option if code blocks in
+uncommon languages turn out not to matter.
+
+Verified: 744 backend tests and 38 UI tests pass, `ruff check .` is clean, and the production bundle
+builds with the new chunk sizes.

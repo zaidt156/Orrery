@@ -69,20 +69,61 @@ function TopBar({ interfaceMode, tabs = [], onNavigate }) {
   );
 }
 
-const Home = lazy(() => import("./views/Home.jsx"));
-const Chat = lazy(() => import("./views/Chat.jsx"));
-const Data = lazy(() => import("./views/Data.jsx"));
-const Dashboards = lazy(() => import("./views/Dashboards.jsx"));
-const Projects = lazy(() => import("./views/Projects.jsx"));
-const Ontology = lazy(() => import("./views/Ontology.jsx"));
-const Skills = lazy(() => import("./views/Skills.jsx"));
-const Automations = lazy(() => import("./views/Automations.jsx"));
-const Agents = lazy(() => import("./views/Agents.jsx"));
-const Media = lazy(() => import("./views/Media.jsx"));
-const LocalModels = lazy(() => import("./views/LocalModels.jsx"));
-const Settings = lazy(() => import("./views/Settings.jsx"));
-const Admin = lazy(() => import("./views/Admin.jsx"));
-const Lock = lazy(() => import("./views/Lock.jsx"));
+// Each view is its own chunk, so the first paint does not carry the whole workspace. Keeping the
+// import functions by name lets us ALSO warm them while the browser is idle (see prefetchViews
+// below) - without that, every first visit to a tab waits on a network round trip and a parse,
+// which is what made switching tabs feel slow even once the backend was answering in milliseconds.
+const VIEW_LOADERS = {
+  home: () => import("./views/Home.jsx"),
+  chat: () => import("./views/Chat.jsx"),
+  data: () => import("./views/Data.jsx"),
+  dash: () => import("./views/Dashboards.jsx"),
+  projects: () => import("./views/Projects.jsx"),
+  ontology: () => import("./views/Ontology.jsx"),
+  skills: () => import("./views/Skills.jsx"),
+  auto: () => import("./views/Automations.jsx"),
+  agents: () => import("./views/Agents.jsx"),
+  media: () => import("./views/Media.jsx"),
+  local: () => import("./views/LocalModels.jsx"),
+  settings: () => import("./views/Settings.jsx"),
+  admin: () => import("./views/Admin.jsx"),
+  lock: () => import("./views/Lock.jsx"),
+};
+
+// Warmed one at a time, cheapest-to-reach first, each waiting for the next idle slot so this never
+// competes with the tab the user is actually looking at. Dashboards is last: it is by far the
+// largest chunk, and paying for it early would be the one prefetch a user could feel.
+const PREFETCH_ORDER = ["chat", "projects", "data", "settings", "skills", "agents",
+                        "ontology", "local", "auto", "admin", "media", "dash"];
+
+function prefetchViews() {
+  const whenIdle = window.requestIdleCallback || ((fn) => window.setTimeout(fn, 250));
+  let stopped = false;
+  const warm = (i) => {
+    if (stopped || i >= PREFETCH_ORDER.length) return;
+    const load = VIEW_LOADERS[PREFETCH_ORDER[i]];
+    Promise.resolve(load ? load() : null)
+      .catch(() => {})           // a failed warm must never surface; the real visit will retry
+      .then(() => whenIdle(() => warm(i + 1)));
+  };
+  whenIdle(() => warm(0));
+  return () => { stopped = true; };
+}
+
+const Home = lazy(VIEW_LOADERS.home);
+const Chat = lazy(VIEW_LOADERS.chat);
+const Data = lazy(VIEW_LOADERS.data);
+const Dashboards = lazy(VIEW_LOADERS.dash);
+const Projects = lazy(VIEW_LOADERS.projects);
+const Ontology = lazy(VIEW_LOADERS.ontology);
+const Skills = lazy(VIEW_LOADERS.skills);
+const Automations = lazy(VIEW_LOADERS.auto);
+const Agents = lazy(VIEW_LOADERS.agents);
+const Media = lazy(VIEW_LOADERS.media);
+const LocalModels = lazy(VIEW_LOADERS.local);
+const Settings = lazy(VIEW_LOADERS.settings);
+const Admin = lazy(VIEW_LOADERS.admin);
+const Lock = lazy(VIEW_LOADERS.lock);
 
 // `feature` ties a tab to an admin flag — when that feature is turned off, the tab is hidden.
 const TABS = [
@@ -105,6 +146,8 @@ const INITIAL_TAB = new URLSearchParams(window.location.search).get("tab");
 
 export default function App() {
   const { interfaceMode } = useAppearance();
+
+  useEffect(prefetchViews, []);
   const [active, setActive] = useState(() => {
     const requested = TABS.some((t) => t.key === INITIAL_TAB) ? INITIAL_TAB : null;
     if (interfaceMode === "classic") return requested && requested !== "home" ? requested : "chat";
