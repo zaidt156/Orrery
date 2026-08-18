@@ -14,6 +14,8 @@ from typing import Any
 
 from pydantic import BaseModel, ValidationError
 
+from backend.tools import hooks
+
 log = logging.getLogger("orrery.tools")
 
 
@@ -117,6 +119,19 @@ async def run_tool(
     except ValidationError as exc:
         problems = "; ".join(f"{'.'.join(str(p) for p in e['loc'])}: {e['msg']}" for e in exc.errors()[:3])
         return {"ok": False, "error": f"Invalid arguments for '{key}': {problems}"}
+    # ADR-004 seam: registered policy may object here, after every built-in guard has run and
+    # before the user is asked to approve anything. A hook can only deny - it cannot approve a call
+    # the guards above already refused, and an empty registry means exactly the old behavior.
+    objection = await hooks.deny_reason_for_tool(hooks.ToolCall(
+        key=key,
+        args=config.model_dump() if config else dict(values),
+        risk=tool.risk,
+        writes=bool(tool.writes),
+        grant=grant,
+    ))
+    if objection is not None:
+        denied_by, reason = objection
+        return {"ok": False, "error": reason, "denied_by": denied_by}
     if grant is None:  # Chat/Automations: the central approval gate. Agent runs have their own.
         from backend.features import approvals
         verdict = await approvals.gate(tool, config.model_dump() if config else {}, approval_id)

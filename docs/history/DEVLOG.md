@@ -3020,3 +3020,35 @@ Windows' backslash separator too.
 
 Next: the Home view still fires eleven API calls on mount, and the route chunks are not prefetched -
 both worth revisiting now that the per-request floor is milliseconds instead of half a second.
+
+## Step 157 - Policy attaches at a seam instead of another inline branch (August 18, 2026)
+
+The user asked for four properties from DeepSeek Harness: hook seams around the agent loop, a
+session log that supports fork/resume/replay, layered configuration, and plugin mounting. ADR-004
+records the design for all four and the order they depend on each other in. This step is the first
+of them, because the later three attach to it.
+
+The borrowed idea is that policy should register at a named extension point rather than be added as
+another branch inside the loop. Orrery's version differs on one rule, and that rule is the reason
+it is safe to have at all: **a hook may deny, observe, or annotate, but never grant.** The existing
+guards in `run_tool()` - scope allow-list, feature gate, grant actions and resources, argument
+validation, the central approval gate - all still run and still have the final say. A hook that
+returns nothing has not approved anything; it has only declined to object. Deleting every hook
+leaves behavior exactly as strict as before.
+
+Two seams exist now. `tools/pre-execute` runs in `run_tool()` after every built-in guard and before
+the approval gate, so a denial never raises a pointless approval prompt, and it covers Chat,
+Automations, and Agents at once because all three already funnel through that one function. An
+agent `pre-step` seam runs before each model request in a run and can stop the run. Registration
+returns an unregister callable, so a mounted hook can be taken back off - the reversible-effect
+property the plugin step will need. A hook that raises is treated as an objection, never as
+consent.
+
+Verified: 706 backend tests pass, including 9 new ones that pin the deny-only contract - a
+permissive hook cannot revive a call the allow-list refused, an unknown tool stays unknown however
+many hooks pass it, a broken hook fails closed, the first objection wins, and unregistering really
+detaches. The seam was also exercised against the live registry, where it blocked a destructive
+tool before the approval gate and recorded which hook did it.
+
+Next: the remaining three ADR-004 steps - session log fork/resume/replay, configuration layering,
+then plugin mounting.

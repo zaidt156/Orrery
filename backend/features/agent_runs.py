@@ -447,6 +447,7 @@ async def execute_run(run_id: str) -> None:
     """Drive one run from its durable state to completion/suspension. Never raises."""
     from backend import tools as tool_registry
     from backend.providers import ai
+    from backend.tools import hooks as tool_hooks
 
     rid = uuid.UUID(run_id)
     async with get_sessionmaker()() as s:
@@ -500,6 +501,18 @@ async def execute_run(run_id: str) -> None:
             reservation = await _reserve_daily_cost(rid, run.agent_id, cost_cap) if cost_cap else None
             if cost_cap and reservation is None:
                 error = "Reached the daily API cost budget for this agent."
+                break
+            # ADR-004 seam: registered policy may stop the run before the next model request.
+            # Deny-only - a hook cannot extend a budget or bypass a check above, and with no hooks
+            # registered this is a no-op.
+            step_objection = await tool_hooks.deny_reason_for_step(tool_hooks.AgentStep(
+                run_id=str(rid),
+                agent_id=str(run.agent_id),
+                step_index=model_steps,
+                model=config.get("model", ""),
+            ))
+            if step_objection is not None:
+                error = step_objection[1]
                 break
             messages = await _transcript(run, steps)
             usage_out: dict = {}
