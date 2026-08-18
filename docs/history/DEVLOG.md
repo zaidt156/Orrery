@@ -3287,3 +3287,34 @@ some point; it reads as plain text now. The direct floor in `requirements.txt` m
 Verified: 744 backend tests and 38 UI tests pass with the upgraded libraries - including the PDF and
 Office preview tests, which are the ones that would notice a pypdf or pillow regression - `ruff
 check .` is clean, and the production bundle builds.
+
+## Step 166 - Automations has an API to talk to (August 18, 2026)
+
+The Automations engine, its node registry, and a full CRUD layer in `backend/features/workflows.py`
+have all existed for a while. What did not exist was any way to reach them: no route in the entire
+API mentioned a workflow, which is why the screen renders a hard-coded node list and cannot save
+anything. This is the missing surface.
+
+Nine operations across five paths: list/create workflows, get/patch/delete one, start a run, list
+runs, read one run with its durable per-node steps, and `GET /api/workflow-nodes`, which returns the
+registered node catalog with each node's JSON schema. That last one is the point of the registry
+pattern - the canvas can build its palette and its per-node settings form from the registry, so
+adding a node class to `backend/automation/nodes.py` makes it appear in the UI with no second list
+to maintain.
+
+Ownership is enforced in the CRUD layer against `team.current_owner_id()`, and a workflow belonging
+to someone else reports as absent rather than forbidden, which matches the rest of the API and does
+not confirm that an id exists. Two boundary behaviours needed care. A spec that names an unknown
+node type, repeats a node id, or exceeds the node cap has to reach the client as a 400 carrying the
+reason, because that message is what a user can act on. A malformed id has to read as "not found"
+instead of a 500 - the CRUD layer parses ids with `uuid.UUID(...)`, which raises the same
+`ValueError` that spec validation does. The first draft told them apart by matching on the exception
+text, which would have silently turned a validation failure into a 404 the moment a message changed;
+ids are checked explicitly at the route boundary instead.
+
+Verified: 752 backend tests pass, including 8 new ones covering token enforcement on every route,
+the catalog coming from the registry rather than a fixed list, create/list/get/delete, both
+validation refusals, junk ids on every route that takes one, and that a real run records durable
+steps. `ruff check .` is clean.
+
+Next: the Automations screen itself - the TODO entry now names the exact endpoints it needs.

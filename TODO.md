@@ -30,10 +30,10 @@ do not keep a second checklist of completed tasks here.
 
 ## P1 — complete visible product gaps
 
-- [ ] Add authenticated Workflow CRUD/list/get/run routes with owner filtering and validation.
-- [ ] Connect Automations UI state to the Workflow API; render the registered node catalog rather
-      than hard-coded nodes and show durable run-step input/output/error data. Surface tool-approval
-      requests from gated nodes (headless runs currently fail them safely) so a user can decide.
+- [ ] Connect the Automations UI to the Workflow API that now exists: replace its hard-coded node
+      list with `GET /api/workflow-nodes`, save specs through `PATCH /api/workflows/{id}`, and show
+      the durable per-node input/output/error from `GET /api/workflows/{id}/runs/{run_id}`. Surface
+      tool-approval requests from gated nodes (headless runs currently fail them safely).
 - [ ] Add a small management view for the remembered "always allow" tool approvals so grants can be
       reviewed and revoked without re-approving.
 - [ ] Add an Automation schedule tick and support only trigger types the runtime actually implements.
