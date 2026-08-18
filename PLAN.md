@@ -1,6 +1,6 @@
 # Orrery plan
 
-Last reconciled with executable code: **22 July 2026**.
+Last reconciled with executable code: **18 August 2026**.
 
 This is the single roadmap for Orrery. It explains what should be built, why it is ordered this
 way, and what “done” means. The current implementation is documented in
@@ -55,8 +55,9 @@ team/admin controls, LIFE proposal review, and bounded manual/scheduled Agent ru
 
 The following are present but incomplete:
 
-- Automations has storage, an executor, nodes, and durable run records, but no registered product API,
-  schedule tick, or live editor UI.
+- Automations has storage, a registered node catalog, authenticated CRUD/manual-run APIs, a queued
+  executor, durable run steps, and a live read/run UI. It still has no canvas authoring, approval
+  pause/resume surface, or schedule tick.
 - Media Hub is a static screen. Chat can create media artifacts, but the library/generation product
   path is not connected.
 - Agent API/Slack/Gmail trigger shapes exist, but no inbound receivers are registered. Agent LIFE
@@ -104,13 +105,46 @@ This is the current priority.
 **Checkpoint:** untrusted documents never require an ambient host parser for the supported path;
 focused and full CI gates are deterministic.
 
-### Workstream 3 — Connect the unfinished product surfaces
+### Workstream 3 — Build a safe coding harness (proposed)
+
+This workstream is proposed in
+[`ADR-005`](docs/decisions/005-coding-harness-capabilities.md) from the pinned
+[`DeepSeek Harness rc.7 audit`](docs/research/deepseek-harness-rc7-audit.md). It begins only after
+the user accepts or revises the decision and slice order. Orrery borrows the capabilities, not the
+Cordis/TypeScript runtime.
+
+Build in dependency order:
+
+1. Record exact, append-only model request and tool call/result evidence shared by Chat, Agents, and
+   Automations, while retaining current rows/APIs as projections.
+2. Separate complete canonical results from bounded model/UI presentation; retain oversized output
+   behind owner/run-authorized Orrery artifact IDs.
+3. Add explicit Project-attached coding roots with only `read-only` and `workspace-write`, followed
+   by bounded read/glob/grep and observed-version atomic edit tools.
+4. Mount only the selected root into Orrery's existing offline Docker execution path, with exact
+   grant mode, structured process outcomes, descendant cancellation, and no ambient environment.
+5. Add repeated-call protection, exact metering, replay-safe tool-result pruning, then summary
+   checkpoints with provenance.
+6. Add durable todo/question/plan-review state and background jobs; add a container terminal only
+   if one-shot jobs prove insufficient.
+7. Add read-only LSP operations inside the offline project container.
+8. Add bounded one-shot subagents whose tools, grants, budgets, and depth can only be reduced from
+   the parent.
+9. Consider containerized Code Mode, bounded Automation fan-out, session search/export, and a
+   Python-native local SDK only after the shared lifecycle is proven.
+
+**Checkpoint:** every model-visible request/result is durably reconstructible; filesystem/process
+authority is explicit and owner-scoped; path/symlink/edit/cancel/secret/child-grant abuse tests pass;
+and no capability bypasses the existing registry, approval, keychain, network, or Docker boundaries.
+
+### Workstream 4 — Connect the unfinished product surfaces
 
 #### Automations
 
-Build one vertical slice at a time: authenticated CRUD, manual run, durable run/debug view, editor
-load/save, then scheduling. The live UI must advertise only registered nodes and implemented trigger
-types. Writes and external actions use the central approval gate.
+Authenticated CRUD, manual run, durable run/debug view, and registry-derived reading are complete.
+Next build canvas add/connect/configure/position with revision-safe save, then durable approval
+pause/resume, then scheduling. The live UI must advertise only registered nodes and implemented
+trigger types. Writes and external actions use the central approval gate.
 
 #### Media Hub
 
@@ -127,7 +161,7 @@ inside Chat.
 **Checkpoint:** each surface works from its own screen and from Chat with the same scope, approval,
 privacy, and audit behavior.
 
-### Workstream 4 — Complete the Agent platform
+### Workstream 5 — Complete the Agent platform
 
 1. Implement scoped, hashed, revocable per-Agent API credentials and a rate-limited inbound run
    endpoint. The secret is shown once; internet exposure remains an explicit user deployment choice.
@@ -142,7 +176,7 @@ privacy, and audit behavior.
 **Checkpoint:** API, schedule, and eventual connector triggers create the same durable, scoped Agent
 run; learning and LIFE behavior is inspectable and reversible.
 
-### Workstream 5 — UX, durability, and release completion
+### Workstream 6 — UX, durability, and release completion
 
 - Make detached Chat generation durable across backend restarts or clearly label its current
   process-lifetime guarantee.
@@ -159,9 +193,9 @@ run; learning and LIFE behavior is inspectable and reversible.
 
 ## Deferred decisions
 
-- A persistent “Computer” broker that unifies file generation and multi-step code work remains a
-  possible later abstraction. It must not land before central approval, isolation, lifecycle, and
-  capability contracts are defined.
+- A persistent “Computer” or terminal abstraction remains optional and late. If ADR-005 is accepted,
+  the explicit event/workspace/tool/job capabilities land first; the label must never become a broad
+  authority that bypasses them.
 - Backend-capable generated apps are out of scope for the current static app-bundle path.
 - Slack/Gmail credential style (user tokens versus a full OAuth application) requires an explicit
   product decision after the receiver threat model is reviewed.

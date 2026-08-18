@@ -1,6 +1,6 @@
 # Orrery TODO
 
-Last reconciled with executable code: **22 July 2026**.
+Last reconciled with executable code: **18 August 2026**.
 
 This file contains unfinished work only. Product direction and ordering live in [`PLAN.md`](PLAN.md),
 implemented behavior lives in [`ARCHITECTURE.md`](ARCHITECTURE.md), and completed work lives in the
@@ -71,8 +71,12 @@ do not keep a second checklist of completed tasks here.
 
 ## Decisions that require the user
 
+- [ ] Approve or revise
+      [`ADR-005`](docs/decisions/005-coding-harness-capabilities.md), including the dependency order
+      from exact execution evidence through coding workspaces, LSP, and bounded subagents. Slice 1
+      adds durable evidence only and does not grant new filesystem/process authority.
 - [ ] Choose Slack/Gmail authentication: user-supplied credentials or a maintained OAuth application.
-- [ ] Decide whether a persistent multi-step Computer broker is worth its lifecycle and isolation cost
-      after P0 enforcement is complete.
+- [ ] Decide whether a container-only persistent terminal is worth its lifecycle and isolation cost
+      after durable one-shot coding jobs have real usage evidence.
 - [ ] Decide whether backend-capable generated apps belong in Orrery after the static-bundle path has
       real usage evidence.

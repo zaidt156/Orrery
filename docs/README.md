@@ -9,6 +9,7 @@ documents so plans, completed work, and implemented architecture cannot drift in
 | [`../PLAN.md`](../PLAN.md) | Product direction, sequencing, decisions, and checkpoints |
 | [`../TODO.md`](../TODO.md) | Current unfinished tasks only |
 | [`history/DEVLOG.md`](history/DEVLOG.md) | Append-only completed-work history |
+| [`research/deepseek-harness-rc7-audit.md`](research/deepseek-harness-rc7-audit.md) | Pinned upstream coding-harness audit supporting ADR-005 |
 | [`security/USER_ADMIN_ACCESS.md`](security/USER_ADMIN_ACCESS.md) | Durable solo/team access and secret-handling contract |
 | `generated/` | Generated local documentation packages; ignored by Git |
 
@@ -17,3 +18,4 @@ role model, per-user feature permissions, and secret-handling rules.
 
 Architecture and roadmap details live only in the root canonical documents above. Durable design
 rationale remains in [`decisions/`](decisions/); security contracts remain in [`security/`](security/).
+Source audits in `research/` record evidence and do not create a second roadmap.

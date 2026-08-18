@@ -3411,3 +3411,34 @@ separate running entries, verbatim status steps, source counts and their plurali
 request and resolution tones, error tone, named generated files, token usage, ignoring events with
 nothing to say, non-mutation of the input log, the growth cap, and elapsed labels never going
 negative. 759 backend tests pass, `ruff check .` is clean, and the bundle builds.
+
+## Step 170 - The published site says what Orrery actually is (August 18, 2026)
+
+Trimming the README to installation broke the landing page: it linked to
+`github.com/zaidt156/Orrery#install-and-run`, and that section is now `## Install`. Fixing that one
+anchor meant reading the whole site, which had been describing a different product for a while.
+
+The site led with **Download**. A nav item, a hero button to `/releases/latest`, and three cards
+offering "Windows releases" and "macOS previews" - all pointing at installers that were deleted with
+the desktop shell months ago. The primary call to action on the front page went to packages that are
+not published. That section is now **Install**, and it carries the real thing: the one-line command,
+what the first run does for you, and what running it again looks like. Nav, hero, footer, and the
+guide's two cross-page links were renamed together so the page is never half-renamed.
+
+The user guide still taught the eight-command setup - virtualenv, `npm install`, `npm run build`,
+`docker compose up`, `docker build` - that is now one line, and it described Orrery showing "a
+friendly window with a button" when Docker is missing, which was the deleted desktop shell's dialog.
+Both are corrected; the guide now says the terminal tells you.
+
+Reading the pages properly also turned up two claims that had gone stale in Orrery's favour, which
+is the direction that matters least for honesty but still made the page wrong. The front page listed
+"Automation APIs and editor wiring" as planned work, but the Workflow API shipped in Step 166 and
+only canvas editing is missing. And it said central approvals, fail-closed authorization, redirect
+SSRF, and URL-secret handling "remain P0 work" - all closed in Steps 151-152, and `TODO.md` has had
+no P0 tier since.
+
+Planned first in `tasks/plan.md` at the user's request, then implemented in that order.
+
+Verified: every in-page anchor on both pages resolves to a real id, both cross-page anchors resolve,
+no `/releases` link survives anywhere, the install command matches `README.md` character for
+character, and the landing page parses with no unclosed or mismatched tags after the section splice.

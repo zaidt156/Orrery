@@ -61,7 +61,7 @@ footer{border-top:1px solid var(--line);padding:30px 0;color:var(--quiet);font-s
 </style>
 </head>
 <body>
-<header><div class="wrap"><nav aria-label="Primary"><a class="brand" href="index.html"><img src="assets/orrery.png" alt="" /><span>Orrery</span></a><div class="navlinks"><a href="index.html#download">Download</a><a href="index.html#features">Features</a><a href="https://github.com/zaidt156/Orrery">GitHub</a></div></nav></div></header>
+<header><div class="wrap"><nav aria-label="Primary"><a class="brand" href="index.html"><img src="assets/orrery.png" alt="" /><span>Orrery</span></a><div class="navlinks"><a href="index.html#install">Install</a><a href="index.html#features">Features</a><a href="https://github.com/zaidt156/Orrery">GitHub</a></div></nav></div></header>
 
 <main>
 <section class="hero"><div class="wrap"><span class="kicker">Using Orrery</span><h1>Your private AI workspace, made simple.</h1><p>This is a friendly walkthrough of installing Orrery and using it day to day. No jargon, and nothing you need to be technical for. If you can install an app and paste a key, you are ready.</p></div></section>
@@ -99,30 +99,27 @@ footer{border-top:1px solid var(--line);padding:30px 0;color:var(--quiet);font-s
 <p>Orrery runs on your own computer and opens in the browser you already use. There is no separate
 window to install and nothing that talks to a server of ours.</p>
 <p>You need three things first: <b>Python 3.12</b>, <b>Node.js 20</b>, and <b>Docker Desktop</b>.
-Then, in a terminal:</p>
-<pre><code>git clone https://github.com/zaidt156/Orrery.git
-cd Orrery
-python -m venv .venv
-source .venv/bin/activate     <span class="muted"># Windows: .\.venv\Scripts\Activate.ps1</span>
-pip install -e .
-cd ui &amp;&amp; npm install &amp;&amp; npm run build &amp;&amp; cd ..
-docker compose up -d
-docker build -t orrery-sandbox:latest sandbox</code></pre>
-<p>After that, one command starts it any time:</p>
-<pre><code>orrery web</code></pre>
+Then paste this one line into a terminal:</p>
+<pre><code>git clone https://github.com/zaidt156/Orrery.git &amp;&amp; cd Orrery &amp;&amp; pip install -e . &amp;&amp; orrery</code></pre>
+<p>That is the whole installation. The first run takes a minute longer than later ones, because
+Orrery does the setup for you: it builds its workspace once, starts Docker Desktop if it is
+installed but not running, brings up its database, and remembers the connection in your computer's
+keychain.</p>
+<p>After that, one word starts it any time:</p>
+<pre><code>orrery</code></pre>
 <p>Your browser opens on its own. If it does not, the terminal prints a link you can paste. That link
 works once: Orrery swaps it for a private session and removes it from the address bar, so it never
 sits in your history.</p>
-<div class="callout"><b>Prefer not to use a terminal?</b> Portable packages with Python already
-inside can be built from the repository, but none are published automatically right now. The command
-above is the supported way to run Orrery today.</div>
+<div class="callout"><b>Prefer not to use a terminal?</b> There is no installer to download.
+Portable packages with Python already inside can be built from the repository, but none are
+published, so the one line above is the supported way to run Orrery today.</div>
 </section>
 
 <section id="firstrun"><h2><span class="n">03</span>The first time you open it</h2>
 <p>Orrery keeps everything in a small database on your computer, and it sets that up for you. You do not have to configure anything.</p>
 <ul>
 <li>If you already have Docker Desktop installed, just open Orrery. It starts Docker for you if it is not running, creates its database the first time, and opens. No setup screens.</li>
-<li>If you do not have Docker yet, Orrery shows a friendly window with a button to go get <a href="https://www.docker.com/products/docker-desktop/">Docker Desktop</a>. Install it, open Orrery again, and you are set.</li>
+<li>If you do not have Docker yet, Orrery says so in the terminal and points you at <a href="https://www.docker.com/products/docker-desktop/">Docker Desktop</a>. Install it, open Orrery again, and you are set.</li>
 <li>If you already run your own PostgreSQL, you can point Orrery at it in Settings instead, and then Docker is not needed at all.</li>
 </ul>
 <div class="callout teal"><b>A nice touch.</b> The first launch asks you a couple of quick questions, like what to call you and what you plan to use Orrery for. Your answers become Orrery's private memory of you, and you can change or clear them any time in Settings.</div>
@@ -193,7 +190,7 @@ above is the supported way to run Orrery today.</div>
 </div>
 </div></div>
 
-<footer><div class="wrap foot"><a class="brand" href="index.html"><img src="assets/orrery.png" alt="" /><span>Orrery</span></a><span>A local AI workspace. Your keys, your data.</span><div class="links"><a href="index.html">Home</a><a href="index.html#download">Download</a><a href="https://github.com/zaidt156/Orrery">GitHub</a></div></div></footer>
+<footer><div class="wrap foot"><a class="brand" href="index.html"><img src="assets/orrery.png" alt="" /><span>Orrery</span></a><span>A local AI workspace. Your keys, your data.</span><div class="links"><a href="index.html">Home</a><a href="index.html#install">Install</a><a href="https://github.com/zaidt156/Orrery">GitHub</a></div></div></footer>
 </main>
 </body>
 </html>

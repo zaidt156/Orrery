@@ -1,6 +1,6 @@
 # Orrery architecture — as implemented
 
-This document describes the code that exists in this repository on **22 July 2026**. It is the
+This document describes the code that exists in this repository on **18 August 2026**. It is the
 single source of truth for implemented architecture, not a product roadmap. Future work belongs in
 [`PLAN.md`](PLAN.md) and [`TODO.md`](TODO.md). When a plan or UI mock disagrees with executable code,
 the code wins here.
@@ -112,7 +112,7 @@ flowchart LR
     class reject,locked stop;
 ```
 
-The registered API modules cover system health, models, providers, local models, app settings, data, dashboards, collections, skills, MCP, team/admin, agents, projects, conversations, files, shared tools, and LIFE.
+The registered API modules cover system health, models, providers, local models, app settings, data, dashboards, collections, skills, MCP, team/admin, agents, Automations, projects, conversations, files, shared tools, and LIFE.
 
 Two read-only serving paths deliberately sit outside token authentication because sandboxed iframes cannot attach the header:
 
@@ -134,17 +134,16 @@ flowchart TB
     shell --> live["Live screens"]
     live --> l1["Home · Chat · Projects"]
     live --> l2["Data · Ontology · Skills"]
-    live --> l3["Dashboards · Agents"]
+    live --> l3["Dashboards · Agents · Automations"]
     live --> l4["Local Models · Admin · Settings"]
 
     shell --> partial["Not end-to-end"]
-    partial --> a["Automations<br/>static UI + backend-only engine"]
     partial --> m["Media Hub<br/>static UI only"]
 
     classDef liveStyle fill:#e8f5ea,stroke:#5b8a64,color:#172033;
     classDef partialStyle fill:#fff2dc,stroke:#aa7b2c,color:#172033;
     class live,l1,l2,l3,l4 liveStyle;
-    class partial,a,m partialStyle;
+    class partial,m partialStyle;
 ```
 
 | Surface | Status | Evidence from the implementation |
@@ -159,7 +158,7 @@ flowchart TB
 | Agents | Live | Versioned definitions, manual/scheduled runs, trace, budgets, cancellation, and approvals. |
 | Local Models | Live | Ollama detection, install/start on Windows, pull, activate, and remove. |
 | Admin and Settings | Live | Team access, feature gates, providers, privacy, spending, updates, MCP, and LIFE review. |
-| Automations | Backend only + static UI | Workflow storage and execution exist, but no workflow router is registered and the React view uses hard-coded arrays. |
+| Automations | Live read/run surface; editor incomplete | Authenticated CRUD, the registered node catalog, manual runs, durable run steps, and the React read/run view are connected. The canvas cannot yet add, connect, configure, or position nodes; approval pauses and scheduling are also unfinished. |
 | Media Hub | Static UI | The screen has no API imports and its Generate button has no backend handler. Chat can still create image, audio, and video files through its own artifact pipeline. |
 
 Code anchors: `ui/src/App.jsx`, `ui/src/views`, `backend/api/__init__.py`.
@@ -321,8 +320,16 @@ Current Chat gating matters:
   advertised only when the current versioned sandbox image is ready and Chat code execution is
   enabled. The loop itself is provider-agnostic, so this rule is the same for API, CLI-plan, and local
   models.
+- The Activity panel renders the current turn's SSE events in order, but that browser projection is
+  not an authoritative durable event log. Dynamic prompt inputs and exact tool call/results cannot
+  yet be reconstructed from it after the turn.
+- Python and shell run against sandbox scratch/input/output mounts. Orrery does not currently grant
+  a model access to a local checkout: there is no explicit coding root, project file read/search/edit
+  tool set, workspace-mounted command, LSP service, persistent terminal, or child-agent hierarchy.
 
-Code anchors: `backend/features/code_interpreter.py`, `backend/features/capabilities.py`, `backend/tools/registry.py`, `backend/tools/builtin.py`, `backend/features/chat/router.py`.
+Code anchors: `backend/features/code_interpreter.py`, `backend/features/capabilities.py`,
+`backend/tools/registry.py`, `backend/tools/builtin.py`, `backend/features/chat/router.py`,
+`ui/src/lib/activityLog.js`, `ui/src/views/Chat.jsx`.
 
 ---
 
@@ -509,13 +516,18 @@ Code anchors: `backend/features/agents.py`, `backend/features/agent_runs.py`, `b
 
 ---
 
-## 14. Automation engine — backend only
+## 14. Automation engine and read/run product surface
 
-The workflow domain and executor are real, but the product connection is missing. This diagram describes the callable backend code, not the current Automations screen.
+The workflow domain, authenticated API, queued executor, and read/run screen are connected. The
+screen can create, select, pause/resume, delete, and manually run workflows; it renders the saved
+spec, the registry-derived node palette, run history, and durable per-node steps. Canvas authoring is
+the remaining product gap.
 
 ```mermaid
 flowchart LR
-    internal["Internal caller of workflows.start_run"] --> run[("WorkflowRun queued")]
+    ui["Automations UI"] --> api["Authenticated Workflow API"]
+    api --> store[("Workflow definition")]
+    api --> run[("WorkflowRun queued")]
     run --> queue["Procrastinate run_workflow job"]
     queue --> topo["Validate DAG and compute topological order"]
     topo --> node["Substitute {{node.output}} values"]
@@ -526,16 +538,20 @@ flowchart LR
     more -->|"No"| finish["Mark run done or failed"]
 ```
 
-Registered node types are `llm_prompt`, `search_docs`, `db_query`, `http_request`, `run_python`, `run_shell`, `web_search`, `if_branch`, `delay`, `refresh_dashboard`, and `mcp_tool`.
+The API exposes list/create/get/update/delete, manual run start, run list/detail, and the registered
+node catalog. Registered node types are `llm_prompt`, `search_docs`, `db_query`, `http_request`,
+`run_python`, `run_shell`, `web_search`, `if_branch`, `delay`, `refresh_dashboard`, and `mcp_tool`.
 
 Current gaps are explicit:
 
-- `backend/features/workflows.py` is not exposed by any registered FastAPI router.
-- `ui/src/views/Automations.jsx` uses hard-coded workflows, nodes, edges, settings, and run history.
-- The saved workflow `schedule` field says “wired later”; there is no workflow schedule tick.
-- The mock UI shows triggers, retries, POST requests, database writes, and Slack behavior that the current node registry does not provide.
+- There is no canvas authoring: nodes, edges, configuration, and positions cannot be changed in the UI.
+- A gated Automation tool call fails safely because headless workflow runs cannot pause for a user decision.
+- The saved workflow `schedule` field has no schedule tick.
+- Trigger/retry and connector behavior exists only where a registered node or runtime path implements it.
 
-Code anchors: `backend/features/workflows.py`, `backend/automation/engine.py`, `backend/automation/nodes.py`, `backend/api/__init__.py`, `ui/src/views/Automations.jsx`.
+Code anchors: `backend/features/workflows.py`, `backend/automation/engine.py`,
+`backend/automation/nodes.py`, `backend/api/routes_workflows.py`, `backend/api/__init__.py`,
+`ui/src/views/Automations.jsx`, `ui/src/lib/api.js`.
 
 ---
 
@@ -668,7 +684,8 @@ Known security gaps are kept explicit rather than hidden in separate review docu
 
 - Pending tool approvals live in memory, like detached chat runs: a backend restart clears them and
   the affected tool call fails safely. Headless Automation runs cannot pause for a decision, so a
-  gated node fails with an approval-required error until the Automations product surface exists.
+  gated node fails with an approval-required error until durable Automation approval pause/resume
+  and its decision UI exist.
 - The "always allow" tool list is enforced per owner but is editable only by re-approving; a
   management UI to review/revoke remembered grants has not been built yet.
 
@@ -696,15 +713,19 @@ Code anchors: `backend/core/profiles.py`, `backend/core/plugins.py`, `backend/to
 flowchart LR
     live["Live end-to-end"] --> a["Chat · projects · data · RAG"]
     live --> b["Dashboards · agents · skills · MCP"]
+    live --> h["Automations read/run API + UI"]
     live --> c["Models · team/admin · settings · LIFE review"]
 
-    partial["Present but incomplete"] --> d["Automations<br/>engine without API/product wiring"]
+    partial["Present but incomplete"] --> d["Automations<br/>canvas editing · approval pause · schedule tick"]
     partial --> e["Media Hub<br/>static presentation only"]
     partial --> f["Agent API/Slack/Gmail triggers<br/>schema/config without receivers"]
     partial --> g["LIFE in agent config<br/>not used by run loop"]
 ```
 
-In plain English: Orrery already has a substantial local-first core. Chat, retrieval, data, dashboards, file generation, model routing, team controls, MCP, and bounded agents are implemented. The largest architectural mismatch is not inside those systems; it is at the product edge, where Automations and Media look connected in the UI but are not yet wired end to end.
+In plain English: Orrery already has a substantial local-first core. Chat, retrieval, data,
+dashboards, file generation, model routing, team controls, MCP, bounded agents, and the Automation
+read/run path are implemented. The largest visible gaps are Automation authoring/approval/scheduling,
+the static Media Hub, and the unregistered Agent API/Slack/Gmail receivers.
 
 The ordered remediation and product roadmap are maintained only in [`PLAN.md`](PLAN.md); the current
 unchecked work is maintained only in [`TODO.md`](TODO.md).

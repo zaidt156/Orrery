@@ -71,6 +71,11 @@ docs/decisions/*
 !docs/decisions/001-independent-interface-and-color.md
 !docs/decisions/002-life-memory.md
 !docs/decisions/003-agent-gateway-and-connectors.md
+!docs/decisions/004-harness-composability.md
+!docs/decisions/005-coding-harness-capabilities.md
+!docs/research/
+docs/research/*
+!docs/research/deepseek-harness-rc7-audit.md
 !docs/security/
 docs/security/*
 !docs/security/USER_ADMIN_ACCESS.md
