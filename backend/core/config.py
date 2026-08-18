@@ -35,6 +35,10 @@ class Settings(BaseSettings):
     # root-cause fix for regex misroutes (a calc after a song made a WAV). Plain chat never calls it.
     model_intent_decider: bool = True
 
+    # Local plugin modules to mount at startup (ADR-004). Import paths only - nothing is fetched.
+    # Declared in a config layer, e.g. orrery.toml:  plugins = ["mycompany.orrery_policy"]
+    plugins: list[str] = []
+
     @classmethod
     def settings_customise_sources(
         cls,

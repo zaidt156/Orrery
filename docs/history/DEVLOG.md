@@ -3107,3 +3107,31 @@ the developer's real configuration.
 
 Next: the last ADR-004 step, plugin mounting, which reads a layer declared here and registers into
 the seam from Step 157.
+
+## Step 160 - Plugins mount, and can only ever say no (August 18, 2026)
+
+The last ADR-004 step, and the one that had to be narrowed the most. In the harness this was
+borrowed from, a plugin can replace any capability from configuration - including the agent loop and
+the tool registry. Read literally against Orrery's threat model, that is a way to configure the
+approval gate out of existence, so Orrery's version keeps the seam and drops the replacement.
+
+A plugin is an importable module named in a configuration layer (`plugins = ["..."]` in
+`orrery.toml`). Mounting imports it and calls `setup(ctx)`. The context it receives exposes exactly
+two things: register a pre-execute hook, and register a pre-step hook. Both are deny-only, both run
+after every built-in guard, and neither can widen a grant or approve a call the allow-list already
+refused - there is a test that mounts a plugin whose hook approves everything and confirms an
+out-of-scope tool is still refused.
+
+Everything a plugin registers is recorded, so `unmount_all()` takes it all back off. A plugin that
+raises part-way through `setup()` has its earlier registrations rolled back rather than left
+half-applied, because half a policy is not a policy. A declared plugin that cannot be imported is a
+startup failure, not a warning: the user asked for that policy, and running without it silently is
+the least safe outcome available. Nothing is fetched - a plugin name must be a module path, and
+anything resembling a URL or a filesystem path is refused before import.
+
+Verified: 735 backend tests pass, including 10 new ones covering mounting, a hook that really
+denies, the permissive-plugin case that must still be refused, reversal on unmount, rollback of a
+half-failed setup, missing `setup`, unimportable modules, and hostile names.
+
+That completes the four properties from ADR-004: the seam (Step 157), fork and replay over the
+durable log (Step 158), configuration layers with provenance (Step 159), and plugin mounting here.

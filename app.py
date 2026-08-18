@@ -140,6 +140,14 @@ async def _boot_and_serve() -> None:
     from backend.features import skills as _skills
     await _skills.refresh_user_skills()  # load the user's own enabled skills into memory
 
+    # Declared plugins mount before anything serves, so their policy is in place for the first
+    # request. A failure raises here on purpose: running without a policy the user asked for is
+    # the least safe outcome available (ADR-004).
+    from backend.core import plugins as _plugins
+    mounted = _plugins.mount_all()
+    if mounted:
+        log.info("Mounted plugins: %s", ", ".join(mounted))
+
     # litellm costs seconds to import and the model picker needs it on the very first paint.
     # Warm it in a worker thread so that cost is paid while the user is still looking at the
     # loading screen, instead of stalling their first request behind it.
