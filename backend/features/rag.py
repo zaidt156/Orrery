@@ -189,35 +189,60 @@ def extract_pdf_text(data_url: str) -> str:
 _pdf_text = extract_pdf_text
 
 
-def _office_text(name: str, data_url: str) -> str:
-    """Extract text from Office files (docx/xlsx/pptx) so any file type can become RAG context."""
+def extract_office_text(name: str, data_url: str) -> str:
+    """Extract text from Office files (docx/xlsx/pptx) so any file type can become RAG context.
+
+    Untrusted Office bytes parse in the offline document worker when it is available; the host
+    parser is the explicit fallback for machines without Docker/the sandbox image.
+    """
+    low = name.lower()
     try:
-        b64 = data_url.split(",", 1)[1] if "," in data_url else data_url
-        raw = io.BytesIO(base64.b64decode(b64))
-        low = name.lower()
-        if low.endswith(".docx"):
+        raw = _decode_document(data_url)
+    except DocumentExtractionError:
+        return ""
+
+    from backend.features import sandbox
+
+    if low.endswith(sandbox.OFFICE_SUFFIXES) and sandbox.image_ready():
+        # A worker failure means the file is unreadable — never re-parse it on the host.
+        try:
+            return sandbox.extract_office_text(low, raw)
+        except sandbox.SandboxError:
+            return ""
+    return _office_text_host(low, raw)
+
+
+def _office_text_host(name: str, raw: bytes) -> str:
+    """Host-parser fallback when the offline document worker is unavailable."""
+    try:
+        stream = io.BytesIO(raw)
+        if name.endswith(".docx"):
             from docx import Document
-            doc = Document(raw)
+            doc = Document(stream)
             parts = [p.text for p in doc.paragraphs if p.text.strip()]
             for table in doc.tables:
                 for row in table.rows:
-                    parts.append("\t".join(c.text for c in row.cells))
-            return "\n".join(parts).strip()
-        if low.endswith((".xlsx", ".xls", ".xlsm")):
-            from openpyxl import load_workbook
-            wb = load_workbook(raw, read_only=True, data_only=True)
-            out: list[str] = []
-            for ws in wb.worksheets:
-                out.append(f"# {ws.title}")
-                for row in ws.iter_rows(values_only=True):
-                    cells = [str(c) for c in row if c is not None]
+                    cells = [cell.text.strip() for cell in row.cells if cell.text.strip()]
                     if cells:
-                        out.append("\t".join(cells))
-            wb.close()
+                        parts.append("\t".join(cells))
+            return "\n".join(parts).strip()
+        if name.endswith((".xlsx", ".xls", ".xlsm")):
+            from openpyxl import load_workbook
+            wb = load_workbook(stream, read_only=True, data_only=True)
+            out: list[str] = []
+            try:
+                for ws in wb.worksheets:
+                    out.append(f"# {ws.title}")
+                    for row in ws.iter_rows(values_only=True):
+                        cells = [str(c) for c in row if c is not None]
+                        if cells:
+                            out.append("\t".join(cells))
+            finally:
+                wb.close()
             return "\n".join(out).strip()
-        if low.endswith(".pptx"):
+        if name.endswith(".pptx"):
             from pptx import Presentation
-            prs = Presentation(raw)
+            prs = Presentation(stream)
             parts = []
             for slide in prs.slides:
                 for shape in slide.shapes:
@@ -229,13 +254,17 @@ def _office_text(name: str, data_url: str) -> str:
     return ""
 
 
+# Compatibility for older internal callers.
+_office_text = extract_office_text
+
+
 def _extract(f: dict) -> str:
     name = (f.get("name") or "").lower()
     content = f.get("content") or ""
     if f.get("kind") == "pdf" or name.endswith(".pdf"):
         return extract_pdf_text(content)
     if name.endswith((".docx", ".xlsx", ".xls", ".xlsm", ".pptx")):
-        return _office_text(name, content)
+        return extract_office_text(name, content)
     if f.get("kind") == "text":
         return content  # text file: content is the raw text
     return ""  # unknown binary (image, zip, …): no extractable text, skip rather than embed base64

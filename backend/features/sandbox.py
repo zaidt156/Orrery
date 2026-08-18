@@ -61,6 +61,50 @@ for page in source:
 Path("/work/out/document.txt").write_text("\n\n".join(parts), encoding="utf-8")
 """.strip()
 
+_OFFICE_EXTRACTOR = r"""
+from pathlib import Path
+
+source = next(
+    path for path in sorted(Path("/work/input").iterdir()) if path.name.startswith("document.")
+)
+suffix = source.suffix.lower()
+parts = []
+if suffix == ".docx":
+    from docx import Document
+
+    document = Document(str(source))
+    parts = [paragraph.text for paragraph in document.paragraphs if paragraph.text.strip()]
+    for table in document.tables:
+        for row in table.rows:
+            cells = [cell.text.strip() for cell in row.cells if cell.text.strip()]
+            if cells:
+                parts.append("\t".join(cells))
+elif suffix in (".xlsx", ".xlsm"):
+    from openpyxl import load_workbook
+
+    workbook = load_workbook(str(source), read_only=True, data_only=True)
+    try:
+        for sheet in workbook.worksheets:
+            parts.append(f"# {sheet.title}")
+            for row in sheet.iter_rows(values_only=True):
+                cells = [str(cell) for cell in row if cell is not None]
+                if cells:
+                    parts.append("\t".join(cells))
+    finally:
+        workbook.close()
+elif suffix == ".pptx":
+    from pptx import Presentation
+
+    deck = Presentation(str(source))
+    for slide in deck.slides:
+        for shape in slide.shapes:
+            if getattr(shape, "has_text_frame", False) and shape.text.strip():
+                parts.append(shape.text.strip())
+Path("/work/out/document.txt").write_text("\n".join(parts).strip(), encoding="utf-8")
+""".strip()
+
+OFFICE_SUFFIXES = (".docx", ".xlsx", ".xlsm", ".pptx")
+
 
 def _docker_bin() -> str:
     candidate = os.environ.get("ORRERY_DOCKER", r"C:\Program Files\Docker\Docker\resources\bin\docker.exe")
@@ -232,6 +276,25 @@ def extract_pdf_text(data: bytes) -> str:
     )
     if not result.ok:
         raise SandboxError(result.stderr or "The PDF OCR sandbox failed.")
+    output = next((item for item in result.files if item.name == "document.txt"), None)
+    if output is None:
+        return ""
+    return output.data.decode("utf-8", "replace").strip()
+
+
+def extract_office_text(name: str, data: bytes) -> str:
+    """Extract DOCX/XLSX/PPTX text with the Office libraries inside the locked container."""
+    suffix = Path(name.lower()).suffix
+    if suffix not in OFFICE_SUFFIXES:
+        raise SandboxError("Unsupported Office document type.")
+    result = _run_entry(
+        _OFFICE_EXTRACTOR,
+        "extract_office.py",
+        ["python", "/runner/extract_office.py"],
+        input_files={f"document{suffix}": data},
+    )
+    if not result.ok:
+        raise SandboxError(result.stderr or "The Office extraction sandbox failed.")
     output = next((item for item in result.files if item.name == "document.txt"), None)
     if output is None:
         return ""

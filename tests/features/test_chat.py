@@ -51,8 +51,23 @@ def test_build_user_content_pdf_uses_shared_extractor(monkeypatch):
     assert "OCR PDF BODY" in out
 
 
-def test_build_user_content_docx_file_inlined():
+def test_build_user_content_office_uses_the_shared_extractor(monkeypatch):
+    from backend.features import rag
+
+    monkeypatch.setattr(rag, "extract_office_text", lambda _name, _content: "WORKER DOCX BODY")
+    atts = [{"kind": "file", "name": "report.docx", "content": "data:application/x;base64,AAAA"}]
+
+    out = chat._build_user_content("summarize", atts)
+
+    assert "WORKER DOCX BODY" in out
+
+
+def test_build_user_content_docx_file_inlined(monkeypatch):
     from docx import Document
+
+    from backend.features import sandbox
+
+    monkeypatch.setattr(sandbox, "image_ready", lambda: False)  # keep the assertion off Docker
 
     buf = io.BytesIO()
     doc = Document()

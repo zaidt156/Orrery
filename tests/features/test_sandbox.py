@@ -1,4 +1,5 @@
 """Sandbox readiness and containment invariants."""
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -177,3 +178,58 @@ def test_pdf_ocr_mounts_the_source_read_only(monkeypatch):
     mounts = [command[index + 1] for index, value in enumerate(command) if value == "--mount"]
     assert any("target=/work/input,readonly" in mount for mount in mounts)
     assert command[-3:] == [sandbox.IMAGE, "python", "/runner/extract_pdf.py"]
+
+
+def _mount_source(command: list[str], target: str) -> Path:
+    mount = next(
+        value
+        for index, value in enumerate(command)
+        if command[index - 1] == "--mount" and target in value
+    )
+    return Path(mount.split("source=", 1)[1].split(",target=", 1)[0])
+
+
+def test_office_extraction_runs_in_the_container_with_a_read_only_source(monkeypatch):
+    seen = {}
+
+    def fake_run(command, **kwargs):
+        seen["command"] = command
+        seen["inputs"] = sorted(p.name for p in _mount_source(command, "target=/work/input").iterdir())
+        (_mount_source(command, "target=/work/out") / "document.txt").write_text(
+            "worker text", encoding="utf-8"
+        )
+        return SimpleNamespace(returncode=0, stdout=b"", stderr=b"")
+
+    monkeypatch.setattr(sandbox.proc, "run", fake_run)
+
+    assert sandbox.extract_office_text("Quarterly Report.DOCX", b"PK\x03\x04fake") == "worker text"
+
+    command = seen["command"]
+    input_names = seen["inputs"]
+    mounts = [command[index + 1] for index, value in enumerate(command) if value == "--mount"]
+    assert any("target=/work/input,readonly" in mount for mount in mounts)
+    assert command[command.index("--network") + 1] == "none"
+    assert command[-3:] == [sandbox.IMAGE, "python", "/runner/extract_office.py"]
+    # The container sees a fixed name derived from the validated suffix, never the uploaded filename.
+    assert input_names == ["document.docx"]
+
+
+@pytest.mark.parametrize("name", ["report.pdf", "archive.zip", "notes", "notes.docx.exe", ".docx"])
+def test_office_extraction_refuses_types_the_worker_does_not_handle(monkeypatch, name):
+    monkeypatch.setattr(
+        sandbox.proc, "run", lambda *a, **k: pytest.fail("the container must not start")
+    )
+
+    with pytest.raises(sandbox.SandboxError, match="Unsupported Office document type"):
+        sandbox.extract_office_text(name, b"PK\x03\x04fake")
+
+
+def test_office_extraction_reports_a_failed_run_rather_than_returning_empty_text(monkeypatch):
+    monkeypatch.setattr(
+        sandbox.proc,
+        "run",
+        lambda *a, **k: SimpleNamespace(returncode=1, stdout=b"", stderr=b"boom"),
+    )
+
+    with pytest.raises(sandbox.SandboxError):
+        sandbox.extract_office_text("notes.xlsx", b"PK\x03\x04fake")

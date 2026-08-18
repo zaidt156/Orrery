@@ -92,3 +92,67 @@ def test_pdf_prefers_sandboxed_extraction(monkeypatch):
 
     assert rag._pdf_text(encoded) == "OCR recovered text"
     assert seen and seen[0].startswith(b"%PDF-")
+
+
+def _docx_data_url(body: str) -> str:
+    import base64
+    import io
+
+    from docx import Document
+
+    stream = io.BytesIO()
+    document = Document()
+    document.add_paragraph(body)
+    document.save(stream)
+    encoded = base64.b64encode(stream.getvalue()).decode("ascii")
+    return (
+        "data:application/vnd.openxmlformats-officedocument.wordprocessingml.document;base64,"
+        + encoded
+    )
+
+
+def test_office_prefers_the_document_worker(monkeypatch):
+    from backend.features import sandbox
+
+    monkeypatch.setattr(sandbox, "image_ready", lambda: True)
+    seen = []
+    monkeypatch.setattr(
+        sandbox,
+        "extract_office_text",
+        lambda name, raw: seen.append((name, raw)) or "worker extracted text",
+    )
+    monkeypatch.setattr(rag, "_office_text_host", _unreachable_host_parser)
+
+    assert rag.extract_office_text("Notes.DOCX", _docx_data_url("HOSTBODY")) == "worker extracted text"
+    assert seen and seen[0][0] == "notes.docx"
+    assert seen[0][1].startswith(b"PK")  # raw OOXML bytes, not the data URL
+
+
+def _unreachable_host_parser(*_args, **_kwargs):
+    raise AssertionError("untrusted Office bytes must not be parsed in the backend process")
+
+
+def test_office_worker_failure_never_falls_back_to_the_host(monkeypatch):
+    from backend.features import sandbox
+
+    monkeypatch.setattr(sandbox, "image_ready", lambda: True)
+
+    def failing_worker(_name, _raw):
+        raise sandbox.SandboxError("the office extraction sandbox failed")
+
+    monkeypatch.setattr(sandbox, "extract_office_text", failing_worker)
+    monkeypatch.setattr(rag, "_office_text_host", _unreachable_host_parser)
+
+    assert rag.extract_office_text("notes.docx", _docx_data_url("HOSTBODY")) == ""
+
+
+def test_office_uses_the_host_parser_only_without_the_worker(monkeypatch):
+    from backend.features import sandbox
+
+    monkeypatch.setattr(sandbox, "image_ready", lambda: False)
+
+    assert "HOSTBODY" in rag.extract_office_text("notes.docx", _docx_data_url("HOSTBODY"))
+
+
+def test_office_rejects_malformed_base64():
+    assert rag.extract_office_text("notes.docx", "data:application/x;base64,not-valid!!!") == ""
