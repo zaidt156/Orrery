@@ -106,9 +106,9 @@ is the Orrery decision, not a claim that every package is enabled by Harness's d
 
 DeepSeek Harness is a plugin-composed coding-agent runtime. Cordis profiles and ordered patches
 mount services and consumers. The default workspace is the invoking current directory. The base
-bundle supplies the session, agent loop, model, filesystem/shell, policy, persistence, skill,
-compaction, goal/plan/todo, subagent, workflow, and web-search pieces; the Web bundle adds the
-browser modules and UI.
+bundle defines the host services and default agent-plane rows. Web then disables/re-homes many
+prompt, tool, and delegation rows into the selected per-session preset before adding browser modules
+and UI. `standard` is the Web default; `code`, `minimal`, and `cordis` are selectable alternatives.
 
 The append-only Session log is intended to be the authority for model-visible behavior. A normal
 turn is:
@@ -122,19 +122,177 @@ turn is:
 6. persist immutable results before making them model-visible;
 7. continue or close the step and turn with explicit stopping events.
 
-The browser primarily renders projections of that log: conversation, tool tree, pending approval
-or question, plan/goal/todo state, subagent tree, trajectory, usage, produced files, and workspace
-session state. JSONL is the shipped session persistence; SQLite alternatives exist. Orrery should
-copy the event/projection discipline, not either storage backend.
+The conversation/tool/plan/goal/todo/trajectory surface is largely projected from the Session log.
+The client combines it with other domain and live projections for pending interactions, subagents,
+jobs, workflows, workspaces, and settings. Pending questions, in particular, are live provider state
+rather than their own durable request/answer stream. Workspace registration, ordering, grouping,
+and archive state come from the separate storage domain. JSONL is the shipped session persistence;
+SQLite alternatives exist. Orrery should copy the explicit-authority/projection discipline, not
+either storage backend.
+
+## Architectural seams and their file families
+
+### Cordis lifecycle and configuration
+
+`vendor/cordis/src/fiber.ts` and the vendored loader/include/HMR packages are not passive third-party
+copies; Harness relies on local hardening. Plugin setup receives an effect owner before it can
+register behavior. Partial setup rolls back, unloading rejects new effects, asynchronous cleanup is
+awaited, child scopes unwind deterministically, and observer cleanup failures are contained.
+
+`vendor/loader/src/config`, `vendor/include/src/index.ts`, and `packages/boot/app-boot` apply bundle,
+profile, home, and CLI patches through the same stable-ID composition algorithm used by config dump.
+Updates are serialized. Failed imports or refreshes retain/restore the last usable tree. A running
+agent stays pinned to its mounted preset generation, and children bind to that generation rather
+than silently remounting a changed name.
+
+Portable lesson: capability setup/mutation/teardown should be transactional and quiescent. Do not
+port Cordis or give mutable configuration control of Orrery's security floor.
+
+### Session authority and crash repair
+
+`packages/core/session/src` assigns monotonic sequence numbers and admits only lossless JSON values.
+It rejects cycles, sparse arrays, exotic prototypes, functions, symbols, `-0`, and other values that
+cannot round-trip. The model surface is an ordered projection containing only user messages,
+assistant messages, and tool results; replacement events cite what they shadow. Tool-result
+replacement may change only presented content, preserving the canonical fact.
+
+Observers run after append commit and cannot veto history; re-entrant append is rejected. Resume
+validates its seed. Crash repair distinguishes a tool that never started from one whose external
+outcome is unknown. Forks require a balanced completed boundary. `deriveMessages()` rebuilds from
+the surface rather than live process memory.
+
+Portable lesson: Orrery needs typed durable evidence and explicit unknown-outcome repair, while
+keeping PostgreSQL and its existing product tables.
+
+### Agent and loop lifecycle
+
+`packages/core/agent` and `packages/core/agent-loop` publish an agent only after setup and durability
+work succeed; teardown cancels and drains its machine before removing scopes/session attachment.
+Inbox changes are durable before memory changes. `followup` targets the next turn and wakes it,
+`steer` targets the next model step and wakes it, while `inject` targets the next step without a
+wake. Idle, maintenance, and running phases prevent scheduling work from racing a turn.
+
+Each step records its start, claimed user input, exact request header/contexts, raw model chunks,
+assistant completion anchor, tool calls/results, stopping reason, step end, and turn end. A runtime
+invariant reconstructs the request from the log and compares it with the frozen request actually
+sent. Ordered calls may overlap only in consecutive explicitly parallel-safe groups; exclusive calls
+form barriers. Cancellation records synthetic results for calls skipped before dispatch and drains
+calls that already started.
+
+Portable lesson: this exact-request invariant is Orrery's first slice. The existing browser Activity
+panel is useful visibility, but it observes ephemeral SSE and cannot establish the invariant.
+
+### Model, prompt, and context layers
+
+`packages/llm/*` resolves an exact adapter registration before I/O, rejects unsupported reasoning
+effort before network access, captures provider defaults once, turns transport failures into stable
+terminal chunks, and logs retries through a separate around-layer. Token accounting attaches
+provider usage only when it matches the canonical request envelope; otherwise it uses a deterministic
+estimate.
+
+`packages/core/system-prompt` gives prompt sections explicit names/order/scope and fails unresolved
+template variables. `packages/context/agent-instructions` loads applicable `AGENTS.md`/`CLAUDE.md`
+files broad-to-specific under a 65,536-byte budget, deduplicates by content hash, preserves the most
+specific instructions when capped, and refreshes only after successful filesystem activity.
+Session references import at most three bounded, explicitly untrusted snapshots. Time context logs
+the clock/time-zone provenance used for the step.
+
+Portable lesson: snapshot what was actually sent, retain authority labels, and meter the complete
+request. Orrery's current trusted/untrusted prompt separation remains the governing design.
+
+### Compaction, goals, todo, plan, and interaction
+
+`packages/compaction/*` serializes every compaction behind a durable start/end bracket. A successful
+transaction writes summary metadata and one surface-replacement checkpoint. Balanced tool-call/
+result pairs constrain cut positions; a recent tail is retained. The optional result pruner keeps
+raw events while replacing only model-visible content with bounded head/marker/tail.
+
+`packages/goal/*` maintains one revisioned objective with compare-and-set updates and explicit
+active/paused/blocked/complete phases. Its continuation-round authority is separate from direct
+human authority. This is not a cost/token/time budget and should not replace Orrery's Agent goal and
+scheduler.
+
+`packages/todo/tool-todo` records whole-list last-write-wins snapshots. Plan mode is logged soft
+collaboration state, and leaving it requires review of the exact plan. Approvals have paired durable
+asked/decided events and fail-closed one-shot decisions. User questions use a separate live provider
+seam with no independent request/answer audit stream; the answer later appears as an ordinary tool
+result. Slash commands are plugin-owned UI operations and their result text stays outside model
+history.
+
+Portable lesson: result pruning precedes summarization. Orrery should give todo/question/plan a
+shared durable projection rather than copy the question seam's process-lifetime limitation; none of
+it grants tool authority.
+
+### Web product and coding-console UX
+
+`apps/web` is a small Vite boot shell. `packages/client/runtime` is the React-free projection layer,
+`packages/client/web-react` binds it to React, and the many `ui-*` packages fill product slots.
+Unary operations use HTTP; two downlink WebSockets carry events. Reconnect starts a new generation.
+Host/Origin/Fetch-Metadata checks are explicitly a reachability fence, not authentication, so this
+transport must not replace Orrery's launch-code/session-cookie boundary.
+
+The strongest user-facing pieces are:
+
+- streaming conversation with separate thinking, grouped step/tool summaries, compaction/retry/
+  max-token notices, queue/steer controls, context/token/cache/TTFT stats, and a produced-file rail;
+- pending approval, user question, or plan review taking over the composer;
+- extensible intent cards for terminal, read, diff, search, and web operations;
+- a virtualized range-filterable event trajectory/inspector;
+- canonical workspace/session grouping, archive, ordering, directory selection, search snippets,
+  completed-turn fork, and descendant activity indicators;
+- hierarchical subagent activity with duration/tokens, navigation, interrupt, and continue;
+- Goal/Todo/Plan docks, model/reasoning selection, slash commands, images, feedback, skill and
+  permission controls;
+- observational jobs/workflow views and produced-file open/show-folder affordances.
+
+Known gaps matter: sent user messages cannot be edited, some detail/paging paths are stubs,
+approvals expose allow-once/reject rather than a full rule manager, jobs UI cannot cancel/show
+output, workflow UI lacks script/error/log/control views, and no search result deep-links to its
+matching event.
+
+Portable lesson: adapt the interaction patterns over Orrery's authenticated HTTP/SSE and durable
+events; do not transplant the client runtime wholesale.
+
+### Persistence, workspace, settings, and protocols
+
+The shipped session medium is per-session JSONL. Writes serialize/batch/flush and synthesize crash
+closers with unknown outcomes, but there is no retention/delete policy and session listing is
+unpaginated. Optional SQLite and query packages exist; shipped Web deliberately uses an in-memory
+query index that never opens, so content FTS is not a default feature.
+
+Non-session storage has JSON whole-file atomic rewrite and SQLite per-record providers. Both reject
+schema version mismatch without migration and have limited multi-process conflict handling.
+Workspace registration canonicalizes with `realpath`, durably orders workspaces/sessions, archives
+without deleting logs/files, and uses pending-mutation markers for crash recovery.
+
+Settings resolve schema defaults, composition base, then user section, with revision/CAS conflict
+handling and serialized namespace writes. The YAML provider preserves comments and atomically
+replaces owner-only files. Its documentation admits secret redaction is not fail-closed through all
+schema unions/intersections/transforms and that defaults can leak; Orrery must keep keychain secrets
+and stricter redaction.
+
+ACP is a fresh-session committed-answer automation adapter, not the full Web experience. The SDK's
+high-level `run()` waits until the whole agent is idle, so its last answer is interval-scoped rather
+than causally assigned to one prompt. It lacks robust mid-turn cancel/session close/version
+negotiation, and packaged runtimes omit Windows. Any Orrery SDK should use stable request IDs and a
+prompt-correlated terminal outcome from day one.
+
+### Test and release discipline
+
+Harness uses strict TypeScript gates, per-file source coverage expectations, generated configuration/
+tool/persistence catalogs, replay fixtures, browser snapshots, loader smoke tests, and built-entry
+checks. The useful transfer is model-visible golden scenarios and generated-contract drift gates,
+not blindly copying a 100-percent-per-file target into Orrery. External effects must be asserted at
+the boundary rather than accepted from an agent's self-report.
 
 ## The most important reusable contract: tool execution
 
 Harness separates the canonical structured tool value from the text rendered to the model and the
 metadata replayed in the UI. Its full pipeline is:
 
-1. validate and canonicalize immutable arguments;
-2. collapse execution mode and policy to the strictest result;
-3. persist the model's call;
+1. persist the raw model tool call before policy or execution;
+2. validate and canonicalize immutable arguments;
+3. collapse execution mode and policy to the strictest result;
 4. run pre-execution policy;
 5. resolve an exact approval, with absence meaning deny;
 6. apply monotonic guards;
@@ -143,7 +301,7 @@ metadata replayed in the UI. Its full pipeline is:
 9. run post-execution policy;
 10. validate and normalize the canonical result;
 11. finalize bounded model/UI presentation;
-12. notify contained observers and persist the result.
+12. notify contained observers and persist the result before another model request completes.
 
 Calls retain IDs and order. Only consecutive calls explicitly marked parallel-safe can overlap;
 exclusive calls are barriers. Cancellation before dispatch is distinguishable from cancellation
@@ -152,9 +310,9 @@ re-enter the same registry instead of bypassing policy.
 
 Orrery already has the more important security floor: scope allow-lists, feature gates, Agent grant
 actions/resources, Pydantic validation, risk classification, digest-bound approval, deny-only hooks,
-and sanitized errors in `backend/tools/registry.py`. It lacks the durable cross-product execution
-envelope, around/post phases, canonical-versus-presented result split, output validation, exact
-cancellation facts, and contained observation.
+and sanitized errors in `backend/tools/registry.py`. It lacks the durable cross-product call context
+plus lifecycle events, around/post phases, canonical-versus-presented result split, output
+validation, exact cancellation/unknown-outcome facts, and contained observation.
 
 ## Coding capabilities worth adapting
 
@@ -167,30 +325,41 @@ the observed version. Literal replacement fails on stale content or ambiguous ma
 
 For Orrery this becomes an explicit coding-root capability attached to a Project. It must reject
 path traversal and symlink escape, never infer the user's home or repository root, and never turn a
-Project's document collection into ambient filesystem authority.
+Project's document collection into ambient filesystem authority. Creation/rebinding is local-host/
+admin-only through a trusted chooser; team members use only pre-approved roots. Every operation
+re-resolves filesystem identity and requires the exact root/read-or-write grant. A selected root is
+context, not authorization.
 
 ### Output retention
 
 Harness can replace oversized plain text with a bounded head/tail preview and a locator for the
 complete result. Its local locator lacks authorization, deletion, and garbage collection. Orrery
-should instead retain full output as an owner/run-scoped artifact with MIME type, byte count,
-digest, expiry, and an authorized retrieval tool. Host paths must never be model-visible.
+should instead define the canonical durable result as the validated, security-filtered value; raw
+unsanitized transport/provider output is non-authoritative and discarded. A hard-capped expanded
+result may be retained as an owner/run-scoped artifact with MIME type, byte count, digest, quota,
+and an authorized retrieval tool. The exact bounded presentation the model saw stays with its event.
+Expanded-result retention must either match the run/session lifetime or advertise a bounded replay
+horizon and leave a digest/tombstone after garbage collection. Host paths must never be model-visible.
 
 ### Processes, jobs, and terminal
 
 Good semantics include explicit argv, scrubbed environment, independent stdout/stderr loss flags,
 timeout/abort/exit/signal facts, process-tree termination, admission before side effects, and drain
 on disposal. Orrery should keep execution inside Docker and make background jobs durable rather
-than process-local. A persistent terminal is materially riskier and belongs after reliable one-shot
-commands and jobs; if built, it stays inside a disposable container with exact owner/session scope.
+than process-local. Coding-root command mounts stay read-only by default. A writable formatter/test
+needs a higher-risk grant and overlay/diff/approval flow whose changes are applied through guarded
+atomic edits; a direct writable mount would bypass the editor invariant. A persistent terminal is
+materially riskier and belongs after reliable one-shot commands and jobs; if built, it stays inside
+a disposable container with exact owner/session scope.
 
 ### LSP
 
 Harness exposes only definition, references, implementation, and hover. It bounds protocol sizes,
 routes by extension, serializes per workspace, restarts poisoned servers, and refuses server edit or
-command requests. Orrery should run pinned preinstalled language servers inside its offline project
-container, with no downloads, network, `workspace/applyEdit`, arbitrary JSON-RPC, or paths outside
-the coding root.
+command requests. Orrery should run pinned preinstalled language servers as non-root inside its
+resource-capped offline project container, with writable scratch but an always-read-only workspace,
+no workspace plugins where configurable, no secrets/downloads/network, descendant cleanup, no
+`workspace/applyEdit`, no arbitrary JSON-RPC, and no paths outside the coding root.
 
 ### Subagents
 
@@ -198,7 +367,9 @@ Harness has foreground/background and continuable children, lineage, follow-ups,
 cancellation, depth limits, and several in-process/external drivers. Orrery's first version should
 be smaller: one-shot children only, a strict parent-grant intersection, fixed no-approval behavior,
 hard depth/sibling/concurrency/total budgets, durable lineage, and parent cancellation that drains
-all descendants. Partial output is evidence, never success.
+all descendants. No approval means fail closed: an approval-required child action is denied, never
+auto-approved or promoted, and parent preapproval never widens the exact inherited root/tool/resource
+ceiling. Partial output is evidence, never success.
 
 ### Collaboration state and compaction
 
@@ -211,12 +382,20 @@ it cannot safely summarize today's clipped Agent step detail.
 
 Do not describe every package as a default feature:
 
-- Native tool presentation is the default; Code Mode is opt-in through configuration/environment.
+- Web defaults each session to the `standard` preset with native tool presentation. `code` is a
+  shipped opt-in Code Mode preset; `cordis` is a shipped opt-in conversational preset/plugin-authoring
+  surface; `minimal` omits plan, goals, compaction, todo, ask-user, delegation, and web search.
+  `DSH_TOOLS_MODE` is also a temporary process-wide override. Headless uses the base composition
+  directly rather than the Web preset roster.
 - The TypeScript Code Mode worker is explicitly not a security boundary.
-- Automatic output spill is disabled unless configured.
+- The shipped base enables best-effort plain-text spill at 50,000 UTF-8 bytes. It skips `read` and
+  nested/mixed-content results; omission disables it in another composition, and its host-path
+  locator has no Orrery-grade authorization, retention, or garbage collection.
 - Schedule is an example composition, not in base/Web/headless. It is a live-session reminder, not
   a cron automation engine.
-- Web fetch is disabled by default; DeepSeek web search is enabled.
+- The HTTP fetch provider/tool is not mounted. The DeepSeek search service/provider is mounted;
+  model-facing web search comes through presets such as `standard`, `code`, and `cordis` (not
+  `minimal`) and requires a usable DeepSeek credential/route.
 - Session full-text query exists, but shipped Web opens its SQLite query index at `never` and keeps
   it in memory; the model session-query tool is not mounted.
 - Telemetry is disabled by default, but when enabled can export raw Session records.
@@ -225,8 +404,11 @@ Do not describe every package as a default feature:
   model-authored code access to live host services.
 - Codex and Claude Code adapters exist but are not part of the base shipped composition.
 - ACP and the SDK are narrower automation surfaces; they do not reproduce the full Web lifecycle.
-- Python packaging does not provide a first-party Python Code Mode runtime, and packaged SDK
-  runtimes do not cover Windows.
+- The Python SDK has no Python-native/default Code Mode implementation, although its packaged Node
+  executable closure includes the TypeScript Code Runtime packages for custom composition. Python
+  runtime wheels cover Linux x64/arm64 and macOS arm64, not Windows; explicit Node/TypeScript launch
+  is a separate path.
+- Slash commands and message feedback are Web host/UI features, not shared headless/ACP defaults.
 
 ## What Orrery already has
 
@@ -238,7 +420,8 @@ Do not rebuild these:
 - OS-keychain secrets;
 - shared tool registry with scope, grants, resources, validation, risk, approvals, and deny-only
   policy hooks;
-- offline, resource-capped Docker Python/shell/file execution;
+- offline, resource-capped Docker Python/shell plus generated-file validation over isolated scratch/
+  input/output mounts, with no selected checkout or coding-root access;
 - branchable Chat message versions;
 - immutable Agent versions, run config snapshots, step trace, budgets, cancellation, approvals,
   replay/fork, cron scheduling, deduplication, concurrency policy, and orphan recovery;
@@ -286,9 +469,10 @@ The following would make Orrery worse or violate its security contract:
 
 The safe order is:
 
-`durable execution events -> retained results -> explicit coding root -> read/search -> guarded edit
--> workspace-mounted sandbox -> guards/compaction -> questions/todo/plan -> durable jobs -> LSP ->
-bounded subagents -> optional container Code Mode/terminal -> SDK and session search/export`
+`durable execution events + repeat guard -> retained results -> explicit coding root -> read/search
+-> guarded edit -> read-only workspace sandbox commands -> metering/compaction -> questions/todo/plan
+-> durable jobs -> LSP -> bounded subagents -> optional container Code Mode/terminal -> SDK and
+session search/export`
 
 The concrete slices and acceptance gates are in ADR-005 and the canonical plan. The first slice is
 deliberately evidence-only: capture the exact tool lifecycle and request/result payloads without
@@ -299,16 +483,24 @@ adding any new filesystem or process authority.
 At minimum, implementation must prove:
 
 - path traversal and symlink escape are rejected;
+- team members cannot attach/rebind host roots, and replaced filesystem identity is detected on use;
 - two concurrent versioned edits have at most one winner;
 - ambiguous literal replacement fails, and CRLF/mode are preserved;
 - search arguments never pass through shell interpolation;
 - previews state byte loss and point only to authorized artifact IDs;
+- per-result/run/owner quotas reject before artifact writes and cleanup cannot silently break the
+  declared replay horizon;
 - admission failures create no process/job side effects;
+- crash recovery distinguishes never-dispatched from body-started/unknown external outcome;
 - timeout and cancellation kill descendants and wait for drain;
+- coding commands cannot obtain a direct writable checkout mount; approved overlay changes re-enter
+  root grants, diff review, observed versions, and atomic application;
 - language servers cannot edit, execute commands, use network, or leave the workspace;
 - a child cannot expand parent grants, budget, tool set, or request approval;
 - parent cancellation drains descendants and partial child output is never reported as success;
 - any Code Mode subcall re-enters scope, grant, approval, audit, and result bounds;
-- secret values never appear in events, environment, errors, or artifacts;
+- keychain/provider/connection secrets are never injected into model-bound events or ambient process
+  environments; sanitized canonical results and quarantined raw output follow explicit owner access,
+  quota, retention, and presentation-redaction rules;
 - artifact/session/export retrieval enforces owner and run authorization;
 - model-visible requests and results can be reconstructed exactly from durable records.

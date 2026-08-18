@@ -3442,3 +3442,39 @@ Planned first in `tasks/plan.md` at the user's request, then implemented in that
 Verified: every in-page anchor on both pages resolves to a real id, both cross-page anchors resolve,
 no `/releases` link survives anywhere, the install command matches `README.md` character for
 character, and the landing page parses with no unclosed or mismatched tags after the section splice.
+
+## Step 171 - DeepSeek Harness audited before importing coding authority (August 18, 2026)
+
+DeepSeek Harness rc.7 was pinned to commit
+`99f6f02fecdb7dff40c3fbc9470f5907c29f74ca` and audited as a repository, not as a feature list.
+All 7,466 tracked paths were inventoried, all 49 package groups were covered, and three independent
+passes followed the core/session/LLM runtime, coding tools and isolation, and product/client/
+persistence/SDK surfaces through their governing instructions, English contracts, implementation,
+tests, generated catalogs, examples, and shipped bundle patches. Translations, snapshots, fixtures,
+lockfiles, and the 2,105-file design-history tree were used as corroboration rather than falsely
+counted as separate runtime behavior.
+
+The result is a source audit plus proposed ADR-005. Orrery will borrow the useful invariants - exact
+durable model/tool evidence, canonical result versus bounded presentation, explicit coding roots,
+version-safe file operations, durable jobs, read-only LSP, and bounded child-agent lineage - without
+embedding Cordis or a second TypeScript backend. PostgreSQL, the OS keychain, the authenticated
+loopback API, the central grant/approval boundary, guarded network access, and offline Docker remain
+the authorities.
+
+The proposed sequence has twelve reviewable slices. Exact execution evidence comes first and grants
+no new filesystem/process authority; output retention, a user-selected coding root, read/search,
+observed-state editing, read-only-by-default Docker commands with overlay-gated writes, compaction/
+collaboration state, jobs, LSP, and subagents follow in dependency order. Host Code Mode,
+self-modifying extensions, plaintext
+credential files, ambient/full host access, raw telemetry, the SSRF-incomplete fetcher, E2B as a
+default, and host PTYs were explicitly rejected.
+
+This reconciliation also fixed older architecture/plan claims that Automations was backend-only and
+its UI static. Authenticated CRUD/manual runs, the registered node palette, saved-spec rendering,
+and durable run steps are live; canvas authoring, durable approval pause/resume, and scheduling are
+the honest remaining gaps.
+
+No runtime code was changed because ADR-005 remains Proposed for user review. Verified: the pinned
+revision and 7,466-file inventory still match, the audit ledger covers all 49 package groups, every
+relative link across the affected canonical/audit/decision documents resolves, and `git diff
+--check` is clean.

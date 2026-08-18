@@ -115,21 +115,25 @@ Cordis/TypeScript runtime.
 
 Build in dependency order:
 
-1. Record exact, append-only model request and tool call/result evidence shared by Chat, Agents, and
-   Automations, while retaining current rows/APIs as projections.
-2. Separate complete canonical results from bounded model/UI presentation; retain oversized output
-   behind owner/run-authorized Orrery artifact IDs.
-3. Add explicit Project-attached coding roots with only `read-only` and `workspace-write`, followed
-   by bounded read/glob/grep and observed-version atomic edit tools.
-4. Mount only the selected root into Orrery's existing offline Docker execution path, with exact
-   grant mode, structured process outcomes, descendant cancellation, and no ambient environment.
-5. Add repeated-call protection, exact metering, replay-safe tool-result pruning, then summary
-   checkpoints with provenance.
+1. Record immutable call contexts plus append-only model/tool lifecycle evidence shared by Chat,
+   Agents, and Automations, including admitted/started/unknown-outcome recovery and a deterministic
+   repeated-call guard, while retaining current rows/APIs as projections.
+2. Separate security-filtered canonical results from bounded model/UI presentation; retain hard-
+   capped expanded output behind owner/run-authorized Orrery artifact IDs with quotas and an honest
+   retention/replay horizon.
+3. Add local-host/admin-approved Project coding roots with only `read-only` and `workspace-write`,
+   followed by root-granted bounded read/glob/grep and observed-version atomic edit tools.
+4. Mount only the selected root into Orrery's existing offline Docker execution path, read-only by
+   default. Writable commands require a higher-risk grant, overlay/diff capture, and guarded atomic
+   application rather than a direct writable checkout mount.
+5. Add provenance-labelled provider usage/token estimates, replay-safe tool-result pruning, then
+   summary checkpoints with provenance.
 6. Add durable todo/question/plan-review state and background jobs; add a container terminal only
    if one-shot jobs prove insufficient.
-7. Add read-only LSP operations inside the offline project container.
-8. Add bounded one-shot subagents whose tools, grants, budgets, and depth can only be reduced from
-   the parent.
+7. Add read-only LSP operations inside a non-root, resource-capped offline container with an always
+   read-only workspace and no workspace plugins, secrets, or child-process escape.
+8. Add bounded one-shot subagents whose tools, root/resources, grants, budgets, and depth can only be
+   reduced from the parent; approval-required child actions fail closed.
 9. Consider containerized Code Mode, bounded Automation fan-out, session search/export, and a
    Python-native local SDK only after the shared lifecycle is proven.
 

@@ -42,34 +42,56 @@ land by bypassing an earlier invariant.
 
 ### Slice 1 - exact execution evidence
 
-Define one immutable execution context and append-only event envelope shared by Chat, Agents, and
-Automations. At minimum it carries owner, product/run/session identity, monotonic sequence, turn and
-call IDs, parent call, tool key, validated safe arguments, grant/config snapshot references,
-timestamps, phase, cancellation/timeout facts, canonical result metadata, and bounded presentation.
+Define one immutable call context plus typed append-only lifecycle events shared by Chat, Agents,
+and Automations. The context carries owner, product/run/session identity, turn/call/parent IDs, tool
+key, validated safe arguments, and grant/config snapshot references. Per-stream monotonic sequence
+numbers have a database uniqueness constraint. Events carry admission, body-started, phase,
+cancellation/timeout, result, and terminal-outcome facts; changing lifecycle state never mutates the
+call context.
 
-Capture exact provider/model/effort/default markers, system prompt, model messages, and tool catalog
-used for each model request. Existing `Message`, `AgentRunStep`, and `WorkflowRunStep` APIs remain
-projections during migration. Canonical replay payloads are never clipped; secret-bearing values are
-stored only as redacted metadata or keychain references.
+Capture the canonical post-redaction provider request envelope actually supplied to the adapter:
+provider/model/effort/default markers, system prompt, model messages, and tool catalog. Persist the
+exact bounded result presentation the model saw plus loss metadata. Slice 1 does not claim to retain
+complete expanded output; Slice 2 adds that. System-managed credentials remain stable references and
+are resolved below the model-bound envelope; transport auth headers are excluded and audited only by
+safe provenance/digest. Sensitive text a user intentionally sends is necessarily part of the
+owner-private request record.
+
+“Append-only” is a logical run invariant, not immortal storage. Slice 1 keeps exact payloads owner-
+isolated inside the existing PostgreSQL trust domain and creates no new plaintext filesystem copy.
+Retention/export/delete follows the parent conversation/run and removes the event payloads with it;
+large expanded tool output waits for Slice 2's explicit protected-artifact policy. Existing
+`Message`, `AgentRunStep`, and `WorkflowRunStep` APIs remain projections during migration.
 
 Acceptance:
 
-- an invariant reconstructs a request from durable records and byte-compares it to what was sent;
+- an invariant reconstructs the canonical structured request and proves structural equality or a
+  canonical-serialization digest match with the frozen adapter request (not HTTP wire bytes);
 - tool calls and results are logged before becoming model-visible;
+- call-admitted and body-started events precede side effects; recovery distinguishes never
+  dispatched from started/unknown outcome, and unknown external effects are never presented as
+  retry-safe;
 - unknown tools, validation failures, denials, cancellations, timeouts, and exceptions have stable
   structured outcomes;
+- deterministic repeated identical calls trigger a bounded model-visible loop warning before any
+  new filesystem/process authority is introduced;
 - retries and forks retain exact lineage;
 - no new tool or filesystem authority is added in this slice.
 
 ### Slice 2 - full result retention with bounded presentation
 
-Separate canonical output from the text shown to the model/UI. Retain complete oversized output in
-an owner/run-scoped Orrery artifact and return a bounded head/tail preview with byte count, digest,
-MIME type, loss/truncation facts, artifact ID, and expiry. Retrieval is an authorized tool/API call;
-the model never receives a host path.
+Separate the validated, security-filtered canonical result from the text shown to the model/UI; raw
+unsanitized provider/transport output is non-authoritative and discarded. Retain hard-capped expanded
+results in owner/run-scoped Orrery artifacts and return a bounded head/tail preview with byte count,
+digest, MIME type, loss facts, and opaque artifact ID. Enforce per-result, per-run, and per-owner
+quotas before writing. Retrieval is an authorized tool/API call; the model never receives a host
+path.
 
-Acceptance includes owner isolation, expiry/garbage collection, secret redaction, retrieval caps,
-and replay from the retained canonical result.
+The exact presentation the model saw remains with the parent event. Expanded canonical artifacts
+either live as long as the run/session or the product declares a bounded replay horizon and leaves a
+digest/tombstone after garbage collection. Deletion is atomic with the owning record. Acceptance
+includes owner isolation, quarantine/presentation redaction, retrieval caps, quotas, cleanup, and
+honest replay behavior after retention ends.
 
 ### Slice 3 - explicit coding workspaces
 
@@ -78,33 +100,42 @@ display name, ownership, permission (`read-only` or `workspace-write`), and revi
 Project's RAG files as filesystem authority, infer the current directory, or offer unrestricted
 home/host access.
 
-The UI must show exactly which root and permission a coding session is using. `danger-full-access`
-is not an Orrery preset.
+Creating/rebinding a root is local-host/admin-only through a trusted directory chooser; team members
+may use only pre-approved roots. Re-resolve canonical filesystem identity on every use so a replaced
+path/symlink cannot widen authority. The UI must show exactly which root and permission a coding
+session is using. `danger-full-access` is not an Orrery preset.
 
 ### Slice 4 - read, glob, and grep
 
 Add bounded project-scoped file reading, directory/glob discovery, and direct-argv ripgrep. Enforce
-canonical containment and symlink policy on every call. Results enter the common event/output path.
+canonical containment, the exact root-scoped read grant, and symlink policy on every call. Results
+enter the common event/output path.
 
 ### Slice 5 - observed-state editing
 
 Add create/write and literal edit only after read/search is stable. Existing files require an
 observed digest/version. Writes use private staging and atomic replacement, preserve mode and line
-endings, fail on stale content or ambiguous matches, and produce a diff preview. Registry risk and
-approval remain authoritative.
+endings, fail on stale content or ambiguous matches, and produce a diff preview. Every mutation
+requires an exact root-scoped write grant. Before sharing the tool across Chat/Agents/Automations,
+define Chat's explicit local-write approval policy; current risk labels alone do not authorize it,
+and selecting a root in the UI is not a grant.
 
 ### Slice 6 - workspace-mounted sandbox commands
 
 Allow Python/shell/test/formatter commands to mount only the selected coding root into the existing
-offline Docker sandbox, read-only or workspace-write according to the exact grant. Add explicit
-argv where possible, independent timeout/abort/exit/signal facts, process-tree cancellation, and
-drain before completion. Do not leak ambient host environment or secrets.
+offline Docker sandbox, **read-only by default**. A writable command is a separate higher-risk grant:
+it must run against an overlay, capture a complete bounded diff, and require the exact local-write
+policy/approval before applying changes atomically through the guarded file service. Direct writable
+checkout mounts must not bypass observed-version editing. Add explicit argv where possible,
+independent timeout/abort/exit/signal facts, process-tree cancellation, and drain before completion.
+Do not leak ambient host environment or secrets.
 
-### Slice 7 - repetition guard and replay-safe context reduction
+### Slice 7 - replay-safe metering and context reduction
 
-Add canonical repeated-call detection, exact request/token accounting, model-free tool-result
-pruning, and then transactional summary checkpoints. Raw events/results remain intact; only the
-model-visible projection is compacted, with source provenance and balanced tool call/result cuts.
+Add exact request capture plus provenance-labelled provider usage when it matches that request, or a
+clearly labelled deterministic token estimate otherwise. Then add model-free tool-result pruning and
+transactional summary checkpoints. Raw events/results remain intact; only the model-visible
+projection is compacted, with source provenance and balanced tool call/result cuts.
 
 ### Slice 8 - coding collaboration state
 
@@ -119,20 +150,25 @@ effect, bounded concurrency, output cursors, restart reconciliation, process-tre
 SSE/polling UI. Do not autonomously wake a model in the first version.
 
 A persistent terminal remains a later, optional container-only capability after job lifecycle and
-cleanup are proven.
+cleanup are proven; it inherits the same read-only-root default and cannot bypass the overlay/
+guarded-application rule.
 
 ### Slice 10 - read-only LSP
 
 Expose definition, references, implementation, and hover only. Run pinned preinstalled servers in
-the offline project container. Bound protocol/document/result sizes and reject server edit, command,
-download, network, or out-of-root requests.
+the offline project container as non-root with resource caps, writable scratch only, and an always
+read-only workspace mount regardless of the session's write permission. Disable workspace plugins
+where configurable, provide no secrets/network, clean up descendants, bound protocol/document/result
+sizes, and reject server edit, command, download, or out-of-root requests.
 
 ### Slice 11 - bounded one-shot subagents
 
 Add one-shot child runs with durable parent/child lineage, fixed depth/sibling/concurrency/total
-budgets, a grant/tool intersection with the parent, no child approval path, structured terminal
-states, and descendant drain on parent cancellation. Continuable children and external adapters are
-later decisions.
+budgets, and an exact grant/tool/root/resource intersection with the parent. “No child approval
+path” is fail-closed: a child action requiring approval is denied, never auto-approved or promoted to
+the parent UI, and a parent's preapproval cannot widen the inherited ceiling. Record structured
+terminal states and drain descendants on parent cancellation. Continuable children and external
+adapters are later decisions.
 
 ### Slice 12 - optional orchestration and developer surfaces
 
@@ -148,7 +184,8 @@ every prompt with its terminal outcome and support cancel/resume/fork/close and 
 - Model-visible means durably reconstructible.
 - Canonical output and bounded presentation are different data.
 - A locator is an authorized opaque ID, never a host path.
-- A worker thread, VM, path fence, or language server is not a security boundary.
+- Worker threads, path fences, and language servers are not isolation boundaries. Container/VM
+  isolation counts only when its explicit hardening and enforcement are active and fail closed.
 - Approval is bound to exact validated arguments and cannot be inferred from a preset.
 - No hidden network, credential, workspace, telemetry, or self-modification authority.
 - External effects require idempotency/claim semantics; a checkpoint does not imply exactly-once.
