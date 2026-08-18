@@ -3135,3 +3135,38 @@ half-failed setup, missing `setup`, unimportable modules, and hostile names.
 
 That completes the four properties from ADR-004: the seam (Step 157), fork and replay over the
 durable log (Step 158), configuration layers with provenance (Step 159), and plugin mounting here.
+
+## Step 161 - The tests that only ever passed on Windows (August 18, 2026)
+
+CI was still red, and local runs could not see why: every configuration passed on this Windows
+machine. Reproducing the Linux job in a container found it immediately - eight tests encode
+assumptions that are true on Windows and false everywhere else.
+
+Two frozen-path tests built a fake executable at `C:/packages/...`. That is an absolute path on
+Windows and a *relative* one on Linux and macOS, so `app_dir()` resolved it against the working
+directory and the assertion drifted to `/app/C:/packages/...`. They now build the fake path from a
+root that is absolute on the host they run on.
+
+Five failed because PySide6 could not import: `libGL.so.1` is not on a bare Linux box, and QtPdf
+pulls it in through QtGui. Two of those already tried to guard themselves with
+`pytest.importorskip`, which was not enough because the loader raises `OSError` as well as
+`ImportError` for a missing shared library. They now share a `requires_pdf_renderer` marker built on
+`filepreview.pdf_renderer_available()` - the same check the application uses - so a skip means the
+renderer genuinely cannot run here rather than that the test is broken. The file-preview status
+route test was asserting `available: True` outright; it now asserts against that same runtime check,
+which is the honest claim, and keeps asserting what it is actually named for: that the route is
+authenticated and does not leak the converter's path.
+
+The last one drove the WinGet installer, which the code deliberately refuses off Windows. It is
+marked Windows-only now, and a companion test pins the refusal on the other platforms so they are
+not left unasserted.
+
+Skipping the renderer everywhere would have quietly dropped Linux PDF previews from coverage, and
+`requirements.txt` says in as many words that QtPdf is needed on every platform, Linux included. So
+the Linux job also installs the Qt runtime libraries and sets `QT_QPA_PLATFORM=offscreen`, which is
+what lets those five tests really run there instead of skipping.
+
+Verified against all four job configurations: Linux without a database 665 passed, Linux with one
+730 passed, Windows without a database 670 passed, Windows with one 735 passed, and `ruff check .`
+clean on both platforms. The Linux numbers came from running the jobs' exact commands in a
+python:3.12-slim container.

@@ -1,21 +1,28 @@
+import os
 import sys
 from pathlib import Path
 
 from backend.core import paths
 
+# These simulate a frozen bundle, so the fake executable path has to be ABSOLUTE on the machine
+# running the test. "C:/..." is absolute on Windows but a relative path on Linux and macOS, where
+# app_dir() then resolves it against the working directory and the assertion drifts.
+FAKE_ROOT = Path("C:/") if os.name == "nt" else Path("/")
+
 
 def test_macos_frozen_app_dir_is_folder_beside_app(monkeypatch):
-    executable = Path("C:/packages/Orrery-macOS/Orrery.app/Contents/MacOS/Orrery")
+    bundle = FAKE_ROOT / "packages" / "Orrery-macOS"
+    executable = bundle / "Orrery.app" / "Contents" / "MacOS" / "Orrery"
 
     monkeypatch.setattr(sys, "platform", "darwin")
     monkeypatch.setattr(sys, "executable", str(executable))
     monkeypatch.setattr(sys, "frozen", True, raising=False)
 
-    assert paths.app_dir() == Path("C:/packages/Orrery-macOS")
+    assert paths.app_dir() == bundle
 
 
 def test_non_macos_frozen_app_dir_is_executable_parent(monkeypatch):
-    executable = Path("C:/Orrery-Windows/Orrery.exe")
+    executable = FAKE_ROOT / "Orrery-Windows" / "Orrery.exe"
 
     monkeypatch.setattr(sys, "platform", "win32")
     monkeypatch.setattr(sys, "executable", str(executable))

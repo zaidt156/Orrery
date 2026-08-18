@@ -1,3 +1,4 @@
+import os
 import json
 
 import pytest
@@ -270,6 +271,10 @@ def test_plan_cli_install_requires_consent():
         accounts.install_plan_cli("chatgpt_plan")
 
 
+@pytest.mark.skipif(
+    os.name != "nt",
+    reason="one-click CLI install is a Windows/WinGet path; the non-Windows refusal is covered below",
+)
 def test_plan_cli_install_uses_fixed_winget_package(monkeypatch):
     calls = []
 
@@ -426,3 +431,10 @@ async def test_ai_routes_chatgpt_and_gemini_plan(monkeypatch):
     out2 = [d async for d in ai.stream_chat("gemini_plan/default", [{"role": "user", "content": "hi"}])]
     assert "".join(out1) == "from chatgpt"
     assert "".join(out2) == "from gemini"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="covers the non-Windows refusal")
+def test_plan_cli_install_is_refused_off_windows():
+    """The one-click installer is Windows-only today, and says so rather than half-running."""
+    with pytest.raises(ValueError, match="available on Windows"):
+        accounts.install_plan_cli("chatgpt_plan", acknowledged=True)

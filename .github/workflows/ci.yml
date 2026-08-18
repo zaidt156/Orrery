@@ -42,6 +42,8 @@ jobs:
       DATABASE_URL: postgresql+psycopg://orrery:orrery_ci_password@127.0.0.1:5432/orrery
       # This job spun up a database, so a `db` test that skips here is a failure, not a pass.
       ORRERY_REQUIRE_DB: "1"
+      # Qt has no display on a runner; offscreen is what lets QtPdf rasterize anyway.
+      QT_QPA_PLATFORM: offscreen
 
     steps:
       - uses: actions/checkout@v4
@@ -50,6 +52,14 @@ jobs:
         with:
           python-version: "3.12"
           cache: "pip"
+
+      # QtPdf renders PDF previews on every platform including Linux, but PySide6 needs system
+      # graphics libraries the runner does not carry by default. Without these the renderer is
+      # simply unavailable and its tests skip, so this is what keeps Linux preview coverage real.
+      - name: Install Qt runtime libraries for the PDF renderer
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq             libgl1 libegl1 libxkbcommon0 libdbus-1-3 libglib2.0-0             libfontconfig1 libfreetype6 libx11-6 libxext6 libxrender1
 
       - name: Install dependencies
         run: |

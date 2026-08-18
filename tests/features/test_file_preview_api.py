@@ -22,14 +22,19 @@ def test_file_preview_status_is_authenticated_and_safe(monkeypatch):
     )
 
     assert response.status_code == 200
-    assert response.json() == {
-        "available": True,
-        "engine": "libreoffice",
-        "officePreview": "pdf",
-        "pdfRendererAvailable": True,
-        "canInstall": False,
-        "message": "Faithful Office previews are available.",
-    }
+    body = response.json()
+
+    # What this test is actually about: the route is token-authenticated and reports a converter
+    # without leaking its path. The renderer half depends on whether QtPdf can load its system
+    # libraries here, which is a property of the runtime, not of the route - so it is asserted
+    # against the same check the app itself uses rather than assumed to be present.
+    renderer = filepreview.pdf_renderer_available()
+    assert body["engine"] == "libreoffice"
+    assert body["canInstall"] is False
+    assert body["pdfRendererAvailable"] is renderer
+    assert body["available"] is renderer
+    assert body["officePreview"] == ("pdf" if renderer else "html")
+    assert "soffice" not in str(body).lower()
     assert "Program Files" not in response.text
 
 

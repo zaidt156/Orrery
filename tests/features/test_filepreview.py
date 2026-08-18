@@ -12,6 +12,14 @@ from docx.shared import Pt
 from openpyxl import Workbook
 
 from backend.features import filepreview
+
+# QtPdf needs system graphics libraries (libGL, fontconfig, ...) that a headless Linux box may not
+# have. `pdf_renderer_available()` is the same check the app uses, so a skip here means the renderer
+# genuinely is not usable in this runtime - not that the test is broken.
+requires_pdf_renderer = pytest.mark.skipif(
+    not filepreview.pdf_renderer_available(),
+    reason="the QtPdf preview renderer is not importable in this runtime",
+)
 from backend.features import files as file_library
 
 
@@ -34,8 +42,8 @@ def _pdf_bytes(text: str = "Valid PDF") -> bytes:
     return stream.getvalue()
 
 
+@requires_pdf_renderer
 def test_qt_pdf_renderer_releases_its_input_and_returns_real_pngs():
-    pytest.importorskip("PySide6.QtPdf")
     from reportlab.pdfgen import canvas
 
     source = io.BytesIO()
@@ -111,8 +119,8 @@ def test_pdf_page_render_adapts_resolution_to_remaining_budget():
     assert len(rendered) <= 1_000
 
 
+@requires_pdf_renderer
 def test_high_entropy_pdf_never_returns_application_pdf_when_png_budget_is_exhausted(monkeypatch):
-    pytest.importorskip("PySide6.QtPdf")
     from PIL import Image
     from reportlab.pdfgen import canvas
 
@@ -436,6 +444,7 @@ def test_install_libreoffice_refuses_when_packaged_renderer_is_missing(monkeypat
         filepreview.install_office_preview(True)
 
 
+@requires_pdf_renderer
 def test_install_libreoffice_runs_fixed_command_then_reprobes(monkeypatch):
     installed = False
     command = ["winget.exe", "install", "--id", "TheDocumentFoundation.LibreOffice"]
@@ -460,6 +469,7 @@ def test_install_libreoffice_runs_fixed_command_then_reprobes(monkeypatch):
     assert status["officePreview"] == "pdf"
 
 
+@requires_pdf_renderer
 def test_install_libreoffice_fails_closed_without_supported_package_manager(monkeypatch):
     monkeypatch.setattr(filepreview, "_find_soffice", lambda: None)
     monkeypatch.setattr(filepreview, "_installer_command", lambda: None)
