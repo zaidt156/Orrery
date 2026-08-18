@@ -11,8 +11,22 @@ Thanks for your interest in improving Orrery! This guide explains how to propose
 
 ## Development setup
 
-See the **Run From Source** section of the [README](README.md) for prerequisites and how to run the
-app locally (Python 3.12+, Node.js 20+, Docker Desktop, PostgreSQL + pgvector).
+See the **Install** section of the [README](README.md) for prerequisites and the one-line install
+(Python 3.12+, Node.js 20+, Docker Desktop; PostgreSQL with pgvector is provisioned for you).
+
+### Hot reload
+
+`orrery` serves the built bundle from `ui/dist`. For frontend work, point it at the Vite dev server
+instead so changes reload without a rebuild:
+
+```bash
+# In .env:  ORRERY_DEV=1
+cd ui && npm run dev        # terminal 1
+orrery --no-browser         # terminal 2, then open the Vite URL
+```
+
+Set `ORRERY_DEV=0` and run `npm run build` to test the production path again. `python app.py` is
+equivalent to `orrery`.
 
 ## Pull request workflow
 
