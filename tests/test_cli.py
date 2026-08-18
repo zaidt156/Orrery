@@ -86,3 +86,21 @@ def test_present_workspace_bundle_passes(monkeypatch, tmp_path):
     monkeypatch.setattr(app.settings, "orrery_dev", False)
     monkeypatch.setattr(app, "resource_path", lambda *parts: tmp_path.joinpath(*parts))
     app._require_ui_bundle()
+
+
+def test_dump_config_prints_the_resolved_tree_without_starting_anything(calls, capsys):
+    """`--dump-config` is a diagnostic: it must never boot a database, server, or browser."""
+    app.cli(["--dump-config"])
+
+    out = capsys.readouterr().out
+    assert calls == {}
+    assert "Orrery configuration" in out
+    assert "api_port" in out
+    assert "profile file" in out
+
+
+def test_dump_config_is_not_treated_as_an_unknown_argument(calls, capsys):
+    app.cli(["web", "--dump-config"])
+
+    assert calls == {}
+    assert "Unrecognized argument" not in capsys.readouterr().err

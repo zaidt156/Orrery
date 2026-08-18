@@ -301,8 +301,9 @@ Usage:
   orrery [web] [--no-browser]   start Orrery and open the workspace (default)
 
 Options:
-  --no-browser   start the backend but do not open a browser; use the printed URL
-  -h, --help     show this message
+  --no-browser    start the backend but do not open a browser; use the printed URL
+  --dump-config   print every setting, its value, and which layer supplied it, then exit
+  -h, --help      show this message
 """
 
 
@@ -314,6 +315,10 @@ def cli(argv: list[str] | None = None) -> None:
     """
     args = list(sys.argv[1:] if argv is None else argv)
 
+    if "--dump-config" in args:
+        from backend.core import profiles
+        print(profiles.render(settings))
+        return
     if "--packaging-probe" in args or os.environ.get("ORRERY_PACKAGING_PROBE") == "1":
         _packaging_probe()
         return
@@ -327,7 +332,7 @@ def cli(argv: list[str] | None = None) -> None:
         print(USAGE)
         return
 
-    unknown = [arg for arg in args if arg != "--no-browser"]
+    unknown = [arg for arg in args if arg not in ("--no-browser", "--dump-config")]
     if unknown:
         print("Unrecognized argument(s):", *unknown, file=sys.stderr)
         print(USAGE, file=sys.stderr)

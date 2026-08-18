@@ -3079,3 +3079,31 @@ truncation, carrying the log into a branch, replacing the input, refusal of unkn
 another owner can neither replay nor fork a run they do not own.
 
 Next: ADR-004 steps three and four - configuration layering, then plugin mounting.
+
+## Step 159 - Configuration has layers, and says where each value came from (August 18, 2026)
+
+The third ADR-004 step. A setting could previously come from exactly two places - a field default or
+`.env` - and there was no way to ask why a value was what it is. Harness designs answer that with
+ordered layers plus a command that dumps the resolved tree; this is the same idea at Orrery's scale.
+
+Five layers now resolve, lowest precedence first: field defaults, a checked-in `orrery.toml` beside
+the project (or `ORRERY_PROFILE`), a `config.toml` in the per-user data directory that survives
+reinstalling the app, `.env`, and finally real environment variables, which still always win.
+Nothing about existing setups changes: with no TOML files present the resolution is exactly what it
+was. Both file layers accept either a flat table or an `[orrery]` section, unknown keys are ignored
+rather than fatal, and malformed TOML raises a clear error instead of being silently dropped - a
+config file that does not parse should not look like a config file that is absent.
+
+`orrery --dump-config` prints every setting, its value, and the layer that supplied it, then exits
+without touching the database, the server, or a browser. Values whose names look credential-shaped
+are redacted through the existing scrubbers, so the output can be pasted into an issue: the local
+database URL shows as `postgresql+psycopg://orrery:****@127.0.0.1:5432/orrery`. No secret is read
+from or written to any layer - provider keys and the real connection string stay in the OS keychain.
+
+Verified: 725 backend tests pass, including 12 new ones covering precedence in both directions,
+flat-versus-sectioned files, unknown keys, malformed TOML, provenance reporting, redaction, and that
+`--dump-config` starts nothing. Each test points all three layers at a tmp_path so none of them read
+the developer's real configuration.
+
+Next: the last ADR-004 step, plugin mounting, which reads a layer declared here and registers into
+the seam from Step 157.
