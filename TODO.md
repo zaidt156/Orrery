@@ -25,8 +25,6 @@ do not keep a second checklist of completed tasks here.
 - [ ] Run the launch handshake end to end in a real browser: launch code in the URL, claim, cookie
       set, code stripped from the address bar, SSE reconnect. The tests cover the boundary, not the
       round trip.
-- [ ] Regenerate `requirements.lock.txt` now that `pywebview` and `qtpy` are gone and `PySide6` is
-      unmarked.
 - [ ] Decide whether `--windowed` still fits the macOS package: with no window, a user whose browser
       fails to open sees nothing at all, because the printed URL has nowhere to go.
 
@@ -65,7 +63,9 @@ do not keep a second checklist of completed tasks here.
 - [ ] Profile very long Chat threads and add virtualization only if measurements justify it.
 - [ ] Finish optional Concept-mode polish for Chat, Dashboards, Automations, Agents, and Projects;
       verify every light palette with screenshots and accessibility checks.
-- [ ] Reconcile the 15 default-branch Dependabot alerts with current lockfiles and reachability.
+- [ ] Confirm GitHub's Dependabot list clears after it rescans `main`. Both dependency trees audit
+      clean locally (`pip-audit`, `npm audit`) as of 18 August 2026; anything still listed after the
+      rescan is either a transitive pin we do not control or needs a reachability judgement.
 - [ ] Ensure the current versioned sandbox image is built/provisioned in release artifacts and CI.
 
 ## Decisions that require the user

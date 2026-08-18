@@ -3261,3 +3261,29 @@ uncommon languages turn out not to matter.
 
 Verified: 744 backend tests and 38 UI tests pass, `ruff check .` is clean, and the production bundle
 builds with the new chunk sizes.
+
+## Step 165 - Vulnerable dependencies upgraded and the lockfile made true again (August 18, 2026)
+
+The default branch had been carrying a growing Dependabot list, and the lockfile had drifted far
+enough that it no longer described the application. Both were audited directly rather than read off
+the alert page.
+
+`pip-audit` found real advisories in five packages. Two of them matter more than the rest for this
+codebase: **pypdf** (6.13.3, six advisories) and **pillow** (12.2.0, sixteen) are exactly the
+libraries that parse documents and images a user did not write, which is the threat the untrusted-
+document boundary exists for. `aiohttp`, `h2`, and `setuptools` were the others. After upgrading -
+pypdf 6.16.1, pillow 12.3.0, aiohttp 3.14.3, h2 4.4.1, setuptools 84.0.0 - `pip-audit` reports no
+known vulnerabilities. On the frontend, `npm audit` found two high-severity build-time transitives
+(nanoid, postcss); both are fixed and it reports zero.
+
+`requirements.lock.txt` was worse than out of date: it still pinned `pywebview` and `QtPy`, packages
+deleted along with the desktop shell, and it pinned the vulnerable pypdf and pillow. They kept
+reappearing in a regenerated freeze because they were still *installed* in the development
+environment even though nothing depends on them any more, so they were uninstalled first and the
+lock regenerated from a clean tree. Its header also lost its section symbol to an encoding slip at
+some point; it reads as plain text now. The direct floor in `requirements.txt` moved to
+`pypdf>=6.15.0` so a fresh install cannot resolve back to a vulnerable version.
+
+Verified: 744 backend tests and 38 UI tests pass with the upgraded libraries - including the PDF and
+Office preview tests, which are the ones that would notice a pypdf or pillow regression - `ruff
+check .` is clean, and the production bundle builds.
