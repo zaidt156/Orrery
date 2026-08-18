@@ -18,10 +18,6 @@ if sys.platform == "win32":
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
-from backend.core import database
-from backend.features import filegen, filepreview, projects, rag, sandbox, taskrouter
-from backend.features import files as file_library
-from backend.features.chat import retrieval
 
 PREFIX = "stress-100-file-lifecycle-"
 FILES_PER_FORMAT = 5

@@ -2,9 +2,9 @@
 
 <img src="assets/orrery-logo.svg" alt="Orrery" width="440">
 
-### A local-first desktop AI workspace — bring your own models and your own database
+### A local-first AI workspace — runs on your machine, opens in your browser
 
-Orrery ties your own AI accounts and your own PostgreSQL database together into one desktop app:
+Orrery ties your own AI accounts and your own PostgreSQL database together into one local workspace:
 chat with connected models, retrieve your documents, build dashboards from your data, run bounded
 agents, and generate real files. Automations and Media remain visible work in progress; the exact
 implemented surface is documented in [`ARCHITECTURE.md`](ARCHITECTURE.md).
@@ -22,10 +22,10 @@ implemented surface is documented in [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
 ## Status
 
-Orrery is open source and under active development; the current line is **v0.2.1**. Windows is the
-fully supported target, with a macOS preview build published per release. Linux is planned. An
-Electron shell is the production desktop direction and ships alongside the original PyInstaller/Qt
-packaging while that migration finishes.
+Orrery is open source and under active development; the current line is **v0.2.1**. It runs
+locally and serves its workspace to your browser, so there is no shell to install and no
+platform-specific window: Windows, macOS, and Linux all run the same way from a checkout. Windows
+remains the most-tested target.
 
 The whole design rests on two things you bring: **your own model accounts or API keys**, and **your
 own PostgreSQL database**. Orrery is the framework between them. When you pick a cloud model, only the
@@ -97,7 +97,7 @@ The repository has four canonical project documents:
 
 | Layer | Technology |
 |---|---|
-| Desktop shell | Electron migration shell; PyInstaller/Qt WebEngine release path remains during transition |
+| Delivery | Local FastAPI server; the workspace opens in your own browser |
 | Backend API | Python 3.12, FastAPI, Uvicorn |
 | Frontend | React + Vite |
 | Database | PostgreSQL + pgvector |
@@ -112,238 +112,74 @@ and provider CLIs stay isolated as local sidecar processes. The worker already s
 run records and runs scheduled Agents with restart-safe state; the Automation product API, schedule
 tick, and live UI are still unfinished.
 
-## Download A Desktop Build
+## Install And Run
 
-When a release is published, download the desktop package from the
-[GitHub Releases page](https://github.com/zaidt156/Orrery/releases):
-
-- `Orrery-Windows.zip`: recommended package with `Orrery.exe`, database compose file, sandbox
-  Dockerfile, `setup-orrery.bat`, `run-orrery.bat`, Windows notes, and the required PyInstaller
-  `_internal` runtime folder.
-- `Orrery-macOS.zip`: macOS preview package with `Orrery.app`, database compose file, sandbox
-  Dockerfile, `setup-orrery.command`, `run-orrery.command`, and macOS notes.
-
-Windows packages are built and attached automatically on each version tag; the macOS package is a
-preview (not yet code-signed or notarized — see the macOS notes below). If an asset is not attached
-to the latest release yet, run Orrery from source using the steps below or ask a maintainer to
-publish a tagged release.
-
-### Windows Release Prerequisites
-
-Install these before running the released `.exe`:
-
-1. Windows 10/11.
-2. Docker Desktop, if you want the included PostgreSQL container or sandboxed file generation.
-3. PostgreSQL with pgvector. The release zip includes `docker-compose.yml` for a local pgvector
-   database.
-4. Optional: Ollama for local models.
-5. Optional: first-party provider CLIs for account-plan routes, such as Claude Code, Codex CLI, or
-   Gemini CLI. These routes are advanced and opt-in. Orrery launches the official CLI and does not
-   scrape browser sessions or copy provider tokens.
-
-The Windows desktop web runtime is bundled with the package through Qt WebEngine; you should not need
-to install Microsoft Edge WebView2 separately for the Orrery window.
-
-### Run The Windows Release
-
-From the extracted `Orrery-Windows.zip` folder:
-
-On first launch, `setup-orrery.bat` runs a **prerequisite check**: it reports whether Docker Desktop
-is installed and running (and Ollama, if you want local models), and offers to open the Docker
-download page if it is missing — so you can install what you need before continuing. Docker is
-required only for the bundled PostgreSQL database and the file-generation sandbox; if you bring your
-own PostgreSQL (menu option 2) you can proceed without it.
-
-```powershell
-# First-run setup menu: choose included Docker PostgreSQL, your own database,
-# sandbox-only setup, or start-only.
-.\setup-orrery.bat
-
-# Normal launch after setup.
-.\run-orrery.bat
-```
-
-Do not copy `Orrery.exe` out by itself. The Windows build is a PyInstaller `onedir` app and requires
-the `_internal` folder beside the executable. If you run the executable directly from PowerShell, use
-`.\Orrery.exe`; PowerShell does not run current-folder programs by name only.
-
-On first launch, `setup-orrery.bat` can write the database URL into the extracted package's `.env`
-file. For the included Docker database, it uses:
-
-```text
-postgresql+psycopg://orrery:orrery_dev_password@127.0.0.1:5432/orrery
-```
-
-You can also point Orrery at your own local, LAN, or cloud PostgreSQL server as long as pgvector is
-available and the connection string is reachable from your machine.
-
-### macOS Release Prerequisites
-
-Install these before running the macOS preview package:
-
-1. macOS 13 or newer is the intended baseline for preview builds.
-2. Docker Desktop, if you want the included PostgreSQL container or sandboxed file generation.
-3. PostgreSQL with pgvector. The release zip includes `docker-compose.yml` for a local pgvector
-   database.
-4. Optional: Ollama for local models.
-5. Optional: first-party provider CLIs for account-plan routes.
-
-### Run The macOS Release
-
-From the extracted `Orrery-macOS.zip` folder:
-
-Like the Windows package, `setup-orrery.command` runs a **prerequisite check** on first launch —
-reporting Docker Desktop (and optional Ollama) status and offering to open the Docker download page
-if it is missing — before showing the setup menu.
-
-```bash
-# First-run setup menu: choose included Docker PostgreSQL, your own database,
-# sandbox-only setup, or start-only.
-./setup-orrery.command
-
-# Normal launch after setup.
-./run-orrery.command
-```
-
-**Pick the build for your Mac.** The DMG is published per-architecture:
-`Orrery-<version>-mac-arm64.dmg` for Apple Silicon (M1/M2/M3/M4) and `Orrery-<version>-mac-x64.dmg`
-for Intel Macs. Installing the wrong one is the most common "it won't launch" cause — an Apple
-Silicon build will not run on an Intel Mac and vice versa. To check your Mac:  → About This Mac.
-
-**"Orrery is damaged and can't be opened."** The preview isn't code-signed/notarized yet, so macOS
-quarantines it after download. This does not mean the app is actually damaged. Fix it by removing the
-quarantine flag (only for a release you trust):
-
-```bash
-# after dragging Orrery to /Applications from the DMG:
-xattr -dr com.apple.quarantine /Applications/Orrery.app
-```
-
-For the portable `.zip` (non-DMG) package, right-click `Orrery.app` and choose Open, or clear
-quarantine on the extracted folder:
-
-```bash
-xattr -dr com.apple.quarantine Orrery.app setup-orrery.command run-orrery.command
-```
-
-A signed, notarized build (which removes these steps entirely) is planned; it requires a paid Apple
-Developer ID certificate.
-
-## Run From Source On Windows
+Orrery runs on your own machine and opens in your own browser. There is no installer and no bundled
+window: `orrery web` starts the local backend, then hands the workspace to whichever browser you
+already use.
 
 ### Prerequisites
 
-Install:
-
-1. Git.
-2. Python 3.12 or newer.
-3. Node.js 20 or newer.
-4. Docker Desktop.
-5. PostgreSQL + pgvector, or use the included Docker Compose database.
-6. Optional: Ollama for local models.
-7. Optional: provider API keys or official provider CLIs for the models you want to use.
+1. Python 3.12 or newer.
+2. Node.js 20 or newer, to build the workspace bundle once.
+3. Docker Desktop, for the included PostgreSQL database and the file-generation sandbox.
+4. Optional: Ollama for local models, plus provider API keys or official provider CLIs.
 
 ### Setup
 
-```powershell
+```bash
 git clone https://github.com/zaidt156/Orrery.git
 cd Orrery
 
-# Local development settings. Never commit .env.
-copy .env.example .env
+# Local settings. Never commit .env.
+cp .env.example .env                 # Windows: copy .env.example .env
 
-# Start local PostgreSQL + pgvector.
+# Python environment and the `orrery` command.
+python -m venv .venv
+source .venv/bin/activate            # Windows: .\.venv\Scripts\Activate.ps1
+pip install -e .
+
+# The workspace bundle that FastAPI serves.
+cd ui && npm install && npm run build && cd ..
+
+# Local PostgreSQL + pgvector, and the sandbox image.
 docker compose up -d
-
-# Build the versioned sandbox used by file generation and local PDF OCR.
 docker build -t orrery-sandbox:latest sandbox
-
-# Python environment.
-py -3.12 -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-pip install -r requirements.txt
-
-# Frontend production build served by FastAPI.
-cd ui
-npm install
-npm run build
-cd ..
-
-# Launch Orrery.
-python app.py
 ```
 
-The app opens a desktop window. The backend API is bound to localhost and protected by a fresh
-per-session token.
+### Start
 
-### Development Mode
+```bash
+orrery web
+```
 
-Use Vite hot reload while keeping the Python backend and desktop shell:
+Orrery binds to `127.0.0.1`, prints the URL, and opens your browser at it. `orrery web --no-browser`
+starts the backend without opening one, which is what you want over SSH or in a second terminal;
+paste the printed URL yourself.
 
-```powershell
+That URL carries a single-use launch code. The page trades it for an httpOnly session cookie and
+strips it from the address bar, so the credential never settles into history or a bookmark. Requests
+afterwards are authenticated by that cookie and checked against the origin the browser actually used
+— which is what stops another process on your machine from driving the API.
+
+## Development Mode
+
+Vite hot reload against the same Python backend:
+
+```bash
 # In .env:
 # ORRERY_DEV=1
 
 # Terminal 1
-cd ui
-npm run dev
+cd ui && npm run dev
 
 # Terminal 2
-.\.venv\Scripts\Activate.ps1
-python app.py
+source .venv/bin/activate            # Windows: .\.venv\Scripts\Activate.ps1
+orrery web
 ```
 
-For production-style local testing, set `ORRERY_DEV=0`, run `npm run build`, and start `python app.py`.
-
-### Electron Shell Preview
-
-The Electron shell keeps the same React UI and starts the Python backend in `--backend-only` mode:
-
-```powershell
-cd ui
-npm run build
-cd ..\desktop\electron
-npm install
-npm run dev
-```
-
-This is the production desktop direction. The current PyInstaller/Qt release path remains available
-until Electron Builder packaging, signing, and update publishing are complete.
-
-## Run From Source On macOS
-
-Install Git, Python 3.12, Node.js 20, Docker Desktop, and PostgreSQL with pgvector, or use the
-included Docker Compose database.
-
-```bash
-git clone https://github.com/zaidt156/Orrery.git
-cd Orrery
-
-# Local development settings. Never commit .env.
-cp .env.example .env
-
-# Start local PostgreSQL + pgvector.
-docker compose up -d
-
-# Build the versioned sandbox used by file generation and local PDF OCR.
-docker build -t orrery-sandbox:latest sandbox
-
-# Python environment.
-python3.12 -m venv .venv
-source .venv/bin/activate
-python -m pip install --upgrade pip
-pip install -r requirements.txt
-
-# Frontend production build served by FastAPI.
-cd ui
-npm install
-npm run build
-cd ..
-
-# Launch Orrery.
-python app.py
-```
+For production-style local testing set `ORRERY_DEV=0`, run `npm run build`, and start `orrery web`
+again. `python app.py` remains equivalent to `orrery web`.
 
 ## Model Setup
 
@@ -396,7 +232,8 @@ and code-execution-based file generation are limited until the image is built.
 Orrery is designed around clear local boundaries:
 
 - Secrets stay in the OS keychain.
-- The API binds to localhost and requires a per-session token.
+- The API binds to localhost. The browser is authenticated by a single-use launch code traded
+  for an httpOnly session cookie, with an origin check on every cookie-authenticated request.
 - Cloud models receive only the request context you choose to send through that model route.
 - Local Ollama models keep inference on your machine.
 - User files, RAG chunks, and model outputs are treated as untrusted input.
@@ -405,58 +242,34 @@ Orrery is designed around clear local boundaries:
 
 Read [`SECURITY.md`](SECURITY.md) for vulnerability reporting.
 
-## Build Desktop Releases
+## Portable Packages
 
-Maintainers can build release assets with GitHub Actions.
-
-1. Push the changes to GitHub.
-2. Create and push a version tag (the tag push is what triggers the release build):
+A portable package bundles a frozen Python runtime so a machine without Python installed can still
+run Orrery. Both build scripts validate their own output:
 
 ```powershell
-git tag v0.2.1
-git push origin v0.2.1
+.\scripts\build-windows-onedir.ps1   # -> release\Orrery-Windows.zip
 ```
-
-3. The release workflows build and publish platform zips:
-   - `Build Windows Release` -> `Orrery-Windows.zip`
-   - `Build macOS Release` -> `Orrery-macOS.zip`
-
-4. On version tags, the workflows attach the zips to the GitHub Release automatically.
-
-You can also run the workflows manually from GitHub Actions. Manual runs upload zips as workflow
-artifacts but do not create a public release unless the run is from a version tag.
-
-To reproduce the same package locally on Windows:
-
-```powershell
-.\scripts\build-windows-onedir.ps1
-```
-
-The script validates that `Orrery.exe`, `_internal\python312.dll`, the built UI, bundled skills,
-Docker compose file, sandbox Dockerfile, launcher, and Windows notes are all present before creating
-`release\Orrery-Windows.zip`. Do not publish `dist\Orrery\Orrery.exe` by itself.
-
-To reproduce the macOS package on macOS:
 
 ```bash
-./scripts/build-macos-app.sh
+./scripts/build-macos-app.sh         # -> release/Orrery-macOS.zip
 ```
 
-The script validates that `Orrery.app`, the built UI, bundled skills, Docker compose file, sandbox
-Dockerfile, launcher, and macOS notes are all present before creating `release/Orrery-macOS.zip`.
+Each bundles the built UI, skills, sandbox Dockerfile, compose file, and launcher scripts, and each
+asserts the QtPdf preview renderer is present. Neither ships a browser engine any more — the
+workspace opens in yours.
 
-Electron packaging lives under `desktop/electron`. Its first phase is a development shell and update
-surface; signed installers and automatic update publishing come next.
+Nothing builds these automatically today. The three native release workflows were removed with the
+desktop shell; CI runs the tests and the UI build on Linux, macOS, and Windows instead.
 
 ## Test And Verify
 
-```powershell
-.\.venv\Scripts\Activate.ps1
-pip install -r requirements-dev.txt
-python -m pytest
+```bash
+pip install -e ".[dev]"
+python -m pytest tests/ -q
+ruff check .
 
-cd ui
-npm run build
+cd ui && npm run build
 ```
 
 ## Contributing

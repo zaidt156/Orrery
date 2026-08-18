@@ -20,13 +20,13 @@ The diagrams are intentionally split by responsibility. Each one answers one que
 
 ## 1. The system at a glance
 
-Orrery is a local desktop application. A React UI talks to a Python API on loopback. PostgreSQL is the durable application store, the OS keychain holds secrets, and generated binaries live in the per-user data directory.
+Orrery is a local application that serves its workspace to the user's own browser. A React UI talks to a Python API on loopback. PostgreSQL is the durable application store, the OS keychain holds secrets, and generated binaries live in the per-user data directory.
 
 ```mermaid
 flowchart LR
-    user["Person using Orrery"] --> shell["Desktop shell<br/>Electron or pywebview"]
-    shell --> ui["React workspace"]
-    ui -->|"HTTP, SSE + session token"| api["FastAPI on 127.0.0.1"]
+    user["Person using Orrery"] --> browser["The user's own browser"]
+    browser --> ui["React workspace"]
+    ui -->|"HTTP, SSE + session cookie"| api["FastAPI on 127.0.0.1"]
 
     api --> pg[("Orrery PostgreSQL<br/>app state + job queue")]
     api --> keychain["OS keychain<br/>keys + connection strings"]
@@ -39,60 +39,66 @@ flowchart LR
     classDef core fill:#e8f0fe,stroke:#4f6f9f,color:#172033;
     classDef store fill:#edf7ed,stroke:#5f8a65,color:#172033;
     classDef external fill:#fff4df,stroke:#a77b2d,color:#172033;
-    class shell,ui,api core;
+    class browser,ui,api core;
     class pg,keychain,disk store;
     class models,sources,docker external;
 ```
 
-Code anchors: `desktop/electron/main.cjs`, `desktop/electron/preload.cjs`, `app.py`, `backend/api/__init__.py`, `backend/core/database.py`, `backend/core/paths.py`.
+Code anchors: `app.py`, `backend/api/__init__.py`, `backend/security/session.py`, `backend/core/database.py`, `backend/core/paths.py`.
 
 ---
 
-## 2. Desktop startup
+## 2. Startup
 
-The packaged Electron application owns the window and launches the Python backend as a child process. The source-mode fallback starts the same backend in a thread and opens it with pywebview.
+`orrery web` starts the backend in a thread, waits for it to become ready, and opens the user's browser at the loopback URL. Nothing renders in-process: there is no window to own.
 
 ```mermaid
 sequenceDiagram
-    participant D as Desktop shell
+    participant L as orrery web
     participant B as Python backend
     participant P as PostgreSQL
     participant Q as Procrastinate worker
-    participant U as React UI
+    participant U as The user's browser
 
-    D->>D: Pick loopback port and create session token
-    D->>B: Start backend with port, token, and user-data path
+    L->>L: Resolve loopback port, session token, and a single-use launch code
+    L->>B: Start the backend in a thread
     B->>B: Resolve or provision the PostgreSQL connection
     B->>P: Check connection and run migrations
     B->>B: Bootstrap LIFE.md and clean expired files
     B->>P: Reconcile interrupted chat and agent runs
     B->>Q: Start worker with concurrency 4
     B->>B: Start FastAPI
-    D->>B: Poll authenticated health route
-    B-->>D: Ready
-    D->>U: Open workspace URL with token
+    B-->>L: Ready
+    L->>U: Open http://127.0.0.1:<port>/?c=<launch code>
+    U->>B: POST /api/session/claim
+    B-->>U: httpOnly session cookie; launch code rotated
+    U->>U: Strip the code out of the address bar
 ```
 
 Startup facts:
 
-- Electron uses an ephemeral port by default and a random 32-byte session token.
-- `ORRERY_DATA_DIR` points packaged builds at Electron's user-data directory.
+- The configured port is preferred, with a free-port fallback so a second Orrery never dies on bind.
+- A random 32-byte session token is minted per launch; the browser never sees it.
+- `ORRERY_DATA_DIR` overrides the per-user data directory.
 - The backend can auto-provision Orrery's local PostgreSQL through Docker.
 - The API server and job worker run in the same Python process.
-- Electron uses `contextIsolation: true` and `nodeIntegration: false`; its renderer setting is currently `sandbox: false`.
+- `orrery web --no-browser` starts everything and prints the URL instead of opening a browser.
 
-Code anchors: `desktop/electron/main.cjs`, `app.py`, `backend/core/dockerboot.py`, `backend/core/migrations.py`, `backend/core/queue.py`.
+Code anchors: `app.py`, `backend/security/session.py`, `backend/core/dockerboot.py`, `backend/core/migrations.py`, `backend/core/queue.py`.
 
 ---
 
 ## 3. Request boundary
 
-Normal application routes require the per-launch `X-Orrery-Token`. Team identity is a second layer: in team mode the stored team access key identifies an owner and role.
+Normal application routes accept the per-launch session either as the `X-Orrery-Token` header or as the httpOnly session cookie the workspace holds. Cookie-authenticated requests additionally carry an Origin check, because cookies ignore port: `http://127.0.0.1:<other port>` is same-site with Orrery, so `SameSite=Strict` alone would let another local process drive the API. Header-authenticated requests need no such check, since a cross-origin page cannot set a custom header without a CORS preflight Orrery never grants. Team identity is a second layer: in team mode the stored team access key identifies an owner and role.
 
 ```mermaid
 flowchart LR
-    ui["React API client"] -->|"X-Orrery-Token"| auth{"Session token valid?"}
-    auth -->|"No"| reject["401"]
+    ui["React workspace"] -->|"session cookie"| origin{"Origin is this app?"}
+    client["Header client"] -->|"X-Orrery-Token"| auth
+    origin -->|"No"| reject["401"]
+    origin -->|"Yes"| auth{"Session valid?"}
+    auth -->|"No"| reject
     auth -->|"Yes"| identity{"Team mode?"}
     identity -->|"No"| solo["Solo owner<br/>local admin"]
     identity -->|"Yes, valid team key"| member["Team owner + role"]
@@ -113,7 +119,7 @@ Two read-only serving paths deliberately sit outside token authentication becaus
 
 Both are loopback-only and use unguessable IDs. Their browser policies are different and are shown in the security section.
 
-Code anchors: `backend/api/__init__.py`, `backend/api/deps.py`, `ui/src/lib/api.js`, `backend/features/team.py`.
+Code anchors: `backend/api/__init__.py`, `backend/api/deps.py`, `backend/security/session.py`, `ui/src/lib/api.js`, `backend/features/team.py`.
 
 ---
 
@@ -577,7 +583,7 @@ flowchart TB
     disk["Per-user data directory"]
     disk --> d1["LIFE.md + content-addressed history"]
     disk --> d2["Generated files + app bundles + previews"]
-    disk --> d3["Ingestion spool · logs · webview data"]
+    disk --> d3["Ingestion spool · logs"]
 ```
 
 External database rows remain in their original systems unless the user explicitly imports them as datasets. Provider secrets, database passwords, MCP environment values, and team plaintext access keys are not stored in application tables.
@@ -623,7 +629,9 @@ The app-bundle path has the strong no-egress contract. Generic HTML previews do 
 
 Other implemented controls include:
 
-- Loopback-only API binding and a fresh session token per launch.
+- Loopback-only API binding and a fresh session token per launch, handed to the browser as a
+  single-use launch code traded for an httpOnly cookie, with an Origin check on every
+  cookie-authenticated request.
 - Request-size caps, no API docs/OpenAPI surface, CSP, frame, MIME-sniffing, and referrer headers.
 - OS-keychain secret storage and error-string secret scrubbing.
 - Team keys stored as SHA-256 hashes; the local unlock copy stays in the keychain.

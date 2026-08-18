@@ -1,24 +1,22 @@
 from __future__ import annotations
 
 import asyncio
-import base64
 import logging
 import os
 import secrets as pysecrets
 import sys
 import threading
+import webbrowser
 
 import uvicorn
-import webview
 
 # psycopg async needs the SelectorEventLoop on Windows (SQLAlchemy + Procrastinate)
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 from backend.core import database
-from backend.core.clipboard import set_clipboard_text
 from backend.core.config import settings
-from backend.core.paths import resource_path, user_data_dir
+from backend.core.paths import resource_path
 from backend.security.secrets import redact_url
 
 from backend.core.observability import install as _install_logging
@@ -26,19 +24,18 @@ from backend.core.observability import install as _install_logging
 _install_logging(logging.INFO)  # root logging with per-request [id] field
 log = logging.getLogger("orrery")
 
-# fresh per-session token so other local processes can't drive the API. Electron can pass one in
-# because it owns the desktop window and starts the backend as a child process.
+# fresh per-session token so other local processes can't drive the API. The browser never sees it:
+# it receives a single-use launch code and trades it for an httpOnly cookie (backend/security/session.py).
 SESSION_TOKEN = os.environ.get("ORRERY_SESSION_TOKEN") or pysecrets.token_urlsafe(32)
-WEBVIEW_DATA_DIR = user_data_dir() / "tmp" / "webview2"
 
 API_HOST = os.environ.get("ORRERY_API_HOST", "").strip() or settings.api_host
 _api_port: int | None = None
 
 
 def _resolve_api_port() -> int:
-    """Electron's explicit port always wins (it owns the window URL). Otherwise prefer the
-    configured port but fall back to a free one, so a second Orrery (an installed copy launched
-    beside a dev run) never dies on bind (Errno 10048)."""
+    """An explicit ORRERY_API_PORT always wins. Otherwise prefer the configured port but fall back
+    to a free one, so a second Orrery (an installed copy launched beside a dev run) never dies on
+    bind (Errno 10048)."""
     global _api_port
     if _api_port is not None:
         return _api_port
@@ -62,49 +59,7 @@ def _resolve_api_port() -> int:
 
 _ready = threading.Event()
 _boot_error: list[BaseException] = []
-
-
-class JsApi:
-    """Exposed to the page as window.pywebview.api — native file save (webview blob
-    downloads are unreliable, so the UI hands us bytes and we write them via a save dialog).
-
-    Note: do NOT keep a reference to the window on this object — pywebview serializes the
-    api's attributes to the page, and a window reference causes infinite recursion. Use
-    webview.windows[0] at call time instead.
-    """
-
-    def save_file(self, filename: str, b64: str) -> dict:
-        if not webview.windows:
-            return {"ok": False, "error": "Window not ready."}
-        window = webview.windows[0]
-        save_dialog = getattr(getattr(webview, "FileDialog", None), "SAVE", None)
-        if save_dialog is None:  # older pywebview
-            save_dialog = getattr(webview, "SAVE_DIALOG", None)
-        try:
-            chosen = window.create_file_dialog(save_dialog, save_filename=filename or "orrery-file")
-        except Exception as exc:  # noqa: BLE001
-            return {"ok": False, "error": str(exc)}
-        if not chosen:
-            return {"ok": False, "cancelled": True}
-        target = chosen[0] if isinstance(chosen, (list, tuple)) else chosen
-        try:
-            with open(target, "wb") as handle:
-                handle.write(base64.b64decode(b64))
-        except (OSError, ValueError) as exc:
-            return {"ok": False, "error": str(exc)}
-        return {"ok": True, "path": str(target)}
-
-    def copy_text(self, text: str) -> dict:
-        """Native clipboard copy. Qt WebEngine ships with JS clipboard access disabled, so the page's
-        copy buttons route here instead — the OS clipboard can't be blocked by the webview."""
-        try:
-            set_clipboard_text(str(text or ""))
-            return {"ok": True}
-        except Exception as exc:  # noqa: BLE001
-            return {"ok": False, "error": str(exc)}
-
-
-_js_api = JsApi()
+_session_code: list[str] = []  # filled once the API app exists; the launch URL needs it
 
 
 def ensure_connection() -> str:
@@ -142,7 +97,7 @@ def ensure_connection() -> str:
                 "No database is configured and no console is available to ask on. "
                 "Install/start Docker Desktop for the bundled database, or set a connection string in Settings."
             )
-        print("\nOrrery first run — no database configured.")
+        print("\nOrrery first run - no database configured.")
         print("Enter your PostgreSQL connection string, for example:")
         print("  postgresql+psycopg://orrery:orrery_dev_password@127.0.0.1:5432/orrery")
         url = input("Connection string: ").strip()
@@ -182,6 +137,7 @@ async def _boot_and_serve() -> None:
     await _skills.refresh_user_skills()  # load the user's own enabled skills into memory
 
     api = create_app(SESSION_TOKEN)
+    _session_code.append(api.state.session.code)
     config = uvicorn.Config(
         api, host=API_HOST, port=_resolve_api_port(), log_level="info", access_log=False
     )
@@ -217,37 +173,29 @@ def _start_backend_thread() -> None:
     threading.Thread(target=runner, name="orrery-backend", daemon=True).start()
 
 
-def _window_url() -> str:
-    base = (
+def _base_url() -> str:
+    return (
         settings.vite_url
         if settings.orrery_dev
         else f"http://{API_HOST}:{_resolve_api_port()}"
     )
-    return f"{base}/?token={SESSION_TOKEN}"
 
 
-def _app_icon() -> str | None:
-    candidates = (
-        ("orrery.ico",) if sys.platform == "win32" else ("orrery.png", "orrery.ico")
-    )
-    for name in candidates:
-        path = resource_path("assets", "desktop", name)
-        if path.exists():
-            return str(path)
-    return None
-
-
-def _desktop_gui() -> str | None:
-    return "qt" if sys.platform == "win32" else None
+def _browser_url() -> str:
+    """The URL to open. The launch code is single-use and the page strips it from the address bar,
+    so it never settles into history or a bookmark."""
+    code = _session_code[0] if _session_code else ""
+    return f"{_base_url()}/?c={code}" if code else _base_url()
 
 
 def _packaging_probe() -> None:
     """Fast frozen-build health check used by the release scripts.
 
-    This intentionally does not start the database, API server, or WebView window. It imports the
-    same desktop backend the packaged app uses so a broken zip fails before it reaches users.
+    This intentionally does not start the database or the API server. It imports the same runtime
+    the packaged app uses so a broken build fails before it reaches users. There is no GUI runtime
+    to check any more — the workspace is served to the user's browser.
     """
-    print("Orrery packaging probe: checking desktop runtime...")
+    print("Orrery packaging probe: checking runtime...")
     required = [
         resource_path("ui", "dist", "index.html"),
         resource_path("skills"),
@@ -261,17 +209,6 @@ def _packaging_probe() -> None:
 
     if not pdf_renderer_available():
         raise RuntimeError("PDF preview renderer is missing from the packaged runtime.")
-    # Backend-only bundles (the Electron installer's OrreryBackend) ship no GUI runtime — Electron
-    # owns the window — so skip the desktop-webview checks for them.
-    backend_only = "--backend-only" in sys.argv or os.environ.get("ORRERY_BACKEND_ONLY") == "1"
-    if sys.platform == "win32" and not backend_only:
-        import webview.platforms.qt as _qt_backend
-        from qtpy.QtWebEngineWidgets import QWebEngineView  # noqa: F401
-
-        if getattr(_qt_backend, "renderer", "") != "qtwebengine":
-            raise RuntimeError("Windows package must use Qt WebEngine desktop runtime.")
-    elif sys.platform == "darwin" and not backend_only:
-        import webview.platforms.cocoa  # noqa: F401
     # litellm counts tokens with tiktoken; its encodings load via the tiktoken_ext plugin package,
     # which PyInstaller misses unless collected — a broken build fails every API-key chat with
     # "Unknown encoding cl100k_base", so catch it here instead of in users' chats.
@@ -282,17 +219,25 @@ def _packaging_probe() -> None:
     print("Orrery packaging probe: ok")
 
 
-def main() -> None:
-    # Windows groups the taskbar by process (python.exe) and shows its icon; giving the app
-    # its own AppUserModelID makes Windows use our window icon in the taskbar instead.
-    if sys.platform == "win32":
-        try:
-            import ctypes
+def _require_ui_bundle() -> None:
+    """Fail loudly instead of serving a blank page.
 
-            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("Orrery.Desktop.App")
-        except Exception:  # noqa: BLE001 — cosmetic only
-            pass
+    In dev the workspace comes from Vite. Otherwise the API serves ui/dist, and a checkout that
+    has never run a UI build has nothing to serve — better to say so than to open a white tab.
+    """
+    if settings.orrery_dev:
+        return
+    index = resource_path("ui", "dist", "index.html")
+    if not index.exists():
+        raise SystemExit(
+            f"The workspace bundle is missing ({index}). "
+            "Build it once with:  cd ui && npm install && npm run build"
+        )
 
+
+def main(open_browser: bool = True) -> None:
+    """Run Orrery and hand the workspace to the user's own browser."""
+    _require_ui_bundle()
     ensure_connection()
     _start_backend_thread()
 
@@ -301,26 +246,20 @@ def main() -> None:
     if _boot_error:
         raise SystemExit(f"Startup failed: {_boot_error[0]}")
 
-    log.info("Opening Orrery window")
-    WEBVIEW_DATA_DIR.mkdir(parents=True, exist_ok=True)
-    webview.create_window(
-        "Orrery",
-        url=_window_url(),
-        width=1280,
-        height=820,
-        min_size=(940, 640),
-        js_api=_js_api,
-    )
-    webview.start(
-        gui=_desktop_gui(),
-        icon=_app_icon(),
-        storage_path=str(WEBVIEW_DATA_DIR),
-        # Persist localStorage/cookies to WEBVIEW_DATA_DIR across restarts. private_mode=True is
-        # incognito — it ignores storage_path, so every UI preference (theme, interface mode,
-        # onboarding flags) was wiped on close. User data lives in Postgres and the keychain, and
-        # the session token is regenerated each launch, so nothing sensitive persists here.
-        private_mode=False,
-    )
+    url = _browser_url()
+    # printed, never logged: the launch code is a credential and log files outlive the session
+    print(f"\n  Orrery is running at {_base_url()}")
+    print(f"  Opening your browser. If it doesn't open, paste this once:\n\n    {url}\n")
+    if open_browser:
+        try:
+            webbrowser.open(url)
+        except Exception:  # noqa: BLE001 — the printed URL is the fallback
+            log.info("Could not launch a browser automatically; open the URL above.")
+    try:
+        while not _boot_error:
+            _ready.wait(timeout=1.0)
+    except KeyboardInterrupt:
+        print("\nOrrery stopped.")
 
 
 def run_backend_only() -> None:
@@ -328,10 +267,46 @@ def run_backend_only() -> None:
     asyncio.run(_boot_and_serve())
 
 
-if __name__ == "__main__":
-    if "--packaging-probe" in sys.argv or os.environ.get("ORRERY_PACKAGING_PROBE") == "1":
+USAGE = """Orrery - a local-first AI workspace, served to your own browser.
+
+Usage:
+  orrery [web] [--no-browser]   start Orrery and open the workspace (default)
+
+Options:
+  --no-browser   start the backend but do not open a browser; use the printed URL
+  -h, --help     show this message
+"""
+
+
+def cli(argv: list[str] | None = None) -> None:
+    """Console-script entry point (`orrery web`).
+
+    `web` is the default and only user-facing mode. The build and service modes stay flag-driven
+    because the packaging scripts and the frozen executables invoke them that way.
+    """
+    args = list(sys.argv[1:] if argv is None else argv)
+
+    if "--packaging-probe" in args or os.environ.get("ORRERY_PACKAGING_PROBE") == "1":
         _packaging_probe()
-    elif "--backend-only" in sys.argv or os.environ.get("ORRERY_BACKEND_ONLY") == "1":
+        return
+    if "--backend-only" in args or os.environ.get("ORRERY_BACKEND_ONLY") == "1":
         run_backend_only()
-    else:
-        main()
+        return
+
+    if args and args[0] == "web":
+        args = args[1:]
+    if "-h" in args or "--help" in args:
+        print(USAGE)
+        return
+
+    unknown = [arg for arg in args if arg != "--no-browser"]
+    if unknown:
+        print("Unrecognized argument(s):", *unknown, file=sys.stderr)
+        print(USAGE, file=sys.stderr)
+        raise SystemExit(2)
+
+    main(open_browser="--no-browser" not in args)
+
+
+if __name__ == "__main__":
+    cli()

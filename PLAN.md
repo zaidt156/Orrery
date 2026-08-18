@@ -9,7 +9,8 @@ completed work is recorded in [`docs/history/DEVLOG.md`](docs/history/DEVLOG.md)
 
 ## Product outcome
 
-Orrery is a local-first desktop AI workspace. A person brings their own model accounts or API keys
+Orrery is a local-first AI workspace that runs on the user's machine and opens in their own
+browser. A person brings their own model accounts or API keys
 and their own data. Orrery connects Chat, Projects, Data, Ontology, Dashboards, Automations, Agents,
 Media, Skills, and Settings without creating a hosted Orrery account or silently moving private data
 off the machine.
@@ -23,12 +24,15 @@ The target product has four defining qualities:
    read-only where promised, and visible. Agent/tool actions have durable traces.
 3. **One coherent workspace.** Chat, dashboards, workflows, agents, and media reuse the same model,
    tool, scope, approval, storage, and file boundaries rather than growing parallel systems.
-4. **Useful without a cloud control plane.** The desktop app, PostgreSQL, local files, and optional
-   local sidecars are sufficient to run Orrery.
+4. **Useful without a cloud control plane.** The local backend, PostgreSQL, local files, and
+   optional local sidecars are sufficient to run Orrery.
 
 ## Non-negotiable architecture decisions
 
 - Python owns application logic; React renders the interface. A .NET rewrite is not planned.
+- Orrery is delivered as a local server, not a native shell. `orrery web` starts the backend and
+  opens the user's existing browser. Local-first is unchanged by this: the backend, the database,
+  the keychain, and the sandbox all stay on the user's machine. There is no hosted Orrery.
 - The application is a modular monolith. FastAPI and the durable worker run locally; risky/heavy work
   runs in bounded sidecars such as Docker, provider CLIs, LibreOffice, and Ollama.
 - PostgreSQL is the durable application store and job queue. Large generated/media files live on
@@ -45,7 +49,7 @@ The target product has four defining qualities:
 
 ## Current baseline
 
-The following product paths are live end to end: desktop startup, Chat, Projects, model routing,
+The following product paths are live end to end: startup and the browser session handshake, Chat, Projects, model routing,
 Data, Ontology/RAG, Dashboards, file generation and previews, Skills, approved stdio MCP tools,
 team/admin controls, LIFE proposal review, and bounded manual/scheduled Agent runs.
 
@@ -144,12 +148,14 @@ run; learning and LIFE behavior is inspectable and reversible.
   process-lifetime guarantee.
 - Make strict privacy materially stronger than basic privacy, or rename the modes so the UI does not
   promise a distinction that code does not enforce.
-- Review the generic HTML preview CSP and enable Electron renderer sandboxing when compatibility is
-  proven.
+- Review the generic HTML preview CSP and tighten it where compatibility allows.
 - Add the dedicated dashboard editing workspace and finish optional Concept-mode per-view polish.
 - Measure long-thread rendering before deciding on virtualization; optimize only with profiler data.
-- Reconcile dependency alerts on the default branch, keep lockfiles/audits green, provision the
-  current sandbox image in releases, and complete Linux packaging after Windows/macOS stability.
+- Reconcile dependency alerts on the default branch, keep lockfiles/audits green, and provision the
+  current sandbox image in releases.
+- Decide whether the portable frozen packages stay a supported download or whether the checkout
+  install is the only path; nothing builds them automatically since the native release workflows
+  were removed.
 
 ## Deferred decisions
 

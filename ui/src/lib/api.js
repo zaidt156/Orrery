@@ -1,13 +1,41 @@
-// the one place the UI talks to the backend; attaches the session token to every call
-const params = new URLSearchParams(window.location.search);
-const token = params.get("token") || sessionStorage.getItem("orrery_token") || "";
-if (token) sessionStorage.setItem("orrery_token", token);
+// the one place the UI talks to the backend; owns the session handshake and every call's credentials
 
 // dev: UI on Vite (:5173), API on :8765; built app: same origin
 const API_BASE = import.meta.env.DEV ? "http://127.0.0.1:8765" : "";
 
+const params = new URLSearchParams(window.location.search);
+const launchCode = params.get("c") || "";
+// legacy path: the packaged shells handed the token straight to a window they owned.
+const token = params.get("token") || sessionStorage.getItem("orrery_token") || "";
+if (token) sessionStorage.setItem("orrery_token", token);
+
+// Strip the credential before it lands in history, a bookmark, or an extension's tab read.
+if (launchCode || params.get("token")) {
+  params.delete("c");
+  params.delete("token");
+  const rest = params.toString();
+  window.history.replaceState(
+    {},
+    "",
+    window.location.pathname + (rest ? `?${rest}` : "") + window.location.hash,
+  );
+}
+
+// One in-flight claim. Every request awaits it so nothing races the cookie being set.
+const sessionReady = launchCode
+  ? fetch(`${API_BASE}/api/session/claim`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ code: launchCode }),
+    }).catch(() => {}) // a failed claim still falls through to the 401 the caller handles
+  : Promise.resolve();
+
+export { sessionReady };
+
 function authHeaders(extra) {
-  return { "X-Orrery-Token": token, ...extra };
+  // the cookie carries the session in the browser; the header remains for the legacy shells
+  return token ? { "X-Orrery-Token": token, ...extra } : { ...extra };
 }
 
 async function errorText(res) {
@@ -20,15 +48,21 @@ async function errorText(res) {
 }
 
 export async function apiGet(path) {
-  const res = await fetch(`${API_BASE}${path}`, { headers: authHeaders() });
+  await sessionReady;
+  const res = await fetch(`${API_BASE}${path}`, {
+    headers: authHeaders(),
+    credentials: "include",
+  });
   if (!res.ok) throw new Error(await errorText(res));
   return res.json();
 }
 
 export async function apiSend(path, method, body) {
+  await sessionReady;
   const res = await fetch(`${API_BASE}${path}`, {
     method,
     headers: authHeaders(body ? { "Content-Type": "application/json" } : {}),
+    credentials: "include",
     body: body ? JSON.stringify(body) : undefined,
   });
   if (!res.ok) throw new Error(await errorText(res));
@@ -45,7 +79,11 @@ function blobToBase64(blob) {
 }
 
 export async function apiDownload(path, fallbackName) {
-  const res = await fetch(`${API_BASE}${path}`, { headers: authHeaders() });
+  await sessionReady;
+  const res = await fetch(`${API_BASE}${path}`, {
+    headers: authHeaders(),
+    credentials: "include",
+  });
   if (!res.ok) throw new Error(await errorText(res));
   const disposition = res.headers.get("Content-Disposition") || "";
   const match = /filename="?([^";]+)"?/i.exec(disposition);
@@ -392,9 +430,11 @@ export async function previewExport(conversationId, messageId, format) {
 
 // read an SSE stream, calling onEvent per frame; signal aborts (Stop button)
 async function streamSSE(path, { body, signal, method = "POST" } = {}, onEvent) {
+  await sessionReady;
   const res = await fetch(`${API_BASE}${path}`, {
     method,
     headers: authHeaders(body ? { "Content-Type": "application/json" } : {}),
+    credentials: "include",
     body: body ? JSON.stringify(body) : undefined,
     signal,
   });

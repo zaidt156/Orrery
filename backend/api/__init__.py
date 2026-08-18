@@ -3,9 +3,7 @@ from __future__ import annotations
 
 from backend.api.schemas import *  # noqa: F401,F403 — re-export request models (tests/api compat)
 
-import hmac
-
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -14,6 +12,7 @@ from backend.core.config import settings
 from backend.core.observability import new_request_id
 from backend.core.paths import resource_path
 from backend.features import artifacts, files, team
+from backend.security.session import COOKIE_NAME, BrowserSession
 
 _UI_DIST = resource_path("ui", "dist")
 
@@ -83,6 +82,8 @@ _CSP = (
 def create_app(session_token: str) -> FastAPI:
     """Build the FastAPI application bound to this session's auth token."""
     api = FastAPI(title="Orrery", docs_url=None, redoc_url=None, openapi_url=None)
+    session = BrowserSession(session_token)
+    api.state.session = session  # the launcher reads .code to build the browser URL
 
     @api.exception_handler(PermissionError)
     async def _permission_error(_request, exc: PermissionError):
@@ -120,12 +121,41 @@ def create_app(session_token: str) -> FastAPI:
             expose_headers=["Content-Disposition"],
         )
 
-    async def require_token(x_orrery_token: str | None = Header(default=None)) -> None:
-        # constant-time compare so the token can't be guessed via response timing
-        if not x_orrery_token or not hmac.compare_digest(x_orrery_token, session_token):
+    _dev_origin = settings.vite_url if settings.orrery_dev else None
+
+    async def require_token(
+        request: Request, x_orrery_token: str | None = Header(default=None)
+    ) -> None:
+        if session.token_matches(x_orrery_token):
+            pass  # a custom header is already CSRF-safe: no preflight is granted cross-origin
+        elif session.token_matches(request.cookies.get(COOKIE_NAME)):
+            # the cookie IS sent cross-origin by another loopback port, so check Origin here
+            if not session.origin_allowed(
+                request.headers.get("origin"), request.headers.get("host"), _dev_origin
+            ):
+                raise HTTPException(status_code=403, detail="Cross-origin request refused")
+        else:
             raise HTTPException(status_code=401, detail="Invalid session token")
         new_request_id()  # tag this request so all its log lines share one [id]
         team.begin_request_cache()  # per-request team/identity memo (fresh every request)
+
+    @api.post("/api/session/claim")
+    async def claim_session(request: Request) -> JSONResponse:
+        """Trade a single-use launch code for the session cookie. Outside the token gate by design:
+        this is the bootstrap that establishes the credential."""
+        try:
+            body = await request.json()
+        except Exception:  # noqa: BLE001 — a malformed body is just a failed claim
+            body = {}
+        token = session.claim((body or {}).get("code"))
+        if token is None:
+            raise HTTPException(status_code=401, detail="Invalid or expired launch code")
+        response = JSONResponse({"ok": True})
+        response.set_cookie(
+            COOKIE_NAME, token, httponly=True, samesite="strict", path="/",
+            max_age=None,  # session cookie: dies with the browser, like the old sessionStorage
+        )
+        return response
 
     # Unauthenticated GET so it can load in a sandboxed <iframe>. The iframe uses
     # sandbox="allow-scripts" WITHOUT allow-same-origin → opaque origin, no access to the

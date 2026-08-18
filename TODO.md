@@ -20,6 +20,18 @@ do not keep a second checklist of completed tasks here.
 - [ ] Add a web-search provider interface with the current keyless backend as default plus
       user-configured official/self-hosted routes; preserve per-turn consent and query screening.
 
+## P1 — finish the browser delivery
+
+- [ ] Run the launch handshake end to end in a real browser: launch code in the URL, claim, cookie
+      set, code stripped from the address bar, SSE reconnect. The tests cover the boundary, not the
+      round trip.
+- [ ] Regenerate `requirements.lock.txt` now that `pywebview` and `qtpy` are gone and `PySide6` is
+      unmarked.
+- [ ] Decide whether `--windowed` still fits the macOS package: with no window, a user whose browser
+      fails to open sees nothing at all, because the printed URL has nowhere to go.
+- [ ] Give the backend test suite per-test timeouts and named groups. Individual files pass in
+      seconds; some combination hangs with no output, which also makes the new CI run unbounded.
+
 ## P1 — complete visible product gaps
 
 - [ ] Add authenticated Workflow CRUD/list/get/run routes with owner filtering and validation.
@@ -50,15 +62,13 @@ do not keep a second checklist of completed tasks here.
 - [ ] Make detached Chat runs durable across backend restarts or explicitly expose their
       process-lifetime limitation in the interface.
 - [ ] Make strict privacy stronger than basic privacy, or rename the modes to match reality.
-- [ ] Review generic HTML preview policy and Electron `sandbox: false`; tighten both with compatibility
-      regression tests.
+- [ ] Review the generic HTML preview policy and tighten it with compatibility regression tests.
 - [ ] Build the dedicated dashboard editing workspace.
 - [ ] Profile very long Chat threads and add virtualization only if measurements justify it.
 - [ ] Finish optional Concept-mode polish for Chat, Dashboards, Automations, Agents, and Projects;
       verify every light palette with screenshots and accessibility checks.
 - [ ] Reconcile the 15 default-branch Dependabot alerts with current lockfiles and reachability.
 - [ ] Ensure the current versioned sandbox image is built/provisioned in release artifacts and CI.
-- [ ] Complete Linux packaging after Windows and macOS release checks remain green.
 
 ## Decisions that require the user
 

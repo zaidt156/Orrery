@@ -120,3 +120,6 @@ $RECYCLE.BIN/
 *.bak
 *.orig
 * conflicted copy*
+
+# Scratch repro material (screenshots, sample documents)
+Issues/

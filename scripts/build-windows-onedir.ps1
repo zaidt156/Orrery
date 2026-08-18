@@ -26,6 +26,16 @@ function Assert-Matches {
     }
 }
 
+function Assert-Missing {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string]$Message
+    )
+    if (Test-Path $Path) {
+        throw "$Message`: $Path"
+    }
+}
+
 function Invoke-Checked {
     param(
         [Parameter(Mandatory = $true)][string]$Exe,
@@ -118,9 +128,6 @@ Write-Host "Installing from $RequirementsFile..."
 Invoke-Checked ".venv\Scripts\python.exe" "-m" "pip" "install" "-r" $RequirementsFile
 Invoke-Checked ".venv\Scripts\python.exe" "-m" "pip" "install" "pyinstaller"
 
-$WebviewHookDir = (& ".venv\Scripts\python.exe" -c "import pathlib, webview; print(pathlib.Path(webview.__file__).resolve().parent / '__pyinstaller')")
-if ($LASTEXITCODE -ne 0) { throw "Could not resolve pywebview PyInstaller hook path" }
-
 Write-Host "Building PyInstaller onedir package..."
 Invoke-Checked ".venv\Scripts\pyinstaller.exe" `
     "--noconfirm" `
@@ -129,7 +136,6 @@ Invoke-Checked ".venv\Scripts\pyinstaller.exe" `
     "--name" "Orrery" `
     "--console" `
     "--icon" "assets\desktop\orrery.ico" `
-    "--additional-hooks-dir" $WebviewHookDir `
     "--add-data" "assets;assets" `
     "--add-data" "ui\dist;ui\dist" `
     "--add-data" "skills;skills" `
@@ -144,30 +150,17 @@ Invoke-Checked ".venv\Scripts\pyinstaller.exe" `
     "--collect-all" "pptx" `
     "--collect-data" "procrastinate" `
     "--copy-metadata" "procrastinate" `
-    "--copy-metadata" "pywebview" `
     "--copy-metadata" "PySide6" `
     "--copy-metadata" "PySide6_Addons" `
     "--copy-metadata" "PySide6_Essentials" `
     "--copy-metadata" "shiboken6" `
-    "--copy-metadata" "qtpy" `
     "--copy-metadata" "python-pptx" `
     "--hidden-import" "PySide6.QtCore" `
     "--hidden-import" "PySide6.QtGui" `
     "--hidden-import" "PySide6.QtPdf" `
-    "--hidden-import" "PySide6.QtWebEngineWidgets" `
-    "--hidden-import" "PySide6.QtWebEngineCore" `
-    "--hidden-import" "PySide6.QtWebChannel" `
-    "--hidden-import" "PySide6.QtNetwork" `
-    "--exclude-module" "webview.platforms.winforms" `
-    "--exclude-module" "webview.platforms.edgechromium" `
-    "--exclude-module" "webview.platforms.mshtml" `
-    "--exclude-module" "webview.platforms.android" `
-    "--exclude-module" "webview.platforms.gtk" `
-    "--exclude-module" "webview.platforms.cocoa" `
-    "--exclude-module" "webview.platforms.cef" `
-    "--exclude-module" "pythonnet" `
-    "--exclude-module" "clr" `
-    "--exclude-module" "clr_loader" `
+    "--exclude-module" "PySide6.QtWebEngineCore" `
+    "--exclude-module" "PySide6.QtWebEngineWidgets" `
+    "--exclude-module" "PySide6.QtWebEngineQuick" `
     "--collect-submodules" "keyring.backends" `
     "app.py"
 
@@ -184,12 +177,11 @@ Assert-Exists "$DistRoot\_internal\assets" "Bundled assets folder is missing"
 Assert-Exists "$DistRoot\_internal\procrastinate\sql\queries.sql" "Bundled Procrastinate SQL queries are missing"
 Assert-Matches "$DistRoot\_internal\procrastinate-*.dist-info\METADATA" "Bundled Procrastinate package metadata is missing"
 Assert-Exists "$DistRoot\_internal\PySide6" "Bundled Qt/PySide runtime is missing"
-Assert-Exists "$DistRoot\_internal\PySide6\QtWebEngineProcess.exe" "Bundled Qt WebEngine process is missing"
+Assert-Missing "$DistRoot\_internal\PySide6\QtWebEngineProcess.exe" "Qt WebEngine must not ship - the workspace opens in the user's own browser"
 Assert-Exists "$DistRoot\_internal\PySide6\QtPdf.pyd" "Bundled PDF preview renderer extension is missing"
 Assert-Exists "$DistRoot\_internal\PySide6\Qt6Pdf.dll" "Bundled PDF preview renderer library is missing"
 Assert-Exists "$DistRoot\_internal\pptx" "Bundled python-pptx package is missing"
 Assert-Matches "$DistRoot\_internal\pyside6-*.dist-info\METADATA" "Bundled PySide6 package metadata is missing"
-Assert-Matches "$DistRoot\_internal\QtPy-*.dist-info\METADATA" "Bundled QtPy package metadata is missing"
 Assert-Matches "$DistRoot\_internal\python_pptx-*.dist-info\METADATA" "Bundled python-pptx package metadata is missing"
 Invoke-PackagingProbe "$DistRoot\Orrery.exe"
 
@@ -211,12 +203,11 @@ Assert-Exists "$ReleaseRoot\_internal\ui\dist" "Release frontend is missing"
 Assert-Exists "$ReleaseRoot\_internal\procrastinate\sql\queries.sql" "Release Procrastinate SQL queries are missing"
 Assert-Matches "$ReleaseRoot\_internal\procrastinate-*.dist-info\METADATA" "Release Procrastinate package metadata is missing"
 Assert-Exists "$ReleaseRoot\_internal\PySide6" "Release Qt/PySide runtime is missing"
-Assert-Exists "$ReleaseRoot\_internal\PySide6\QtWebEngineProcess.exe" "Release Qt WebEngine process is missing"
+Assert-Missing "$ReleaseRoot\_internal\PySide6\QtWebEngineProcess.exe" "Qt WebEngine must not ship - the workspace opens in the user's own browser"
 Assert-Exists "$ReleaseRoot\_internal\PySide6\QtPdf.pyd" "Release PDF preview renderer extension is missing"
 Assert-Exists "$ReleaseRoot\_internal\PySide6\Qt6Pdf.dll" "Release PDF preview renderer library is missing"
 Assert-Exists "$ReleaseRoot\_internal\pptx" "Release python-pptx package is missing"
 Assert-Matches "$ReleaseRoot\_internal\pyside6-*.dist-info\METADATA" "Release PySide6 package metadata is missing"
-Assert-Matches "$ReleaseRoot\_internal\QtPy-*.dist-info\METADATA" "Release QtPy package metadata is missing"
 Assert-Matches "$ReleaseRoot\_internal\python_pptx-*.dist-info\METADATA" "Release python-pptx package metadata is missing"
 Assert-Exists "$ReleaseRoot\docker-compose.yml" "Release docker-compose.yml is missing"
 Assert-Exists "$ReleaseRoot\.env.example" "Release .env.example is missing"

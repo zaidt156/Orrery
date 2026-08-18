@@ -2913,3 +2913,40 @@ viewing half of that promise.
 
 Verified: 658 backend tests pass (7 new preview-fidelity regressions and one adjusted heading
 assertion), the full suite stays green. ODF/RTF coverage remains tracked in TODO.md.
+
+## Step 154 - Orrery is delivered to your own browser (August 18, 2026)
+
+Orrery stopped shipping a window. The Electron shell and the pywebview window were both removed, and
+`orrery web` now starts the local backend and opens whatever browser the user already has. Nothing
+about local-first changed: the backend, PostgreSQL, the keychain, and the Docker sandbox all still
+run on the user's machine. What went away was the packaging tax - code signing, notarization,
+per-platform installers, and a bundled Qt WebEngine runtime that existed only to draw a window
+around a page FastAPI was already serving.
+
+The security consequence needed real work. A real browser is not a window Orrery controls, so the
+old `?token=` handoff would have left the session credential in history, in bookmarks, and readable
+by extensions. The launcher now mints a single-use launch code; the page trades it for an httpOnly
+session cookie and strips it from the address bar. Cookie-authenticated requests also carry an
+Origin check, because cookies ignore port: `http://127.0.0.1:<other port>` is same-site with Orrery,
+so `SameSite=Strict` alone would let another local process drive the API. Header authentication
+stays for clients that use `X-Orrery-Token`, and needs no Origin check, because a cross-origin page
+cannot set a custom header without a CORS preflight Orrery never grants.
+
+This step turned that into something a person can actually install. `pyproject.toml` makes `orrery`
+a real console script, so the whole install is `pip install -e .` plus one UI build. Startup now
+fails loudly when the workspace bundle is missing instead of serving a blank page, and everything
+the CLI prints is ASCII - an em dash in a startup message crashes on a legacy Windows console. The
+Electron-wrapped Windows and macOS installer scripts were deleted along with the shell they wrapped;
+the two portable package builds survive and no longer bundle pywebview or Qt WebEngine, and they now
+assert that WebEngine is absent rather than present. The new CI workflow was also repaired: it ran a
+linter that had never been installed and a formatter this tree has never been run through.
+
+Documentation was reconciled with all of it: the README leads with the browser install, ARCHITECTURE
+describes the startup handshake and the two authentication paths that exist today, and the published
+guide no longer tells people to download an installer that is not built any more.
+
+Verified: 84 tests across the session, API, CLI, startup, packaging-contract, and import groups pass,
+including 10 new CLI regressions covering the default mode, `--no-browser`, the build/service flags,
+unknown arguments, and the missing-bundle failure. `ruff check .` is clean against the newly pinned
+configuration. The live browser round trip is still unproven - the tests cover the boundary, not the
+handshake in a real browser.

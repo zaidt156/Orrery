@@ -133,10 +133,8 @@ PYINSTALLER_ARGS=(
   --collect-submodules tiktoken_ext
   --collect-submodules sqlglot.dialects
   --collect-all fastembed
-  --collect-all webview
   --collect-data procrastinate
   --copy-metadata procrastinate
-  --copy-metadata pywebview
   --copy-metadata PySide6
   --copy-metadata PySide6_Addons
   --copy-metadata PySide6_Essentials
@@ -144,6 +142,9 @@ PYINSTALLER_ARGS=(
   --hidden-import PySide6.QtCore
   --hidden-import PySide6.QtGui
   --hidden-import PySide6.QtPdf
+  --exclude-module PySide6.QtWebEngineCore
+  --exclude-module PySide6.QtWebEngineWidgets
+  --exclude-module PySide6.QtWebEngineQuick
   --collect-submodules keyring.backends
 )
 if [[ -n "$ICON_FILE" ]]; then

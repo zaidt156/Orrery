@@ -41,6 +41,9 @@ nav{height:64px;display:flex;align-items:center;gap:18px}
 .content li{margin:7px 0}
 .content b,.content strong{color:var(--ink)}
 code{padding:2px 6px;border-radius:6px;color:#bdf3e8;background:rgba(82,200,178,.12);font:.86em var(--mono)}
+pre{margin:14px 0;padding:16px 18px;border:1px solid var(--line);border-radius:var(--radius);background:rgba(247,240,223,.045);overflow-x:auto}
+pre code{display:block;padding:0;color:var(--ink);background:none;line-height:1.75}
+pre .muted{color:var(--quiet)}
 .callout{margin-top:16px;padding:14px 16px;border:1px solid rgba(229,169,63,.3);border-radius:var(--radius);background:rgba(229,169,63,.07);color:#d7c8ae;font-size:.95rem}
 .callout.teal{border-color:rgba(82,200,178,.3);background:rgba(82,200,178,.07);color:#bfe9df}
 .callout b{color:#f3ca7d}.callout.teal b{color:#bff3e8}
@@ -82,7 +85,7 @@ footer{border-top:1px solid var(--line);padding:30px 0;color:var(--quiet);font-s
 <div class="content">
 
 <section id="what"><h2><span class="n">01</span>What is Orrery</h2>
-<p>Orrery is a desktop app that puts AI into one private workspace on your own computer. You bring the AI models you already use, like Claude, ChatGPT, Google, or a free model that runs locally, and you can bring your own database too. Orrery is the thing that ties it all together in one window.</p>
+<p>Orrery is an app you run on your own computer that puts AI into one private workspace, opened in your own browser. You bring the AI models you already use, like Claude, ChatGPT, Google, or a free model that runs locally, and you can bring your own database too. Orrery is the thing that ties it all together in one window.</p>
 <p>Here is the part that matters most. Your files, your chats, and your data stay on your machine. The only time anything leaves is when you ask a cloud model a question, and even then it only sees what that question needs.</p>
 <div class="cards">
 <div class="tile"><b>Chat</b><span>Talk to any model, with your own documents in the conversation.</span></div>
@@ -93,19 +96,26 @@ footer{border-top:1px solid var(--line);padding:30px 0;color:var(--quiet);font-s
 </section>
 
 <section id="install"><h2><span class="n">02</span>Installing it</h2>
-<h3>On Windows</h3>
-<ol>
-<li>Download the Windows installer from the download page. It is the file ending in <code>.exe</code>.</li>
-<li>Run it. If Windows shows a blue box that says it protected your PC, click <b>More info</b> and then <b>Run anyway</b>. The app is not code signed yet, which is normal for an early build, so that warning is expected.</li>
-<li>Orrery installs like any other app and adds a Start Menu and desktop shortcut.</li>
-</ol>
-<h3>On a Mac</h3>
-<ol>
-<li>Download the <code>.dmg</code> that matches your Mac. Pick Apple Silicon for an M1, M2, or M3, and Intel for an older one.</li>
-<li>Open it and drag <b>Orrery</b> into your Applications folder.</li>
-<li>The very first time, right click Orrery and choose <b>Open</b> rather than double clicking. That gets you past the Mac security prompt, and you only do it once.</li>
-</ol>
-<a class="button" href="index.html#download">Go to downloads</a>
+<p>Orrery runs on your own computer and opens in the browser you already use. There is no separate
+window to install and nothing that talks to a server of ours.</p>
+<p>You need three things first: <b>Python 3.12</b>, <b>Node.js 20</b>, and <b>Docker Desktop</b>.
+Then, in a terminal:</p>
+<pre><code>git clone https://github.com/zaidt156/Orrery.git
+cd Orrery
+python -m venv .venv
+source .venv/bin/activate     <span class="muted"># Windows: .\.venv\Scripts\Activate.ps1</span>
+pip install -e .
+cd ui &amp;&amp; npm install &amp;&amp; npm run build &amp;&amp; cd ..
+docker compose up -d
+docker build -t orrery-sandbox:latest sandbox</code></pre>
+<p>After that, one command starts it any time:</p>
+<pre><code>orrery web</code></pre>
+<p>Your browser opens on its own. If it does not, the terminal prints a link you can paste. That link
+works once: Orrery swaps it for a private session and removes it from the address bar, so it never
+sits in your history.</p>
+<div class="callout"><b>Prefer not to use a terminal?</b> Portable packages with Python already
+inside can be built from the repository, but none are published automatically right now. The command
+above is the supported way to run Orrery today.</div>
 </section>
 
 <section id="firstrun"><h2><span class="n">03</span>The first time you open it</h2>

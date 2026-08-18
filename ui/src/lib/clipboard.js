@@ -1,23 +1,24 @@
 // Desktop clipboard helper. It tries every safe route Orrery supports:
 // native desktop bridge, browser clipboard, legacy DOM copy, then the protected local API.
+import { sessionReady } from "./api.js";
+
 const API_BASE = import.meta.env.DEV ? "http://127.0.0.1:8765" : "";
 
-function sessionToken() {
-  const params = new URLSearchParams(window.location.search);
-  const token = params.get("token") || sessionStorage.getItem("orrery_token") || "";
-  if (token) sessionStorage.setItem("orrery_token", token);
-  return token;
+// the session cookie is set by api.js's handshake; the legacy header is kept for old shells
+function legacyToken() {
+  return sessionStorage.getItem("orrery_token") || "";
 }
 
 async function backendCopy(value) {
-  const token = sessionToken();
-  if (!token) return { ok: false, error: "No Orrery desktop session token." };
+  await sessionReady;
+  const token = legacyToken();
   const response = await fetch(`${API_BASE}/api/clipboard/copy`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "X-Orrery-Token": token,
+      ...(token ? { "X-Orrery-Token": token } : {}),
     },
+    credentials: "include",
     body: JSON.stringify({ text: value }),
   });
   if (response.ok) return { ok: true, method: "api" };

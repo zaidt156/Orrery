@@ -1,0 +1,44 @@
+# Orrery is installed from a checkout and run locally: `pip install -e .` then `orrery web`.
+# There is no native shell to package any more — the backend serves the workspace to the user's
+# own browser, so the console script is the whole delivery mechanism.
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "orrery"
+version = "0.1.0"
+description = "Local-first AI workspace, served to your own browser."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { file = "LICENSE" }
+dynamic = ["dependencies"]
+
+[project.scripts]
+orrery = "app:cli"
+
+[tool.setuptools]
+py-modules = ["app"]
+
+[tool.setuptools.packages.find]
+include = ["backend*"]
+
+[project.optional-dependencies]
+# requirements-dev.txt pulls in requirements.txt with `-r`, which setuptools cannot parse, so the
+# dev extra is spelled out here instead of read from that file.
+dev = ["pytest>=8.3", "ruff>=0.16"]
+
+[tool.setuptools.dynamic]
+dependencies = { file = ["requirements.txt"] }
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+# Correctness only, and deliberately not the full default set: the tree predates ruff and turning
+# on style rules would rewrite hundreds of files that this change never touched. Pinning the
+# selection here also stops the gate from meaning one thing locally and another on a CI runner.
+select = ["E9", "F"]
+# The API route modules re-export a shared dependency surface with `import *`.
+ignore = ["F403", "F405"]
