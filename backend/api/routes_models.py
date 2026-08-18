@@ -1,5 +1,7 @@
 """/models API routes (split from the api.py monolith; same behavior)."""
 
+import asyncio
+
 from fastapi import APIRouter, HTTPException
 
 from backend.api.deps import _require_admin_access
@@ -11,8 +13,14 @@ router = APIRouter()
 @router.get("/models")
 async def models() -> dict:
     items = await ai.list_available_models()
-    for m in items:  # so the context selector only offers sizes the model actually has
-        m["context_window"] = ai.model_context_window(m["id"])
+    # so the context selector only offers sizes the model actually has. Off the event loop:
+    # on a cold process the first of these triggers litellm's multi-second import, and blocking
+    # here stalls every concurrent request - which is what made loading a tab take minutes.
+    windows = await asyncio.to_thread(
+        lambda: [ai.model_context_window(m["id"]) for m in items]
+    )
+    for m, window in zip(items, windows):
+        m["context_window"] = window
     return {"models": items}
 
 @router.get("/models/catalog")

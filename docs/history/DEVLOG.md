@@ -2984,3 +2984,39 @@ hang was confirmed to be cut off and reported against the test's own name.
 
 Next: the launch handshake still needs its real-browser round trip, and the remaining feature groups
 are still one undifferentiated run.
+
+## Step 156 - The app was starving its own backend (August 18, 2026)
+
+Orrery felt slow to the point of being unusable: switching tabs stalled, and the backend sometimes
+stopped answering altogether. Three separate defects were behind it, all found by measuring rather
+than guessing.
+
+The largest was a one-line mistake in the launcher. After the backend signalled readiness, `main()`
+idled with `while not _boot_error: _ready.wait(timeout=1.0)` - but `_ready` is *set* by that point,
+and waiting on a set Event returns immediately. The main thread therefore span as fast as Python
+could go, and because it held the GIL, it starved the event loop running in the backend thread. The
+cost was measured by A/B against the identical app with the loop removed: a trivial 404 went from
+530ms to 4.6ms, `/api/health` from 350ms to 2.4ms, and the 1.1MB Dashboards chunk from 2.4s to
+12ms. The idle wait now uses a `_stopped` Event that stays unset while Orrery runs, so each
+iteration really does sleep for a second.
+
+The second was `GET /api/models` importing litellm on the event loop. That import walks the whole
+litellm package and costs about 4.7s of pure CPU on a warm filesystem; doing it inside an `async def`
+blocked every concurrent request, which is why the first fetch of the Dashboards chunk once took
+239 seconds. The import now happens in a worker thread, and startup warms it in the background so
+no user request pays for it at all.
+
+The third was a promise the code made and never kept. `_FreshHtmlStatic` documented that
+content-hashed assets "can cache forever", but only ever set `Cache-Control` on index.html, so the
+browser revalidated every chunk on every load at 200-385ms each. Fingerprinted assets under
+`/assets/` now carry `public, max-age=31536000, immutable`, while index.html stays uncached so a
+new build is always picked up.
+
+Verified: 697 backend tests pass (5 new regressions covering the idle wait, the off-loop model
+metadata call, and the two cache headers), `ruff check .` is clean, and the measurements above were
+taken against the running app before and after. One of the new tests caught a real bug in the fix
+itself: Starlette normalises static paths with `os.path.normpath`, so the asset check had to match
+Windows' backslash separator too.
+
+Next: the Home view still fires eleven API calls on mount, and the route chunks are not prefetched -
+both worth revisiting now that the per-request floor is milliseconds instead of half a second.

@@ -58,6 +58,10 @@ def _resolve_api_port() -> int:
     return _api_port
 
 _ready = threading.Event()
+# Set only when the backend stops. The idle loop in main() must wait on THIS, never on _ready:
+# _ready is already set by then, so waiting on it returns instantly and spins the main thread at
+# 100% CPU, which starves the backend thread's event loop through the GIL.
+_stopped = threading.Event()
 _boot_error: list[BaseException] = []
 _session_code: list[str] = []  # filled once the API app exists; the launch URL needs it
 
@@ -136,6 +140,12 @@ async def _boot_and_serve() -> None:
     from backend.features import skills as _skills
     await _skills.refresh_user_skills()  # load the user's own enabled skills into memory
 
+    # litellm costs seconds to import and the model picker needs it on the very first paint.
+    # Warm it in a worker thread so that cost is paid while the user is still looking at the
+    # loading screen, instead of stalling their first request behind it.
+    from backend.providers import ai as _ai
+    threading.Thread(target=_ai.warm_litellm, name="orrery-warm-models", daemon=True).start()
+
     api = create_app(SESSION_TOKEN)
     _session_code.append(api.state.session.code)
     config = uvicorn.Config(
@@ -169,6 +179,8 @@ def _start_backend_thread() -> None:
         except BaseException as exc:  # surface startup failures to the main thread
             _boot_error.append(exc)
             _ready.set()
+        finally:
+            _stopped.set()  # wakes the idle loop in main() as soon as serving ends
 
     threading.Thread(target=runner, name="orrery-backend", daemon=True).start()
 
@@ -235,6 +247,18 @@ def _require_ui_bundle() -> None:
         )
 
 
+def _idle_until_stopped(poll: float = 1.0) -> None:
+    """Keep the process alive while the backend thread serves.
+
+    Waits on `_stopped`, which stays unset while Orrery runs, so each iteration really does sleep.
+    Waiting on `_ready` here (it is already set by this point) returns instantly and turns this
+    into a busy loop that starves the backend thread through the GIL - measured at 530ms of added
+    latency on every request, including static chunks.
+    """
+    while not _boot_error and not _stopped.wait(timeout=poll):
+        pass
+
+
 def main(open_browser: bool = True) -> None:
     """Run Orrery and hand the workspace to the user's own browser."""
     _require_ui_bundle()
@@ -248,16 +272,20 @@ def main(open_browser: bool = True) -> None:
 
     url = _browser_url()
     # printed, never logged: the launch code is a credential and log files outlive the session
-    print(f"\n  Orrery is running at {_base_url()}")
-    print(f"  Opening your browser. If it doesn't open, paste this once:\n\n    {url}\n")
+    # flush: stdout block-buffers whenever it is not a terminal, and this URL is the only way
+    # in when the browser does not open - it must not sit in a buffer until the process ends.
+    print(f"\n  Orrery is running at {_base_url()}", flush=True)
+    print(
+        f"  Opening your browser. If it doesn't open, paste this once:\n\n    {url}\n",
+        flush=True,
+    )
     if open_browser:
         try:
             webbrowser.open(url)
         except Exception:  # noqa: BLE001 — the printed URL is the fallback
             log.info("Could not launch a browser automatically; open the URL above.")
     try:
-        while not _boot_error:
-            _ready.wait(timeout=1.0)
+        _idle_until_stopped()
     except KeyboardInterrupt:
         print("\nOrrery stopped.")
 

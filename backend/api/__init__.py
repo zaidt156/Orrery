@@ -38,6 +38,12 @@ class _FreshHtmlStatic(StaticFiles):
             response = await super().get_response("index.html", scope)
         if response.headers.get("content-type", "").startswith("text/html"):
             response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        elif path.replace("\\", "/").startswith("assets/"):  # normpath gives "assets\..." on Windows
+            # Vite fingerprints these filenames, so the content behind one can never change:
+            # a new build produces a new name that index.html (never cached, above) points at.
+            # Without this the browser revalidates every chunk on every load - measured at
+            # 200-385ms each, paid again on each tab that pulls in a new chunk.
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
         return response
 
 _PLACEHOLDER = """<!doctype html><html><head><meta charset="utf-8">

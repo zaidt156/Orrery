@@ -75,6 +75,13 @@ class ReasoningDelta(str):
 
 
 def _load_litellm():
+    """Import litellm on first use.
+
+    NOTE FOR CALLERS: this import walks the whole litellm package and costs seconds, so it must
+    never run on the event loop - doing so stalls every other request, including the static chunks
+    the browser is still fetching. Call it from a worker thread, and let `warm_litellm()` pay the
+    cost at startup instead of making a user's first request wait for it.
+    """
     global _litellm
     if _litellm is None:
         import litellm
@@ -84,6 +91,17 @@ def _load_litellm():
         litellm.drop_params = True  # drop params a given model doesn't support (e.g. reasoning_effort)
         _litellm = litellm
     return _litellm
+
+
+def warm_litellm() -> None:
+    """Preload litellm off the request path. Safe to call from a background thread at startup."""
+    started = time.perf_counter()
+    try:
+        _load_litellm()
+    except Exception as exc:  # noqa: BLE001 - a failed warm must never stop the app booting
+        log.debug("Could not preload litellm: %s", exc)
+        return
+    log.info("Model metadata ready (%.1fs)", time.perf_counter() - started)
 
 
 def model_provider(model_id: str) -> str:
