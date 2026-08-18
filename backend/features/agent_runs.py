@@ -982,6 +982,100 @@ def _run_dict(run: AgentRun, steps: list[AgentRunStep] | None = None) -> dict:
     return out
 
 
+async def replay(run_id: str, *, owner_id: str | None, upto: int | None = None) -> dict | None:
+    """The model-visible transcript this run's durable log reconstructs to (ADR-004).
+
+    "Model-visible means logged": everything that reached a model request is rebuilt from
+    `agent_run_steps`, never from memory. That invariant is what makes fork and resume possible,
+    so this exposes the reconstruction directly - for inspecting what a run actually saw, and for
+    checking a fork before starting it.
+    """
+    try:
+        rid = uuid.UUID(run_id)
+    except (ValueError, TypeError):
+        return None
+    async with get_sessionmaker()() as s:
+        run = (await s.execute(select(AgentRun).where(
+            AgentRun.id == rid,
+            AgentRun.owner_id.is_(None) if owner_id is None else AgentRun.owner_id == owner_id,
+        ))).scalar_one_or_none()
+        if run is None:
+            return None
+        steps = list((await s.execute(
+            select(AgentRunStep).where(AgentRunStep.run_id == rid).order_by(AgentRunStep.sequence)
+        )).scalars().all())
+    kept = [st for st in steps if upto is None or st.sequence <= upto]
+    return {
+        "run_id": str(rid),
+        "messages": await _transcript(run, kept),
+        "steps_used": len(kept),
+        "steps_total": len(steps),
+    }
+
+
+async def fork_run(run_id: str, *, owner_id: str | None, at_step: int | None = None,
+                   input_text: str | None = None) -> dict:
+    """Branch a new queued run from an existing run's log, keeping steps up to `at_step`.
+
+    The fork reuses the ORIGINAL run's version and config snapshot, so a branch re-runs what the
+    source actually ran rather than whatever the agent has been edited into since. Copied steps
+    keep counting toward the step budget, so forking cannot be used to run past it.
+    """
+    try:
+        rid = uuid.UUID(run_id)
+    except (ValueError, TypeError):
+        raise ValueError("Run not found")
+    async with get_sessionmaker()() as s:
+        source = (await s.execute(select(AgentRun).where(
+            AgentRun.id == rid,
+            AgentRun.owner_id.is_(None) if owner_id is None else AgentRun.owner_id == owner_id,
+        ))).scalar_one_or_none()
+        if source is None:
+            raise ValueError("Run not found")
+        agent = (await s.execute(
+            select(Agent).where(Agent.id == source.agent_id).with_for_update()
+        )).scalar_one_or_none()
+        if agent is None:
+            raise ValueError("Agent not found")
+        if agent.status != "active":
+            raise ValueError(f"This agent is {agent.status}. Activate it before forking a run.")
+
+        config = json.loads(source.config_snapshot or "{}")
+        budgets = config.get("budgets") or {}
+        if await _runs_today(s, agent.id) >= int(budgets.get("max_runs_per_day") or 100):
+            raise ValueError("This agent reached its runs-per-day budget.")
+
+        steps = list((await s.execute(
+            select(AgentRunStep).where(AgentRunStep.run_id == rid).order_by(AgentRunStep.sequence)
+        )).scalars().all())
+        kept = [st for st in steps if at_step is None or st.sequence <= at_step]
+
+        text = (input_text if input_text is not None else source.input_text or "")
+        text = text.strip()[: int(budgets.get("max_input_chars") or 20_000)]
+        fork = AgentRun(
+            agent_id=source.agent_id, agent_version_id=source.agent_version_id, owner_id=owner_id,
+            trigger_type="manual", trigger_principal="local-owner",
+            input_text=text, input_digest=_digest(text),
+            config_snapshot=source.config_snapshot, status="queued",
+        )
+        s.add(fork)
+        await s.flush()
+        for st in kept:
+            s.add(AgentRunStep(
+                run_id=fork.id, sequence=st.sequence, kind=st.kind, status=st.status,
+                tool_key=st.tool_key, risk=st.risk, input_digest=st.input_digest,
+                summary=st.summary, detail=st.detail,
+            ))
+        await s.commit()
+        await s.refresh(fork)
+        fork_id = str(fork.id)
+
+    log.info("forked run %s from %s at step %s (%d steps carried)",
+             fork_id, run_id, at_step, len(kept))
+    await _dispatch(fork_id)
+    return {"run_id": fork_id, "forked_from": run_id, "steps_carried": len(kept)}
+
+
 async def list_runs(agent_id: str, *, owner_id: str | None, limit: int = 50) -> list[dict]:
     try:
         aid = uuid.UUID(agent_id)

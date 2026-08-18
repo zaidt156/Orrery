@@ -36,6 +36,13 @@ class AgentRunStart(BaseModel):
     input: str = Field(default="", max_length=100_000)
 
 
+class AgentRunFork(BaseModel):
+    # None carries the whole log forward; a sequence number branches just after that step.
+    at_step: int | None = Field(default=None, ge=0)
+    # None reuses the source run's input, so a plain fork re-runs the same request.
+    input: str | None = Field(default=None, max_length=100_000)
+
+
 class ApprovalDecision(BaseModel):
     approve: bool
 
@@ -155,6 +162,27 @@ async def agent_run_cancel(run_id: str) -> dict:
     if not await agent_runs.cancel_run(run_id, owner_id=owner):
         raise HTTPException(status_code=404, detail="Run not found")
     return {"ok": True}
+
+
+@router.get("/agent-runs/{run_id}/replay")
+async def agent_run_replay(run_id: str, upto: int | None = Query(default=None, ge=0)) -> dict:
+    """What this run's durable log reconstructs to - the messages the model actually saw."""
+    owner = await team.current_owner_id()
+    out = await agent_runs.replay(run_id, owner_id=owner, upto=upto)
+    if out is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+    return out
+
+
+@router.post("/agent-runs/{run_id}/fork", status_code=status.HTTP_201_CREATED)
+async def agent_run_fork(run_id: str, body: AgentRunFork) -> dict:
+    """Branch a new run from this one's log, keeping steps up to `at_step`."""
+    owner = await team.current_owner_id()
+    try:
+        return await agent_runs.fork_run(run_id, owner_id=owner, at_step=body.at_step,
+                                         input_text=body.input)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get("/agent-approvals")

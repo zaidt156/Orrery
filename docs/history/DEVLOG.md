@@ -3052,3 +3052,30 @@ tool before the approval gate and recorded which hook did it.
 
 Next: the remaining three ADR-004 steps - session log fork/resume/replay, configuration layering,
 then plugin mounting.
+
+## Step 158 - Agent runs can be replayed and forked from their own log (August 18, 2026)
+
+The second ADR-004 step. The harness idea being borrowed is "model-visible means logged": if every
+model request is reconstructible from an append-only log, then fork, resume, and replay follow for
+free. Orrery already half had this - `_transcript()` has always rebuilt an agent's model-bound
+conversation from `agent_run_steps` rather than from memory, which is why a run could survive a
+restart. What was missing was any way to use it.
+
+`replay()` returns the messages a run's log reconstructs to, optionally truncated at a step. It is
+the honest answer to "what did this agent actually see", and it is how a fork can be inspected
+before it is started. `fork_run()` branches a new queued run from an existing one, copying the steps
+up to a chosen point, and optionally replacing the input so the same context can be asked a
+different question.
+
+Two details matter more than the feature. A fork reuses the *source run's* version and config
+snapshot rather than the agent's current settings, so branching re-runs what actually ran instead of
+whatever the agent has been edited into since. And the copied steps keep counting toward the
+step budget, so forking cannot be used to walk past a limit the original run hit. Both are
+owner-scoped with the same filter `get_run()` uses, and both are exposed as
+`GET /api/agent-runs/{id}/replay` and `POST /api/agent-runs/{id}/fork`.
+
+Verified: 713 backend tests pass, including 7 new ones covering reconstruction from the log,
+truncation, carrying the log into a branch, replacing the input, refusal of unknown runs, and that
+another owner can neither replay nor fork a run they do not own.
+
+Next: ADR-004 steps three and four - configuration layering, then plugin mounting.
