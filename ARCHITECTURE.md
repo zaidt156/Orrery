@@ -67,6 +67,8 @@ sequenceDiagram
     B->>B: Bootstrap LIFE.md and clean expired files
     B->>P: Reconcile interrupted chat and agent runs
     B->>Q: Start worker with concurrency 4
+    B->>B: Mount declared plugins (a failure stops startup)
+    B->>B: Warm model metadata in a worker thread
     B->>B: Start FastAPI
     B-->>L: Ready
     L->>U: Open http://127.0.0.1:<port>/?c=<launch code>
@@ -244,6 +246,8 @@ Code anchors: `backend/features/prompting.py`, `backend/features/chat/retrieval.
 ## 7. Model routing
 
 All model-backed features call the same provider boundary. That boundary applies privacy handling, authentication, streaming, reasoning separation, usage metering, and one limited fallback rule.
+
+Key-gated providers are Anthropic, OpenAI, Google, Mistral, DeepSeek, xAI (Grok), Alibaba DashScope (Qwen and GLM), and OpenRouter. Each provider's catalogue is fetched from the provider itself and curated to roughly four models per tier, so new model releases appear without a code change; DeepSeek falls back to its two long-standing models only when its API cannot be reached. Ollama is discovered locally and needs no key. `model_context_window()` consults LiteLLM's metadata, whose import costs seconds and therefore never runs on the event loop — startup warms it in a worker thread and `/api/models` computes windows off-loop.
 
 ```mermaid
 flowchart TD
@@ -672,7 +676,21 @@ Code anchors: `backend/api/__init__.py`, `backend/security`, `backend/features/t
 
 ---
 
-## 18. The honest implementation boundary
+## 18. Composability: configuration layers, hooks, and plugins
+
+Settings resolve through five ordered layers — defaults, an `orrery.toml` profile beside the project (or `ORRERY_PROFILE`), a `config.toml` in the per-user data directory, `.env`, then real environment variables, which always win. `backend/core/profiles.py` owns the layers; `orrery --dump-config` prints each setting with the layer that supplied it and redacts anything credential-shaped. No secret is read from or written to a layer — provider keys and the database URL stay in the OS keychain.
+
+Two extension seams exist, both **deny-only** (ADR-004). `tools/pre-execute` runs inside `run_tool()` after every built-in guard — scope allow-list, feature gate, grant actions and resources, argument validation — and before the central approval gate, so it covers Chat, Automations, and Agents at once and a refusal never raises a pointless approval prompt. `agent/pre-step` runs before each model request in an agent run and can stop the run. A hook returning nothing has not approved anything; it has only declined to object, so removing every hook leaves behaviour exactly as strict.
+
+A configuration layer may name plugins (`plugins = [...]`). A plugin is an importable module the user installed; mounting imports it and calls `setup(ctx)`, and the context exposes only the two hook registrations. Nothing is fetched — names that look like URLs or paths are refused before import. Registrations are recorded so unmounting reverses them, a `setup()` that raises part-way is rolled back, and a declared plugin that cannot be imported fails startup rather than running without the policy the user asked for.
+
+Agent runs are reconstructible from their durable step log: `_transcript()` has always rebuilt the model-bound conversation from `agent_run_steps`, and `replay()` exposes that reconstruction while `fork_run()` branches a new queued run from it. A fork reuses the source run's version and config snapshot rather than the agent's current settings, and carried steps keep counting toward the step budget.
+
+Code anchors: `backend/core/profiles.py`, `backend/core/plugins.py`, `backend/tools/hooks.py`, `backend/tools/registry.py`, `backend/features/agent_runs.py`, `docs/decisions/004-harness-composability.md`.
+
+---
+
+## 19. The honest implementation boundary
 
 ```mermaid
 flowchart LR

@@ -3204,3 +3204,32 @@ Verified: 744 backend tests pass, including 9 new ones asserting the litellm pre
 keeps a GLM beside a Qwen, that DeepSeek picks up models beyond the old pair and still falls back
 offline, and that each new provider is registered in all four places a provider has to appear.
 `ruff check .` is clean and the production UI builds.
+
+## Step 163 - Documentation caught up with the version that exists (August 18, 2026)
+
+Four steps of behaviour had landed without the docs following. This reconciles them.
+
+ARCHITECTURE gained a section for the composability layer - the five configuration layers, the two
+deny-only seams and where they sit relative to the built-in guards, plugin mounting and its
+rollback rules, and replay/fork over the durable run log. Its startup sequence now shows plugins
+mounting and model metadata warming, and the model-routing section names the eight key-gated
+providers, says that catalogues are fetched from the provider rather than hard-coded, and records
+why LiteLLM's metadata import never runs on the event loop.
+
+The README documents the provider list including xAI and DashScope, the ~38-model local catalogue,
+`orrery --dump-config`, and a new section on configuration layers and plugins with a worked example
+of a policy hook - including the sentence that matters most, that returning `None` from a hook means
+"no objection" and never "approved".
+
+The published pages were still selling something that no longer exists: the landing page told people
+to "open the latest release for your platform" when the installers were deleted with the desktop
+shell, so it now leads with the checkout install and `orrery web`. Both it and the user guide list
+the providers that can actually be connected today.
+
+One real drift turned up while writing this: the `[dev]` extra in `pyproject.toml` listed only
+pytest and ruff, so the install path the README recommends would have missed `pytest-timeout` and
+silently run without the per-test timeouts that `pytest.ini` now depends on. Both dependency lists
+agree again, and the README documents the `db` marker alongside them.
+
+Verified: 744 backend tests pass, `ruff check .` is clean, the production UI builds, and every
+relative link in the README resolves.

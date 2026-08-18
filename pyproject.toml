@@ -27,7 +27,7 @@ include = ["backend*"]
 [project.optional-dependencies]
 # requirements-dev.txt pulls in requirements.txt with `-r`, which setuptools cannot parse, so the
 # dev extra is spelled out here instead of read from that file.
-dev = ["pytest>=8.3", "ruff>=0.16"]
+dev = ["pytest>=8.3", "ruff>=0.16", "pytest-timeout>=2.3"]
 
 [tool.setuptools.dynamic]
 dependencies = { file = ["requirements.txt"] }

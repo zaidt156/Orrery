@@ -155,7 +155,8 @@ orrery web
 
 Orrery binds to `127.0.0.1`, prints the URL, and opens your browser at it. `orrery web --no-browser`
 starts the backend without opening one, which is what you want over SSH or in a second terminal;
-paste the printed URL yourself.
+paste the printed URL yourself. `orrery --dump-config` prints every setting, its value, and which
+layer supplied it, then exits without starting anything.
 
 That URL carries a single-use launch code. The page trades it for an httpOnly session cookie and
 strips it from the address bar, so the credential never settles into history or a bookmark. Requests
@@ -185,8 +186,14 @@ again. `python app.py` remains equivalent to `orrery web`.
 
 Open `Settings -> Accounts & Keys` inside Orrery.
 
-- OpenAI, Anthropic, Google, and compatible providers can use API keys where supported.
-- Ollama models run locally and do not require an API key.
+- API keys are supported for OpenAI, Anthropic (Claude), Google, Mistral, DeepSeek, xAI (Grok),
+  Alibaba DashScope (which serves both Qwen and GLM), and OpenRouter. Anything else that speaks an
+  OpenAI-compatible API can be added as a custom model with its own base URL.
+- Each provider's model list is fetched from the provider itself and curated to the newest few per
+  tier, so new releases appear without an Orrery update.
+- Ollama models run locally and do not require an API key. Settings ships a catalogue of ~38
+  open-weight models across four size tiers, and any other name from the Ollama library can be
+  pulled directly.
 - Claude, ChatGPT/Codex, and Gemini CLI routes are optional account-plan routes where the official
   first-party CLI supports non-interactive local execution. Orrery does not use unofficial browser
   cookies, hidden web APIs, or session scraping.
@@ -196,6 +203,51 @@ Open `Settings -> Accounts & Keys` inside Orrery.
 Provider subscriptions and provider API billing are not always the same product. If a provider does
 not officially allow subscription spend through a third-party app, Orrery keeps that route disabled
 or uses only the supported first-party CLI path with warnings.
+
+## Configuration And Plugins
+
+Settings resolve through five layers. Later layers win:
+
+1. built-in defaults
+2. `orrery.toml` beside the project (or the path in `ORRERY_PROFILE`) — a profile you can commit
+3. `config.toml` in your per-user data directory — survives reinstalling the app
+4. `.env`
+5. real environment variables
+
+```toml
+# orrery.toml
+[orrery]
+rag_top_k = 8
+sandbox_timeout_seconds = 90
+```
+
+`orrery --dump-config` shows the resolved value of every setting and the layer it came from, with
+anything credential-shaped redacted so the output is safe to paste into an issue. Secrets are never
+read from these files: provider keys and the database URL live in the OS keychain.
+
+A configuration layer can also mount local plugins:
+
+```toml
+[orrery]
+plugins = ["mycompany.orrery_policy"]
+```
+
+A plugin is an importable Python module you have installed yourself — nothing is downloaded. It
+must define `setup(ctx)`, and the context it receives can register two kinds of policy hook: one
+that runs before any tool executes, and one that runs before each step of an agent run. **Hooks can
+only refuse.** They run after every built-in check, so a hook can stop an action but can never
+approve one that Orrery's own scope, grant, or approval rules already refused. A plugin that fails
+to import stops startup rather than leaving you running without the policy you asked for.
+
+```python
+def setup(ctx):
+    async def no_shell_after_hours(call):
+        if call.risk == "destructive":
+            return "Destructive tools are disabled by company policy."
+        return None                       # None means "no objection", not "approved"
+
+    ctx.register_pre_execute("after-hours", no_shell_after_hours)
+```
 
 ## Data And RAG
 
@@ -266,11 +318,16 @@ desktop shell; CI runs the tests and the UI build on Linux, macOS, and Windows i
 
 ```bash
 pip install -e ".[dev]"
-python -m pytest tests/ -q
+python -m pytest tests/ -q            # needs the local PostgreSQL running
+python -m pytest tests/ -q -m "not db"  # ...or skip the tests that need it
 ruff check .
 
 cd ui && npm run build
 ```
+
+Tests marked `db` write to real tables. Without a database they skip with a reason rather than
+stalling on a connection timeout; CI runs the whole suite against a pgvector service on Linux and
+the `not db` subset on macOS and Windows.
 
 ## Contributing
 
