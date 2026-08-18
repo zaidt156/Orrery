@@ -5,6 +5,10 @@ import pytest
 
 from backend.features import datasets
 
+# Marked at module scope: these exercise real persistence, so they need the PostgreSQL that
+# `docker compose up -d` provides. The cross-platform CI job runs `-m "not db"`; the Linux
+# job provides a pgvector service and requires them.
+pytestmark = pytest.mark.db
 
 if hasattr(asyncio, "WindowsSelectorEventLoopPolicy"):
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())

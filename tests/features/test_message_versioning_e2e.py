@@ -11,6 +11,11 @@ from backend.core.models import Conversation
 from backend.features import chat
 from backend.features.chat import router
 
+# Marked at module scope: these exercise real persistence, so they need the PostgreSQL that
+# `docker compose up -d` provides. The cross-platform CI job runs `-m "not db"`; the Linux
+# job provides a pgvector service and requires them.
+pytestmark = pytest.mark.db
+
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 

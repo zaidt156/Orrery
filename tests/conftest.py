@@ -1,3 +1,4 @@
+import os
 import pathlib
 import sys
 
@@ -5,9 +6,28 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
 import pytest
 
+from backend.core.config import settings
 from backend.features import admin, team
 from backend.providers import accounts
 from backend.security import secrets
+
+# Tests marked `db` talk to a real PostgreSQL. A developer without `docker compose up -d` should
+# get an honest skip rather than a connection timeout, but CI must never quietly skip the very
+# coverage it spun a database up to provide - so ORRERY_REQUIRE_DB=1 turns the skip into a failure.
+_DATABASE_CONFIGURED = bool(os.environ.get("DATABASE_URL") or settings.database_url)
+_DATABASE_REQUIRED = os.environ.get("ORRERY_REQUIRE_DB") == "1"
+
+
+@pytest.fixture(autouse=True)
+def _database_required(request):
+    if request.node.get_closest_marker("db") is None or _DATABASE_CONFIGURED:
+        return
+    if _DATABASE_REQUIRED:
+        pytest.fail(
+            "ORRERY_REQUIRE_DB=1 but no database is configured. Set DATABASE_URL to the "
+            "PostgreSQL this job provides."
+        )
+    pytest.skip("no PostgreSQL configured - start one with `docker compose up -d`, or set DATABASE_URL")
 
 
 @pytest.fixture(autouse=True)

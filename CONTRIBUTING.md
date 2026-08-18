@@ -23,9 +23,13 @@ app locally (Python 3.12+, Node.js 20+, Docker Desktop, PostgreSQL + pgvector).
 2. **Make focused changes.** Keep each PR scoped to one logical change.
 3. **Test before you push:**
    ```bash
-   python -m pytest -q        # backend tests
-   cd ui && npm run build     # the frontend must build cleanly
+   python -m pytest -q             # backend tests
+   python -m pytest -q -m "not db" # ...or skip the tests that need PostgreSQL
+   cd ui && npm run build          # the frontend must build cleanly
    ```
+   Tests marked `db` need the local database (`docker compose up -d`). Without one they skip with
+   a clear reason rather than stalling on a connection timeout. CI runs the full suite against a
+   pgvector service on Linux and the `not db` subset on macOS and Windows.
 4. **Write a clear commit message** describing what changed and why.
 5. **Open a pull request** against `main`. Fill in the PR template, link any related issue, and
    describe how you tested the change.

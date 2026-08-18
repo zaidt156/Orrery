@@ -13,13 +13,35 @@ permissions:
   contents: read
 
 jobs:
+  # The full suite, including everything that touches real persistence. Service containers only
+  # run on Linux runners, and the migrations need the `vector` extension, so this is the one job
+  # that can honestly claim to cover the database-backed behavior.
   backend:
-    name: Backend tests (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+    name: Backend tests (ubuntu, PostgreSQL)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        # Same image as docker-compose.yml, so CI and a developer laptop agree on the extension set.
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: orrery
+          POSTGRES_PASSWORD: orrery_ci_password
+          POSTGRES_DB: orrery
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U orrery -d orrery"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+
+    env:
+      # Throwaway CI credential for the service container above; real secrets live in the keychain.
+      DATABASE_URL: postgresql+psycopg://orrery:orrery_ci_password@127.0.0.1:5432/orrery
+      # This job spun up a database, so a `db` test that skips here is a failure, not a pass.
+      ORRERY_REQUIRE_DB: "1"
 
     steps:
       - uses: actions/checkout@v4
@@ -40,11 +62,40 @@ jobs:
         run: ruff check .
 
       - name: Run tests
-        run: pytest tests/ -q
+        run: pytest tests/ -q --durations=10
+
+  # Windows is the most-tested target and macOS is supported, but neither runner can host a
+  # service container. They run everything that does not need a database; the `db` tests are
+  # covered by the job above rather than silently dropped.
+  crossplatform:
+    name: Backend tests (${{ matrix.os }}, no database)
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Run tests
+        run: pytest tests/ -q -m "not db" --durations=10
 
   ui:
     name: UI build
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     steps:
       - uses: actions/checkout@v4

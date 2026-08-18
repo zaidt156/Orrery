@@ -2950,3 +2950,37 @@ including 10 new CLI regressions covering the default mode, `--no-browser`, the 
 unknown arguments, and the missing-bundle failure. `ruff check .` is clean against the newly pinned
 configuration. The live browser round trip is still unproven - the tests cover the boundary, not the
 handshake in a real browser.
+
+## Step 155 - CI runs against a real database instead of failing against none (August 18, 2026)
+
+The pipeline introduced with the browser delivery had never been able to pass. It ran the whole
+backend suite on three operating systems without providing a database, and 38 tests across six
+files need one: they call `run_migrations()` and write real rows. Measured here, that configuration
+fails 38 and passes 654. The suite is not slow and does not hang on its own - with PostgreSQL up it
+finishes in about 40 seconds and is fully green.
+
+The earlier "some combination hangs with no output" note turned out to be the same root cause seen
+from the other side. A database that is *configured but unreachable* does not fail fast the way an
+*unconfigured* one does; psycopg keeps retrying until its connection timeout expires, so the run
+stalls silently and, in CI, would have burned the job limit with nothing on screen.
+
+CI is now two backend jobs instead of one three-OS matrix. Ubuntu runs the complete suite against a
+`pgvector/pgvector:pg17` service container - the same image `docker-compose.yml` uses, so CI and a
+developer laptop agree on the available extensions - and sets `ORRERY_REQUIRE_DB=1`. macOS and
+Windows cannot host service containers, so they run `-m "not db"`. Splitting this way is what makes
+the skip honest: the `db` tests are covered on Linux rather than quietly dropped everywhere.
+
+The `db` marker carries that split. Without a database a marked test skips with a reason that names
+the fix (`docker compose up -d`); under `ORRERY_REQUIRE_DB=1` the same condition is a hard failure,
+so the job that spun a database up can never silently skip the coverage it exists to provide. Every
+job now has `timeout-minutes`, `pytest-timeout` bounds each test at 120 seconds, and `--durations=10`
+publishes the slowest tests - together these mean a future hang names itself and dumps its stack
+instead of stalling in silence.
+
+Verified: the Linux path (database provided and required) passes 692 tests; the cross-platform path
+(no database) passes 634 with 58 deselected, where it previously failed 38; the require-a-database
+guard was confirmed to fail rather than skip; `ruff check .` is clean; and a deliberate 30-second
+hang was confirmed to be cut off and reported against the test's own name.
+
+Next: the launch handshake still needs its real-browser round trip, and the remaining feature groups
+are still one undifferentiated run.

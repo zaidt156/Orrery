@@ -15,8 +15,8 @@ do not keep a second checklist of completed tasks here.
       covers them; the Python renderers cover OOXML, CSV/TSV, and Markdown).
 - [ ] Add real-container CI fixtures for embedded, scanned, mixed, encrypted, malformed, oversized,
       and multilingual documents.
-- [ ] Split the backend suite into named deterministic groups with per-test timeouts and publish the
-      slowest tests so a hang identifies its owner.
+- [ ] Split the backend suite further into named deterministic groups. The `db` group and per-test
+      timeouts now exist; the remaining feature groups are still one undifferentiated run.
 - [ ] Add a web-search provider interface with the current keyless backend as default plus
       user-configured official/self-hosted routes; preserve per-turn consent and query screening.
 
@@ -29,8 +29,6 @@ do not keep a second checklist of completed tasks here.
       unmarked.
 - [ ] Decide whether `--windowed` still fits the macOS package: with no window, a user whose browser
       fails to open sees nothing at all, because the printed URL has nowhere to go.
-- [ ] Give the backend test suite per-test timeouts and named groups. Individual files pass in
-      seconds; some combination hangs with no output, which also makes the new CI run unbounded.
 
 ## P1 — complete visible product gaps
 
