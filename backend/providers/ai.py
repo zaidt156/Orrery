@@ -21,6 +21,8 @@ PROVIDERS: dict[str, dict] = {
     "google": {"label": "Google", "needs_key": True},
     "mistral": {"label": "Mistral (EU)", "needs_key": True},
     "deepseek": {"label": "DeepSeek", "needs_key": True},
+    "xai": {"label": "xAI (Grok)", "needs_key": True},
+    "dashscope": {"label": "Alibaba DashScope (Qwen, GLM)", "needs_key": True},
     "openrouter": {"label": "OpenRouter", "needs_key": True},
     "ollama": {"label": "Ollama (local)", "needs_key": False},
 }
@@ -29,6 +31,7 @@ PROVIDERS: dict[str, dict] = {
 _PREFIX_TO_PROVIDER = {
     "anthropic": "anthropic", "openai": "openai", "gemini": "google",
     "mistral": "mistral", "deepseek": "deepseek", "openrouter": "openrouter", "ollama": "ollama",
+    "xai": "xai", "dashscope": "dashscope",
 }
 
 _OLLAMA_BASE = "http://localhost:11434"
@@ -400,12 +403,92 @@ def _curate_mistral(items: list[dict]) -> list[dict]:
     return picked[:4]
 
 
+_DEEPSEEK_FALLBACK = ("deepseek-chat", "deepseek-reasoner")
+
+
 async def _fetch_deepseek(key: str) -> list[dict]:
-    # DeepSeek serves just two chat models; a static list avoids an extra round-trip.
+    """Ask DeepSeek what it serves. This used to be a hard-coded pair, which silently hid every
+    model they shipped afterwards; the pair is now only the fallback for an unreachable API."""
+    ids: list[str] = []
+    try:
+        async with httpx.AsyncClient(timeout=15) as c:
+            r = await c.get("https://api.deepseek.com/models",
+                            headers={"Authorization": f"Bearer {key}"})
+            r.raise_for_status()
+            ids = [m["id"] for m in r.json().get("data", []) if m.get("id")]
+    except Exception as exc:  # noqa: BLE001 - offline/rate-limited: still offer the known models
+        log.info("DeepSeek model list unavailable (%s); using the known models", type(exc).__name__)
+    if not ids:
+        ids = list(_DEEPSEEK_FALLBACK)
     return [
-        {"id": "deepseek/deepseek-chat", "label": "deepseek-chat", "provider": "deepseek"},
-        {"id": "deepseek/deepseek-reasoner", "label": "deepseek-reasoner (reasoning)", "provider": "deepseek"},
+        {"id": f"deepseek/{i}",
+         "label": f"{i} (reasoning)" if "reason" in i or "-r1" in i else i,
+         "provider": "deepseek"}
+        for i in sorted(set(ids))
     ]
+
+
+async def _fetch_xai(key: str) -> list[dict]:
+    """xAI's Grok models. The API is OpenAI-compatible and litellm routes the `xai/` prefix."""
+    async with httpx.AsyncClient(timeout=15) as c:
+        r = await c.get("https://api.x.ai/v1/models", headers={"Authorization": f"Bearer {key}"})
+        r.raise_for_status()
+        ids = [m["id"] for m in r.json().get("data", []) if m.get("id")]
+    return [{"id": f"xai/{i}", "label": i, "provider": "xai"} for i in sorted(set(ids))]
+
+
+def _curate_xai(items: list[dict]) -> list[dict]:
+    """Newest Grok per family, preferring reasoning over the non-reasoning twin."""
+    cand = [it for it in items if "image" not in it["label"] and "vision" not in it["label"]]
+    cand.sort(
+        key=lambda it: (_ver(it["label"]),
+                        "reasoning" in it["label"] and "non-reasoning" not in it["label"]),
+        reverse=True,
+    )
+    picked: list[dict] = []
+    seen_family: set[str] = set()
+    for it in cand:
+        family = it["label"].split("-fast")[0].replace("-latest", "")
+        if family in seen_family:
+            continue
+        seen_family.add(family)
+        picked.append(it)
+    return picked[:4] or items[:4]
+
+
+async def _fetch_dashscope(key: str) -> list[dict]:
+    """Alibaba DashScope, which serves Qwen and also hosts GLM. OpenAI-compatible; litellm routes
+    the `dashscope/` prefix."""
+    async with httpx.AsyncClient(timeout=15) as c:
+        r = await c.get(
+            "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models",
+            headers={"Authorization": f"Bearer {key}"},
+        )
+        r.raise_for_status()
+        ids = [m["id"] for m in r.json().get("data", []) if m.get("id")]
+    return [{"id": f"dashscope/{i}", "label": i, "provider": "dashscope"} for i in sorted(set(ids))]
+
+
+def _curate_dashscope(items: list[dict]) -> list[dict]:
+    """One flagship Qwen, one fast Qwen, one coder, and a GLM if the account can see one."""
+    def pick(match) -> dict | None:
+        hits = [it for it in items if match(it["label"])]
+        hits.sort(key=lambda it: _ver(it["label"]), reverse=True)
+        return hits[0] if hits else None
+
+    slots = [
+        pick(lambda m: m.startswith("qwen") and "max" in m),
+        pick(lambda m: m.startswith("qwen") and ("coder" in m or "code" in m)),
+        pick(lambda m: m.startswith("glm")),
+        pick(lambda m: m.startswith("qwen") and ("plus" in m or "turbo" in m or "flash" in m)),
+    ]
+    picked = [s for s in slots if s is not None]
+    for it in items:  # top up if the account exposes a narrower catalogue
+        if len(picked) >= 4:
+            break
+        if it not in picked:
+            picked.append(it)
+    return picked[:4]
 
 
 def _curate_passthrough(items: list[dict]) -> list[dict]:
@@ -414,7 +497,8 @@ def _curate_passthrough(items: list[dict]) -> list[dict]:
 
 # OpenRouter aggregates hundreds of models; keep popular providers' chat models and cap the list so
 # the picker/catalog stays usable. litellm routes "openrouter/<id>" natively with the OpenRouter key.
-_OPENROUTER_KEEP = ("anthropic/", "openai/", "google/", "meta-llama/", "mistralai/", "deepseek/", "qwen/", "x-ai/", "cohere/")
+_OPENROUTER_KEEP = ("anthropic/", "openai/", "google/", "meta-llama/", "mistralai/", "deepseek/",
+                    "qwen/", "x-ai/", "z-ai/", "moonshotai/", "cohere/")
 
 
 async def _fetch_openrouter(key: str) -> list[dict]:
@@ -483,9 +567,11 @@ _DISCOVERY: dict[str, tuple] = {
     "google": (_fetch_google, _curate_google),
     "mistral": (_fetch_mistral, _curate_mistral),
     "deepseek": (_fetch_deepseek, _curate_passthrough),
+    "xai": (_fetch_xai, _curate_xai),
+    "dashscope": (_fetch_dashscope, _curate_dashscope),
     "openrouter": (_fetch_openrouter, _curate_openrouter),
 }
-_KEYED = ("anthropic", "openai", "google", "mistral", "deepseek", "openrouter")
+_KEYED = ("anthropic", "openai", "google", "mistral", "deepseek", "xai", "dashscope", "openrouter")
 
 
 async def probe_provider(provider: str) -> tuple[bool, str]:

@@ -3170,3 +3170,37 @@ Verified against all four job configurations: Linux without a database 665 passe
 730 passed, Windows without a database 670 passed, Windows with one 735 passed, and `ruff check .`
 clean on both platforms. The Linux numbers came from running the jobs' exact commands in a
 python:3.12-slim container.
+
+## Step 162 - Grok, Qwen, and GLM are pickable; the local list caught up (August 18, 2026)
+
+The user asked for the current generation of models across vendors. Claude and GPT needed nothing:
+those catalogues are fetched live from the provider and curated by tier, so new releases appear on
+their own. Three vendors genuinely were not reachable, and one was frozen.
+
+**xAI (Grok)** and **Alibaba DashScope** are new keyed providers. Both APIs are OpenAI-compatible
+and both prefixes - `xai/` and `dashscope/` - are routed natively by the installed litellm, which is
+where the model ids were checked rather than recalled. DashScope is what makes **GLM** reachable: it
+serves the GLM family alongside Qwen, so one provider covers both, and its curation deliberately
+reserves a slot for a GLM so Qwen cannot crowd it out. GLM is also now kept from OpenRouter
+(`z-ai/`), along with Moonshot's Kimi.
+
+**DeepSeek** had been a hard-coded pair of models since it was added, which silently hid everything
+they shipped afterwards - `deepseek-v4-pro` and `deepseek-v4-flash` among them. It asks the provider
+now, and falls back to the known pair only when the API cannot be reached.
+
+Adding providers exposed an existing bug in Settings: the model list rendered
+`order.filter(p => groups[p])` against a hard-coded array, so any provider missing from that array
+had its models silently dropped from the screen. OpenRouter has been invisible there for exactly
+that reason. Known providers still lead in a deliberate order, but anything else the backend reports
+now follows alphabetically instead of vanishing.
+
+The local catalogue went from 22 to 38 models, adding gpt-oss (20B/120B), Qwen3-Coder, Qwen3-VL,
+GLM-4, Llama 4 Scout, Devstral, Magistral, Mistral Small 3.2, Phi-4 Reasoning, Granite 4, Gemma 3n,
+MiniCPM-V, and SmolLM2. Every name and size was verified against the Ollama registry - the sizes are
+summed from each model's actual manifest, not estimated, and one candidate that did not exist
+(`granite4:small`) was dropped rather than guessed at.
+
+Verified: 744 backend tests pass, including 9 new ones asserting the litellm prefixes, that curation
+keeps a GLM beside a Qwen, that DeepSeek picks up models beyond the old pair and still falls back
+offline, and that each new provider is registered in all four places a provider has to appear.
+`ruff check .` is clean and the production UI builds.
