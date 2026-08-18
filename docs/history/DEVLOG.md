@@ -3381,3 +3381,33 @@ Verified: 759 backend tests pass, including 7 new ones covering the present-bund
 fresh checkout building once, `--no-build`, a frozen build never shelling out, a missing npm naming
 what to install, and a failed build reporting the command that actually ran. `ruff check .` is clean,
 and the cold start was exercised for real rather than mocked.
+
+## Step 169 - A transparent activity log beside the chat (August 18, 2026)
+
+Borrowed from DeepSeek Harness, whose organising rule is that the session log is the source of what
+the model saw — "model-visible means logged". Orrery already streams a rich event vocabulary during
+a turn (status steps, retrieval sources, generated files, approval requests, token usage, errors),
+but the chat thread renders only the parts that belong in a conversation. The rest was invisible, so
+a user watching a long turn could not tell whether it was searching documents, waiting on approval,
+or stuck.
+
+The Activity panel shows the turn's raw event stream, in order, with a timestamp relative to when
+the turn started. Its most important property is that every line corresponds to an event the backend
+actually sent: nothing is inferred, nothing is synthesised from the rendered answer. That is what
+makes it worth trusting — if it says two sources were retrieved or an approval was requested for
+`run_shell`, the stream said so. It is fed at the very top of the event handler, before the early
+returns that decide what the thread renders, so the log cannot silently diverge from the wire.
+
+Token-level events are the one exception to one-line-per-event. `delta` and `reasoning_delta` arrive
+hundreds of times per turn, so they fold into a single growing "Answer · N characters" or
+"Thinking · N characters" entry rather than flooding the log, and a very long turn is capped so it
+cannot grow without bound.
+
+The folding logic is a pure function in `ui/src/lib/activityLog.js` rather than component state, so
+it is tested directly.
+
+Verified: 13 new UI tests (51 total, up from 38) covering delta coalescing, thinking and answer as
+separate running entries, verbatim status steps, source counts and their pluralisation, approval
+request and resolution tones, error tone, named generated files, token usage, ignoring events with
+nothing to say, non-mutation of the input log, the growth cap, and elapsed labels never going
+negative. 759 backend tests pass, `ruff check .` is clean, and the bundle builds.

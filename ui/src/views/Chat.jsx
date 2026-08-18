@@ -14,12 +14,14 @@ import {
   Repeat2,
   Scale,
   Globe2,
+  ScrollText,
   Telescope,
   WandSparkles,
   X,
 } from "lucide-react";
 import { AttachIcon, SendIcon } from "../components/icons.jsx";
 import Markdown from "../components/Markdown.jsx";
+import { applyActivityEvent, elapsedLabel } from "../lib/activityLog.js";
 import { isCodeImagePrompt } from "../lib/chatCommands.js";
 import { copyTextResult } from "../lib/clipboard.js";
 import {
@@ -158,6 +160,10 @@ export default function Chat({ features = null }) {
   const [projectId, setProjectId] = useState("");
   const [effort, setEffort] = useState("");
   const [artifact, setArtifact] = useState(null); // preview sidebar state; iframe capabilities deny by default
+  // A transparent record of the current turn: every event the backend streamed, in order.
+  const [activity, setActivity] = useState([]);
+  const [showActivity, setShowActivity] = useState(false);
+  const activityStartRef = useRef(0);
 
   useEffect(() => {
     if (!researchEnabled) setResearchMode(false);
@@ -463,6 +469,10 @@ export default function Chat({ features = null }) {
   // Shared streaming runner: appends an assistant placeholder, then applies events.
   async function runStream(cid, start) {
     setSending(true);
+    // One turn, one log. Reset here rather than on send so a resumed or regenerated turn also
+    // starts from a clean record of what happened.
+    setActivity([]);
+    activityStartRef.current = Date.now();
     const ctrl = new AbortController();
     abortRef.current = ctrl;
     const isActive = () => activeIdRef.current === cid;
@@ -495,6 +505,9 @@ export default function Chat({ features = null }) {
       if (!flushHandle) flushHandle = requestAnimationFrame(() => { flushHandle = 0; flushDeltas(); });
     };
     const handleEvent = (ev) => {
+        // The activity log records the raw stream, so it is fed FIRST - before the early returns
+        // below - and shows what the backend actually sent rather than what the thread rendered.
+        setActivity((log) => applyActivityEvent(log, ev));
         // Keep the persisted snapshot on the same exact path as the live panel. In particular,
         // reasoning_delta text is appended verbatim and compatibility events are stored once.
         reasoningAcc = applyReasoningEvent(reasoningAcc, ev);
@@ -877,6 +890,15 @@ export default function Chat({ features = null }) {
       <div className="chat-main">
         <div className="chat-header">
           <span className="view-title">{title}</span>
+          <button
+            type="button"
+            className={`pill activity-toggle${showActivity ? " on" : ""}`}
+            title="Show what Orrery is doing this turn"
+            aria-pressed={showActivity}
+            onClick={() => setShowActivity((v) => !v)}
+          >
+            <ScrollText size={13} /> Activity{activity.length ? ` · ${activity.length}` : ""}
+          </button>
           <div className="pickwrap">
             <span className={`pill model-pill${noKey ? " no-key" : ""}`} title={`${modelLabel} — switch model`} onClick={toggleModelMenu}>
               <b>{compact.name}</b>
@@ -1076,6 +1098,33 @@ export default function Chat({ features = null }) {
           <div className="hint">saved as you go — in your database, nowhere else</div>
         </div>
       </div>
+
+      {showActivity && (
+        <aside className="artifact-panel activity-panel">
+          <div className="artifact-bar">
+            <span className="artifact-title">Activity</span>
+            <div className="artifact-actions">
+              <button className="artifact-btn" title="Close activity" aria-label="Close activity"
+                      onClick={() => setShowActivity(false)}><X /></button>
+            </div>
+          </div>
+          <div className="activity-hint">
+            Every line is an event the backend actually sent this turn — nothing inferred.
+          </div>
+          <div className="activity-list">
+            {activity.length === 0 && (
+              <div className="activity-empty">Nothing yet. Send a message and this fills in live.</div>
+            )}
+            {activity.map((e, i) => (
+              <div className={`activity-row${e.tone ? ` ${e.tone}` : ""}`} key={`${e.at}-${i}`}>
+                <span className="activity-at">{elapsedLabel(e.at, activityStartRef.current)}</span>
+                <span className="activity-kind">{e.kind}</span>
+                <span className="activity-text">{e.text}</span>
+              </div>
+            ))}
+          </div>
+        </aside>
+      )}
 
       {artifact && (
         <aside className="artifact-panel">

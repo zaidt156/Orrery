@@ -2012,3 +2012,24 @@ button:focus-visible, .toggle:focus-visible, .node:focus-visible, .convo:focus-v
 .approval-actions button:disabled{opacity:.55;cursor:default}
 .approval-approve{border-color:var(--amber)}
 .approval-remember{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--faint)}
+
+/* Transparent activity log — the raw event stream for the current chat turn */
+.activity-panel{width:min(460px,38%)}
+.activity-hint{padding:8px 14px; border-bottom:1px solid var(--line-soft); font-size:10.5px;
+  line-height:1.45; color:var(--muted)}
+.activity-list{flex:1; overflow:auto; padding:6px 0}
+.activity-empty{padding:14px; font-size:11.5px; color:var(--muted)}
+.activity-row{display:grid; grid-template-columns:44px 62px 1fr; gap:8px; align-items:baseline;
+  padding:4px 14px; font-size:11px; line-height:1.5; border-bottom:1px solid transparent}
+.activity-row:hover{background:var(--bg1)}
+.activity-at{font:10px var(--font-mono); color:var(--muted); text-align:right}
+.activity-kind{font:9px var(--font-mono); letter-spacing:.04em; text-transform:uppercase;
+  color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.activity-text{overflow-wrap:anywhere}
+.activity-row.ok .activity-kind{color:var(--green)}
+.activity-row.warn .activity-kind{color:var(--amber)}
+.activity-row.error .activity-kind{color:var(--red)}
+.activity-row.error .activity-text{color:var(--red)}
+.activity-toggle{cursor:pointer; display:inline-flex; align-items:center; gap:5px; border:none;
+  font:inherit; font-size:11px}
+.activity-toggle.on{background:color-mix(in srgb,var(--blue) 16%,var(--bg1)); color:var(--text)}
