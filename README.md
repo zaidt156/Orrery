@@ -121,41 +121,44 @@ already use.
 ### Prerequisites
 
 1. Python 3.12 or newer.
-2. Node.js 20 or newer, to build the workspace bundle once.
-3. Docker Desktop, for the included PostgreSQL database and the file-generation sandbox.
+2. Node.js 20 or newer — Orrery builds its workspace bundle itself, once, on first run.
+3. Docker Desktop — Orrery starts it and provisions PostgreSQL itself, on first run.
 4. Optional: Ollama for local models, plus provider API keys or official provider CLIs.
 
-### Setup
+### Install and run
 
 ```bash
-git clone https://github.com/zaidt156/Orrery.git
-cd Orrery
-
-# Local settings. Never commit .env.
-cp .env.example .env                 # Windows: copy .env.example .env
-
-# Python environment and the `orrery` command.
-python -m venv .venv
-source .venv/bin/activate            # Windows: .\.venv\Scripts\Activate.ps1
-pip install -e .
-
-# The workspace bundle that FastAPI serves.
-cd ui && npm install && npm run build && cd ..
-
-# Local PostgreSQL + pgvector, and the sandbox image.
-docker compose up -d
-docker build -t orrery-sandbox:latest sandbox
+git clone https://github.com/zaidt156/Orrery.git && cd Orrery && pip install -e . && orrery
 ```
 
-### Start
+That is the whole thing. The first run does the setup that used to be a list of commands:
+
+- builds the workspace bundle with npm (about a minute, once — later starts skip it)
+- starts Docker Desktop if it is installed but not running, brings up PostgreSQL with pgvector,
+  and saves the connection string to your OS keychain
+- opens your browser on the workspace
+
+No `.env` is required: it is for overriding local development settings, and the connection string
+lives in the keychain rather than on disk. Use a virtual environment if you prefer
+(`python -m venv .venv` and activate it before `pip install -e .`).
+
+Two optional extras, neither needed to start:
 
 ```bash
-orrery web
+docker build -t orrery-sandbox:latest sandbox   # sandboxed code execution and file generation
+cp .env.example .env                            # only to override local dev settings
 ```
 
-Orrery binds to `127.0.0.1`, prints the URL, and opens your browser at it. `orrery web --no-browser`
+### Start it again later
+
+```bash
+orrery
+```
+
+Orrery binds to `127.0.0.1`, prints the URL, and opens your browser at it. `orrery --no-browser`
 starts the backend without opening one, which is what you want over SSH or in a second terminal;
-paste the printed URL yourself. `orrery --dump-config` prints every setting, its value, and which
+paste the printed URL yourself. `orrery --no-build` refuses to build the bundle instead of building
+it, for a machine without Node. `orrery --dump-config` prints every setting, its value, and which
 layer supplied it, then exits without starting anything.
 
 That URL carries a single-use launch code. The page trades it for an httpOnly session cookie and

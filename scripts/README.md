@@ -5,15 +5,14 @@
 - `setup-venv.ps1` creates the Python environment outside OneDrive and links it into the project.
 - `relink-node-modules.ps1` moves frontend dependencies outside OneDrive after `npm install`.
 
-Release helpers:
+Release helpers. Orrery serves its workspace to the user's own browser, so these build the two
+portable packages that remain - there is no shell to sign, notarize, or install:
 
-- `../desktop/electron/` contains the Electron migration shell. It starts `app.py --backend-only`,
-  waits for the local API, loads the existing React UI, and provides native file-save/update bridges.
 - `build-windows-onedir.ps1` builds the frontend, creates the PyInstaller onedir package, validates
-  the required `_internal` runtime files, runs the frozen desktop-runtime probe, and writes
+  the required `_internal` runtime files, runs the frozen packaging probe, and writes
   `release/Orrery-Windows.zip`.
 - `build-macos-app.sh` builds the frontend, creates the PyInstaller `.app` bundle, runs the frozen
-  desktop-runtime/resource probe, copies macOS setup helpers, and writes `release/Orrery-macOS.zip`.
+  packaging/resource probe, copies macOS setup helpers, and writes `release/Orrery-macOS.zip`.
 - `windows/` contains the batch files and Windows notes copied into the release package:
   `setup-orrery.bat`, `run-orrery.bat`, and `README-WINDOWS.txt`.
 - `macos/` contains the command files and macOS notes copied into the release package:

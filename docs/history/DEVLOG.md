@@ -3348,3 +3348,36 @@ button reflects the rule rather than discovering it in an error.
 Verified: 752 backend tests and 38 UI tests pass, `ruff check .` is clean, the bundle builds, and an
 end-to-end pass through the API - create, save a two-node spec with an edge, run it, read the run -
 returned exactly the shapes this screen reads, with both nodes recorded as done.
+
+## Step 168 - Installing Orrery is one line now (August 18, 2026)
+
+Getting Orrery running took eight commands: clone, copy `.env`, create a virtualenv, activate it,
+install, `npm install`, `npm run build`, `docker compose up`. Tools people compare this to install
+with one. Most of that list turned out to be unnecessary rather than hard.
+
+Two of the steps were already automatic and nobody had noticed: `dockerboot.provision()` has been
+starting Docker Desktop and bringing up PostgreSQL on first run for a while, and `.env` is only for
+overriding local development settings - the connection string lives in the OS keychain. That left
+the workspace bundle as the one genuine blocker, and startup handled it by refusing to start with
+instructions. The build is deterministic and needed exactly once, so Orrery now runs it: `npm ci`
+(or `npm install` without a lockfile) then `npm run build`, with the output left on the console
+because a silent minute looks like a hang. `--no-build` keeps the old refusal for a machine without
+Node, and a packaged build never builds anything because it ships the bundle.
+
+The whole install is now `git clone … && cd Orrery && pip install -e . && orrery`.
+
+Testing that claim properly - deleting `ui/dist` and starting cold - immediately found a bug the
+unit tests could not: on Windows, `shutil.which("npm")` can return the extensionless shell script
+rather than `npm.cmd`, and `CreateProcess` refuses it with "%1 is not a valid Win32 application".
+Windows asks for `npm.cmd` first now. The second cold start built the bundle and served the
+workspace with no manual step at all.
+
+Two documentation files still described the deleted Electron shell: `scripts/README.md` documented
+`../desktop/electron/`, which is not in the repository at all, and `assets/README.md` called the
+application icons "installer icons". Both now describe what exists. (A `desktop/` directory is still
+sitting in the working tree, but it is untracked - local leftovers rather than repository content.)
+
+Verified: 759 backend tests pass, including 7 new ones covering the present-bundle fast path, a
+fresh checkout building once, `--no-build`, a frozen build never shelling out, a missing npm naming
+what to install, and a failed build reporting the command that actually ran. `ruff check .` is clean,
+and the cold start was exercised for real rather than mocked.

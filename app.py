@@ -16,6 +16,7 @@ if sys.platform == "win32":
 
 from backend.core import database
 from backend.core.config import settings
+from backend.core import paths
 from backend.core.paths import resource_path
 from backend.security.secrets import redact_url
 
@@ -239,19 +240,70 @@ def _packaging_probe() -> None:
     print("Orrery packaging probe: ok")
 
 
-def _require_ui_bundle() -> None:
-    """Fail loudly instead of serving a blank page.
+def _build_ui_bundle(ui_dir) -> None:
+    """Run the one-time workspace build. Output is left on the console: it takes a minute the
+    first time and silence would look like a hang."""
+    from backend.core import proc
 
-    In dev the workspace comes from Vite. Otherwise the API serves ui/dist, and a checkout that
-    has never run a UI build has nothing to serve — better to say so than to open a white tab.
+    # Windows ships npm twice: `npm` (a shell script) and `npm.cmd`. PATH order can hand back the
+    # extensionless one, which CreateProcess refuses with "not a valid Win32 application", so ask
+    # for the .cmd first on Windows.
+    candidates = ("npm.cmd", "npm") if sys.platform == "win32" else ("npm",)
+    npm = next((found for name in candidates if (found := proc.find_executable(name))), None)
+    if npm is None:
+        raise SystemExit(
+            "Orrery needs Node.js 20+ to build its workspace the first time, and npm was not "
+            "found on PATH. "
+            "Install Node from https://nodejs.org/ and start Orrery again, or build it yourself "
+            "with:  cd ui && npm install && npm run build"
+        )
+
+    # `npm ci` is the reproducible install and needs the committed lockfile; fall back to
+    # `npm install` only if that lockfile is somehow absent.
+    install = [npm, "ci"] if (ui_dir / "package-lock.json").exists() else [npm, "install"]
+    print("\n  First run: building the workspace bundle. This happens once and takes a minute.\n",
+          flush=True)
+    for argv in (install, [npm, "run", "build"]):
+        shown = " ".join(["npm", *argv[1:]])  # name the command that actually ran (ci vs install)
+        try:
+            done = proc.run(argv, cwd=str(ui_dir), timeout=1800, check=False)
+        except OSError as exc:
+            raise SystemExit(f"Could not run `{shown}`: {exc}") from None
+        if done.returncode != 0:
+            raise SystemExit(
+                f"The workspace build failed during `{shown}` (exit {done.returncode}). "
+                "The output above says why; fix it, or build manually with:  "
+                "cd ui && npm install && npm run build"
+            )
+
+
+def _ensure_ui_bundle(auto_build: bool = True) -> None:
+    """Make sure there is a workspace to serve, building it once on a fresh checkout.
+
+    In dev the workspace comes from Vite. Otherwise the API serves ui/dist, and a checkout that has
+    never run a UI build has nothing to serve. This used to stop with instructions, which made a
+    fresh install a multi-command ritual; the build is deterministic and only needed once, so
+    Orrery just does it. A packaged build always ships the bundle and never builds anything.
     """
     if settings.orrery_dev:
         return
     index = resource_path("ui", "dist", "index.html")
-    if not index.exists():
+    if index.exists():
+        return
+
+    ui_dir = paths.project_root() / "ui"
+    packaged = bool(getattr(sys, "frozen", False))
+    if packaged or not auto_build or not (ui_dir / "package.json").is_file():
         raise SystemExit(
             f"The workspace bundle is missing ({index}). "
             "Build it once with:  cd ui && npm install && npm run build"
+        )
+
+    _build_ui_bundle(ui_dir)
+    if not index.exists():
+        raise SystemExit(
+            f"The workspace build finished but produced no bundle at {index}. "
+            "Build it manually with:  cd ui && npm install && npm run build"
         )
 
 
@@ -267,9 +319,9 @@ def _idle_until_stopped(poll: float = 1.0) -> None:
         pass
 
 
-def main(open_browser: bool = True) -> None:
+def main(open_browser: bool = True, auto_build: bool = True) -> None:
     """Run Orrery and hand the workspace to the user's own browser."""
-    _require_ui_bundle()
+    _ensure_ui_bundle(auto_build)
     ensure_connection()
     _start_backend_thread()
 
@@ -310,6 +362,7 @@ Usage:
 
 Options:
   --no-browser    start the backend but do not open a browser; use the printed URL
+  --no-build      never build the workspace bundle; fail if it is missing
   --dump-config   print every setting, its value, and which layer supplied it, then exit
   -h, --help      show this message
 """
@@ -340,13 +393,13 @@ def cli(argv: list[str] | None = None) -> None:
         print(USAGE)
         return
 
-    unknown = [arg for arg in args if arg not in ("--no-browser", "--dump-config")]
+    unknown = [arg for arg in args if arg not in ("--no-browser", "--no-build", "--dump-config")]
     if unknown:
         print("Unrecognized argument(s):", *unknown, file=sys.stderr)
         print(USAGE, file=sys.stderr)
         raise SystemExit(2)
 
-    main(open_browser="--no-browser" not in args)
+    main(open_browser="--no-browser" not in args, auto_build="--no-build" not in args)
 
 
 if __name__ == "__main__":
