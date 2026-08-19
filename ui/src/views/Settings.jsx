@@ -74,7 +74,7 @@ const ICON = {
   claude_plan: "C", chatgpt_plan: "O", gemini_plan: "G",
   anthropic: "A", openai: "O", google: "G",
   mistral: "M", deepseek: "D", openrouter: "R", ollama: "L", custom: "+",
-  xai: "X", dashscope: "Q",
+  xai: "X", dashscope: "Q", moonshot: "K",
 };
 
 const PROVIDER_LABEL = {
@@ -83,6 +83,7 @@ const PROVIDER_LABEL = {
   google: "Google", mistral: "Mistral (EU)", deepseek: "DeepSeek",
   openrouter: "OpenRouter", ollama: "Ollama (local)", custom: "Custom models",
   xai: "xAI (Grok)", dashscope: "Alibaba DashScope (Qwen, GLM)",
+  moonshot: "Moonshot (Kimi)",
 };
 
 const SETTINGS_SECTIONS = [
@@ -495,7 +496,7 @@ function ModelsSection({ canManage }) {
   // The list used to be the whole filter, so a provider missing from it - OpenRouter, and every
   // provider added since - had its models silently dropped from this screen.
   const KNOWN_ORDER = ["claude_plan", "chatgpt_plan", "gemini_plan", "anthropic", "openai", "google",
-    "mistral", "deepseek", "xai", "dashscope", "openrouter", "ollama", "custom"];
+    "mistral", "deepseek", "xai", "dashscope", "moonshot", "openrouter", "ollama", "custom"];
   const order = [
     ...KNOWN_ORDER.filter((p) => groups[p]),
     ...Object.keys(groups).filter((p) => !KNOWN_ORDER.includes(p)).sort(),

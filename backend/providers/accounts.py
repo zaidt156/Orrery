@@ -1022,9 +1022,21 @@ def connect_chatgpt_plan(acknowledged: bool = False) -> dict:
     mode = chatgpt_plan_mode_status(force=True)
     if not mode["available"]:
         raise ValueError(mode["message"])
-    _verify_codex_ready()
+    # A usage limit is not a broken connection. The CLI is installed, signed in, and will work
+    # again when the limit resets, so refusing to connect for days is the wrong answer - connect,
+    # and let the limit surface where it actually bites, at send time.
+    limit_note = None
+    try:
+        _verify_codex_ready()
+    except ValueError as exc:
+        if not _is_codex_usage_limit(str(exc)) and "usage limit" not in str(exc).lower():
+            raise
+        limit_note = str(exc)
     secrets.set_secret(_CHATGPT_PLAN_KEY, "connected")
-    return chatgpt_plan_mode_status()
+    status = chatgpt_plan_mode_status(force=True)
+    if limit_note:
+        status["warning"] = limit_note
+    return status
 
 
 def disconnect_chatgpt_plan() -> dict:
@@ -1167,6 +1179,18 @@ def _codex_should_retry_auto(model_id: str | None, raw: str, args: list[str] | N
     return bool(args and "-m" in args)
 
 
+def _codex_limit_reset(raw: str) -> str | None:
+    """The 'try again at ...' moment Codex reports, if it reported one."""
+    pattern = "try again at" + '\\s+([^.' + '\\n' + "]+)"
+    match = re.search(pattern, raw or "", re.IGNORECASE)
+    return match.group(1).strip() if match else None
+
+
+def _is_codex_usage_limit(raw: str) -> bool:
+    low = (raw or "").lower()
+    return "usage limit" in low or "rate limit" in low or "quota" in low
+
+
 def _friendly_codex_error(raw: str) -> str:
     low = (raw or "").lower()
     if "requires a newer version of codex" in low or "upgrade to the latest app or cli" in low:
@@ -1182,7 +1206,14 @@ def _friendly_codex_error(raw: str) -> str:
     if "not logged in" in low or "login" in low and ("required" in low or "expired" in low):
         return "Codex needs sign-in. Open Settings, choose Sign in, then check status."
     if "rate limit" in low or "usage limit" in low or "quota" in low:
-        return "Your Codex/ChatGPT plan limit is unavailable right now."
+        # Codex tells the user when the limit resets; throwing that away turns "your plan is out
+        # of credits until Friday" into "something is broken", which is the wrong thing to debug.
+        when = _codex_limit_reset(raw)
+        return (
+            "Your ChatGPT/Codex plan has hit its usage limit"
+            + (f"; it resets {when}." if when else " right now.")
+            + " The account is still connected and this route works again once the limit clears."
+        )
     if "required" in low and ("mcp" in low or "plugin" in low):
         return "A required Codex plugin or MCP server failed. Update Codex or disable that required integration."
     return "Codex request failed. Check sign-in, update the CLI, and retry from Settings."

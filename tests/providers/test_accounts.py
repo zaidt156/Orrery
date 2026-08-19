@@ -438,3 +438,57 @@ def test_plan_cli_install_is_refused_off_windows():
     """The one-click installer is Windows-only today, and says so rather than half-running."""
     with pytest.raises(ValueError, match="available on Windows"):
         accounts.install_plan_cli("chatgpt_plan", acknowledged=True)
+
+
+def test_a_codex_usage_limit_keeps_the_reset_time_it_was_given():
+    """The CLI says when the limit clears; dropping that turns 'out of credits until Friday' into
+    'something is broken', which sends the user debugging the wrong thing."""
+    raw = ("ERROR: You've hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro), "
+           "visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again "
+           "at Aug 25th, 2026 10:26 PM.")
+
+    assert accounts._codex_limit_reset(raw) == "Aug 25th, 2026 10:26 PM"
+    assert accounts._is_codex_usage_limit(raw)
+
+    message = accounts._friendly_codex_error(raw)
+    assert "Aug 25th, 2026 10:26 PM" in message
+    assert "usage limit" in message.lower()
+    assert "still connected" in message.lower()
+
+
+def test_a_limit_without_a_stated_reset_still_reads_sensibly():
+    message = accounts._friendly_codex_error("ERROR: rate limit exceeded")
+
+    assert accounts._codex_limit_reset("ERROR: rate limit exceeded") is None
+    assert "usage limit" in message.lower()
+
+
+def test_a_rate_limited_but_valid_account_still_connects(monkeypatch):
+    """Refusing to connect for days because today's credits ran out is the wrong answer: the CLI is
+    installed and signed in, and the route works again when the limit clears."""
+    monkeypatch.setattr(accounts, "chatgpt_plan_mode_status",
+                        lambda force=False: {"available": True, "message": "", "configured": True})
+
+    def limited():
+        raise ValueError(accounts._friendly_codex_error("You've hit your usage limit."))
+
+    monkeypatch.setattr(accounts, "_verify_codex_ready", limited)
+
+    status = accounts.connect_chatgpt_plan(acknowledged=True)
+
+    assert status["configured"] is True
+    assert "usage limit" in status["warning"].lower()
+
+
+def test_a_real_failure_still_refuses_to_connect(monkeypatch):
+    """Only a usage limit is forgiven; a signed-out or broken CLI must not report as connected."""
+    monkeypatch.setattr(accounts, "chatgpt_plan_mode_status",
+                        lambda force=False: {"available": True, "message": "", "configured": True})
+
+    def signed_out():
+        raise ValueError("Codex needs sign-in. Open Settings, choose Sign in, then check status.")
+
+    monkeypatch.setattr(accounts, "_verify_codex_ready", signed_out)
+
+    with pytest.raises(ValueError, match="sign-in"):
+        accounts.connect_chatgpt_plan(acknowledged=True)

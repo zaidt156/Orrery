@@ -3616,3 +3616,40 @@ Verified: 785 backend tests pass in both CI configurations, `ruff check .` is cl
 a workflow run leaving `surface='automation'` evidence with the right run id and tool key, and the
 NULL-owner distinction including that a genuinely missing parent still reports missing. Three more
 `run_tool` stubs in chat and capability tests needed widened signatures.
+
+## Step 175 - Subscription connect survives a usage limit, and Kimi joins the providers (August 19, 2026)
+
+The user reported that connecting a subscription account did not work. It reproduced immediately:
+`POST /api/providers/openai/chatgpt-plan/connect` returned 400, "Your Codex/ChatGPT plan limit is
+unavailable right now."
+
+The underlying cause was not Orrery's. Connecting runs a real Codex request as a readiness check,
+and the CLI answered: "You've hit your usage limit ... or try again at Aug 25th, 2026 10:26 PM." The
+account is fine; its credits are spent until the 25th. But Orrery handled that badly twice over.
+
+It threw away the detail the CLI had given it. "Unavailable right now" tells a user nothing about
+what to do, so they debug a connection that was never broken. The message now carries the reset time
+the CLI reported, and says the account is still connected.
+
+More importantly, it refused to connect at all. A CLI that is installed, signed in, and merely out
+of credits until next week is not a failed connection - and blocking it for that long is the wrong
+answer, because the route works again the moment the limit clears. Connecting now succeeds on a
+usage limit and returns a warning the Settings screen already knows how to display; every other
+failure, including a signed-out CLI, still refuses. That distinction is the point: only the limit is
+forgiven.
+
+Separately, the model catalogues were reviewed against what each provider actually serves. Claude,
+GPT, and Gemini needed no change and this is worth recording, because it is easy to "update" a list
+that updates itself: those catalogues are fetched live and curated per tier, and the curators were
+checked against current names - they correctly pick opus-5/sonnet-5/haiku/fable-5, the gpt-5.6
+sol/terra/luna family beside o3, and gemini-3.7/3.6/3.5 beside the newest pro. Grok, Qwen, and GLM
+arrived in Step 162. The genuine gap was Moonshot's Kimi, now a keyed provider with curation that
+prefers the thinking variant and drops vision-only entries. DeepSeek's offline fallback, which only
+runs when its own list is unreachable, no longer strands a user on the 2024 pair.
+
+The local catalogue went from 38 to 42: DeepSeek R1 32B, Phi-4 Mini Reasoning, Cogito, and
+Qwen3-Next 80B. As before, every name and size was verified against the Ollama registry, and four
+candidates that do not exist there were dropped rather than guessed at.
+
+Verified: 793 backend tests pass (8 new), `ruff check .` is clean, the bundle builds, and the
+ChatGPT-plan route was connected for real against the rate-limited account.

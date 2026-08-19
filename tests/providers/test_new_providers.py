@@ -126,8 +126,11 @@ async def test_deepseek_falls_back_to_known_models_when_the_api_is_unreachable(m
     monkeypatch.setattr(httpx, "AsyncClient", _Boom)
 
     out = await ai._fetch_deepseek("secret")
+    ids = {m["id"] for m in out}
 
-    assert {m["id"] for m in out} == {"deepseek/deepseek-chat", "deepseek/deepseek-reasoner"}
+    # the offline list is the known-good set, not whatever the last successful call returned
+    assert ids == {f"deepseek/{name}" for name in ai._DEEPSEEK_FALLBACK}
+    assert "deepseek/deepseek-chat" in ids
 
 
 def test_new_providers_are_registered_everywhere_they_must_be():
@@ -147,3 +150,41 @@ def test_provider_of_a_model_id_resolves_for_the_new_prefixes():
 def test_openrouter_keeps_glm_and_kimi_families():
     assert "z-ai/" in ai._OPENROUTER_KEEP   # GLM
     assert "moonshotai/" in ai._OPENROUTER_KEEP
+
+
+@pytest.mark.anyio
+async def test_moonshot_models_carry_the_litellm_prefix(monkeypatch):
+    seen = _stub(monkeypatch, {"data": [{"id": "kimi-k2-thinking"}, {"id": "kimi-k2-turbo"}]})
+
+    out = await ai._fetch_moonshot("secret")
+
+    assert "moonshot" in seen["url"]
+    assert {m["id"] for m in out} == {"moonshot/kimi-k2-thinking", "moonshot/kimi-k2-turbo"}
+    assert all(m["provider"] == "moonshot" for m in out)
+
+
+def test_moonshot_curation_prefers_thinking_and_drops_vision():
+    items = [
+        {"id": f"moonshot/{m}", "label": m, "provider": "moonshot"}
+        for m in ("kimi-k2-thinking", "kimi-k2-turbo", "kimi-k1-vision", "moonshot-v1-8k")
+    ]
+
+    labels = [m["label"] for m in ai._curate_moonshot(items)]
+
+    assert "kimi-k2-thinking" in labels
+    assert all("vision" not in label for label in labels)
+    assert len(labels) <= 4
+
+
+def test_moonshot_is_registered_everywhere_a_provider_must_be():
+    assert "moonshot" in ai.PROVIDERS
+    assert "moonshot" in ai._KEYED
+    assert "moonshot" in ai._DISCOVERY
+    assert ai.model_provider("moonshot/kimi-k2-thinking") == "moonshot"
+
+
+def test_the_deepseek_offline_fallback_names_the_current_generation():
+    """The fallback only runs when DeepSeek's own list is unreachable, so it should not strand a
+    user on models from two generations ago."""
+    assert "deepseek-v4-pro" in ai._DEEPSEEK_FALLBACK
+    assert "deepseek-chat" in ai._DEEPSEEK_FALLBACK

@@ -66,6 +66,10 @@ CURATED_MODELS = [
      "description": "Qwen 3 vision-language — images, charts, and screenshots.", "capabilities": ["vision", "chat", "multilingual"]},
     {"name": "gemma3n:e4b", "label": "Gemma 3n E4B", "tier": "small", "size": "about 7.5 GB",
      "description": "Larger Gemma 3n for better quality at device scale.", "capabilities": ["chat", "vision"]},
+    {"name": "phi4-mini-reasoning", "label": "Phi-4 Mini Reasoning", "tier": "small", "size": "about 3.2 GB",
+     "description": "Small model tuned specifically for step-by-step reasoning.", "capabilities": ["reasoning"]},
+    {"name": "cogito", "label": "Cogito 8B", "tier": "small", "size": "about 4.9 GB",
+     "description": "Hybrid model that can answer directly or reason first.", "capabilities": ["chat", "reasoning"]},
     # --- medium (need a strong GPU / lots of RAM) ---
     {"name": "qwen3:14b", "label": "Qwen 3 14B", "tier": "medium", "size": "about 9 GB",
      "description": "Higher-quality multilingual reasoning.", "capabilities": ["chat", "reasoning", "multilingual"]},
@@ -91,6 +95,8 @@ CURATED_MODELS = [
      "description": "Qwen 3 coding model built for agentic development.", "capabilities": ["code", "reasoning"]},
     {"name": "qwen3-vl:32b", "label": "Qwen3-VL 32B (vision)", "tier": "medium", "size": "about 21 GB",
      "description": "Large Qwen 3 vision-language model.", "capabilities": ["vision", "chat", "multilingual"]},
+    {"name": "deepseek-r1:32b", "label": "DeepSeek R1 32B", "tier": "medium", "size": "about 20 GB",
+     "description": "Larger DeepSeek R1 reasoning distill.", "capabilities": ["reasoning", "code"]},
     # --- large (workstation / multi-GPU) ---
     {"name": "gemma3:27b", "label": "Gemma 3 27B", "tier": "large", "size": "about 17 GB",
      "description": "Largest Gemma 3 — high quality, vision-capable.", "capabilities": ["chat", "vision"]},
@@ -106,6 +112,8 @@ CURATED_MODELS = [
      "description": "The large open-weight gpt-oss; workstation-class hardware.", "capabilities": ["chat", "reasoning", "code"]},
     {"name": "llama4:scout", "label": "Llama 4 Scout", "tier": "large", "size": "about 67 GB",
      "description": "Llama 4 mixture-of-experts with a very long context.", "capabilities": ["chat", "reasoning", "vision"]},
+    {"name": "qwen3-next:80b", "label": "Qwen3-Next 80B", "tier": "large", "size": "about 50 GB",
+     "description": "Qwen's next-generation sparse model; workstation-class hardware.", "capabilities": ["chat", "reasoning", "multilingual"]},
 ]
 _CURATED_NAMES = {item["name"] for item in CURATED_MODELS}
 

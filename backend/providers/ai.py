@@ -22,6 +22,7 @@ PROVIDERS: dict[str, dict] = {
     "mistral": {"label": "Mistral (EU)", "needs_key": True},
     "deepseek": {"label": "DeepSeek", "needs_key": True},
     "xai": {"label": "xAI (Grok)", "needs_key": True},
+    "moonshot": {"label": "Moonshot (Kimi)", "needs_key": True},
     "dashscope": {"label": "Alibaba DashScope (Qwen, GLM)", "needs_key": True},
     "openrouter": {"label": "OpenRouter", "needs_key": True},
     "ollama": {"label": "Ollama (local)", "needs_key": False},
@@ -31,7 +32,7 @@ PROVIDERS: dict[str, dict] = {
 _PREFIX_TO_PROVIDER = {
     "anthropic": "anthropic", "openai": "openai", "gemini": "google",
     "mistral": "mistral", "deepseek": "deepseek", "openrouter": "openrouter", "ollama": "ollama",
-    "xai": "xai", "dashscope": "dashscope",
+    "xai": "xai", "dashscope": "dashscope", "moonshot": "moonshot",
 }
 
 _OLLAMA_BASE = "http://localhost:11434"
@@ -403,7 +404,8 @@ def _curate_mistral(items: list[dict]) -> list[dict]:
     return picked[:4]
 
 
-_DEEPSEEK_FALLBACK = ("deepseek-chat", "deepseek-reasoner")
+# Only used when DeepSeek's own /models call fails; the live list is always preferred.
+_DEEPSEEK_FALLBACK = ("deepseek-chat", "deepseek-reasoner", "deepseek-v4-pro", "deepseek-v4-flash")
 
 
 async def _fetch_deepseek(key: str) -> list[dict]:
@@ -426,6 +428,31 @@ async def _fetch_deepseek(key: str) -> list[dict]:
          "provider": "deepseek"}
         for i in sorted(set(ids))
     ]
+
+
+async def _fetch_moonshot(key: str) -> list[dict]:
+    """Moonshot's Kimi models. OpenAI-compatible API; litellm routes the `moonshot/` prefix."""
+    async with httpx.AsyncClient(timeout=15) as c:
+        r = await c.get("https://api.moonshot.ai/v1/models",
+                        headers={"Authorization": f"Bearer {key}"})
+        r.raise_for_status()
+        ids = [m["id"] for m in r.json().get("data", []) if m.get("id")]
+    return [{"id": f"moonshot/{i}", "label": i, "provider": "moonshot"} for i in sorted(set(ids))]
+
+
+def _curate_moonshot(items: list[dict]) -> list[dict]:
+    """Newest Kimi per family, preferring the thinking variant where both exist."""
+    cand = [it for it in items if "vision" not in it["label"]] or items
+    cand.sort(key=lambda it: (_ver(it["label"]), "thinking" in it["label"]), reverse=True)
+    picked: list[dict] = []
+    seen: set[str] = set()
+    for it in cand:
+        family = it["label"].split("-turbo")[0].replace("-thinking", "")
+        if family in seen:
+            continue
+        seen.add(family)
+        picked.append(it)
+    return picked[:4] or items[:4]
 
 
 async def _fetch_xai(key: str) -> list[dict]:
@@ -568,10 +595,12 @@ _DISCOVERY: dict[str, tuple] = {
     "mistral": (_fetch_mistral, _curate_mistral),
     "deepseek": (_fetch_deepseek, _curate_passthrough),
     "xai": (_fetch_xai, _curate_xai),
+    "moonshot": (_fetch_moonshot, _curate_moonshot),
     "dashscope": (_fetch_dashscope, _curate_dashscope),
     "openrouter": (_fetch_openrouter, _curate_openrouter),
 }
-_KEYED = ("anthropic", "openai", "google", "mistral", "deepseek", "xai", "dashscope", "openrouter")
+_KEYED = ("anthropic", "openai", "google", "mistral", "deepseek", "xai", "dashscope",
+          "moonshot", "openrouter")
 
 
 async def probe_provider(provider: str) -> tuple[bool, str]:

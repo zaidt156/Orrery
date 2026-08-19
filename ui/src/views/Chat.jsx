@@ -116,6 +116,7 @@ const PROVIDER_NAME = {
   deepseek: "DeepSeek",
   xai: "xAI",
   dashscope: "DashScope",
+  moonshot: "Moonshot",
   claude_plan: "Claude plan",
   chatgpt_plan: "Codex / ChatGPT plan",
   gemini_plan: "Google CLI",
