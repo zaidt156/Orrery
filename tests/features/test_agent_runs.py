@@ -153,7 +153,7 @@ async def test_run_executes_tool_then_finishes(monkeypatch):
         _inline_dispatch(monkeypatch)
         calls = []
 
-        async def fake_run_tool(key, args=None, *, allowed=None, grant=None):
+        async def fake_run_tool(key, args=None, *, allowed=None, grant=None, **_evidence):
             calls.append((key, args, grant))
             return {"ok": True, "results": ["fact"]}
 
@@ -187,7 +187,7 @@ async def test_risky_call_suspends_then_owner_approval_resumes(monkeypatch):
         _inline_dispatch(monkeypatch)
         executed = []
 
-        async def fake_run_tool(key, args=None, *, allowed=None, grant=None):
+        async def fake_run_tool(key, args=None, *, allowed=None, grant=None, **_evidence):
             executed.append(key)
             return {"ok": True, "results": []}
 
@@ -228,7 +228,7 @@ async def test_cancelling_suspended_run_rejects_approval_and_prevents_tool_execu
         _inline_dispatch(monkeypatch)
         executed = []
 
-        async def fake_run_tool(key, args=None, *, allowed=None, grant=None):
+        async def fake_run_tool(key, args=None, *, allowed=None, grant=None, **_evidence):
             executed.append(key)
             return {"ok": True}
 
@@ -272,7 +272,7 @@ async def test_cancel_after_model_prevents_direct_tool_from_starting(monkeypatch
 
         executed = []
 
-        async def fake_run_tool(key, args=None, *, allowed=None, grant=None):
+        async def fake_run_tool(key, args=None, *, allowed=None, grant=None, **_evidence):
             executed.append(key)
             return {"ok": True}
 
@@ -357,7 +357,7 @@ async def test_schedule_replace_cancels_waiting_run_and_rejects_approval(monkeyp
         async def leave_queued(_run_id):
             return None
 
-        async def fake_run_tool(key, args=None, *, allowed=None, grant=None):
+        async def fake_run_tool(key, args=None, *, allowed=None, grant=None, **_evidence):
             executed.append(key)
             return {"ok": True}
 
@@ -459,7 +459,7 @@ async def test_approved_action_is_claimed_then_cooperatively_cancelled(monkeypat
         async def leave_queued(_run_id):
             return None
 
-        async def gated_tool(key, args=None, *, allowed=None, grant=None):
+        async def gated_tool(key, args=None, *, allowed=None, grant=None, **_evidence):
             tool_started.set()
             await release_tool.wait()
             executed.append(key)
@@ -530,7 +530,7 @@ async def test_approved_action_claim_prevents_replay_after_recording_commit_fail
 
         tool_finished = False
 
-        async def side_effect(key, args=None, *, allowed=None, grant=None):
+        async def side_effect(key, args=None, *, allowed=None, grant=None, **_evidence):
             nonlocal tool_finished
             executions.append(key)
             tool_finished = True
@@ -588,7 +588,7 @@ async def test_expired_approval_resumes_without_executing_tool(monkeypatch):
         _inline_dispatch(monkeypatch)
         executed = []
 
-        async def fake_run_tool(key, args=None, *, allowed=None, grant=None):
+        async def fake_run_tool(key, args=None, *, allowed=None, grant=None, **_evidence):
             executed.append(key)
             return {"ok": True}
 
@@ -636,7 +636,7 @@ async def test_listing_approvals_expires_stale_action_and_resumes_run(monkeypatc
         _inline_dispatch(monkeypatch)
         executed = []
 
-        async def fake_run_tool(key, args=None, *, allowed=None, grant=None):
+        async def fake_run_tool(key, args=None, *, allowed=None, grant=None, **_evidence):
             executed.append(key)
             return {"ok": True}
 
@@ -683,7 +683,7 @@ async def test_approved_tool_cannot_start_after_runtime_budget_is_spent(monkeypa
         _inline_dispatch(monkeypatch)
         executed = []
 
-        async def fake_run_tool(key, args=None, *, allowed=None, grant=None):
+        async def fake_run_tool(key, args=None, *, allowed=None, grant=None, **_evidence):
             executed.append(key)
             return {"ok": True}
 
@@ -722,7 +722,7 @@ async def test_step_budget_stops_a_looping_agent(monkeypatch):
     try:
         _inline_dispatch(monkeypatch)
 
-        async def fake_run_tool(key, args=None, *, allowed=None, grant=None):
+        async def fake_run_tool(key, args=None, *, allowed=None, grant=None, **_evidence):
             return {"ok": True}
 
         async def looping(model, messages, system_prompt=None, effort=None, usage_out=None):
@@ -1030,7 +1030,7 @@ async def test_runtime_budget_cancels_a_slow_direct_tool(monkeypatch):
         async def one_tool_call(model, messages, system_prompt=None, effort=None, usage_out=None):
             yield '```orrery-tool\n{"tool": "web_search", "args": {"query": "q"}}\n```'
 
-        async def slow_tool(key, args=None, *, allowed=None, grant=None):
+        async def slow_tool(key, args=None, *, allowed=None, grant=None, **_evidence):
             await asyncio.sleep(0.1)
             completed.append(key)
             return {"ok": True}
@@ -1099,7 +1099,7 @@ async def test_cancel_interrupts_inflight_tool_without_waiting_for_tool(monkeypa
         async def leave_queued(_run_id):
             return None
 
-        async def hanging_tool(key, args=None, *, allowed=None, grant=None):
+        async def hanging_tool(key, args=None, *, allowed=None, grant=None, **_evidence):
             tool_started.set()
             await release_tool.wait()
             return {"ok": True}
@@ -1184,7 +1184,7 @@ async def test_direct_tool_timeout_subtracts_accumulated_active_seconds(monkeypa
         async def leave_queued(_run_id):
             return None
 
-        async def slow_tool(key, args=None, *, allowed=None, grant=None):
+        async def slow_tool(key, args=None, *, allowed=None, grant=None, **_evidence):
             await asyncio.sleep(0.3)
             completed.append(key)
             return {"ok": True}
@@ -1328,5 +1328,58 @@ async def test_ungranted_tool_is_refused_in_run(monkeypatch):
         tool_steps = [s for s in run["steps"] if s["kind"] == "tool"]
         assert tool_steps and tool_steps[0]["status"] == "failed"
         assert "not granted" in (tool_steps[0]["detail"] or "")
+    finally:
+        await _delete_agent(agent_id)
+
+
+@pytest.mark.anyio
+async def test_agent_tool_calls_leave_durable_evidence(monkeypatch):
+    """ADR-005 slice 1: an agent's tool call is reconstructible from the database afterwards.
+
+    The Activity panel watches the SSE stream, which is ephemeral; this is the durable record that
+    survives the process, and it is what makes 'what did this agent actually do' answerable.
+    """
+    import uuid as _uuid
+
+    from sqlalchemy import select as _select
+
+    from backend.core.database import get_sessionmaker
+    from backend.core.models import ToolCallContext, ToolLifecycleEvent
+    from backend.providers import ai
+
+    agent_id = await _make_agent()
+    try:
+        _inline_dispatch(monkeypatch)
+        monkeypatch.setattr(ai, "stream_chat", _fake_model([
+            'Searching.\n```orrery-tool\n{"tool": "web_search", "args": {"query": "orrery"}}\n```',
+            "Done.",
+        ]))
+
+        started = await agent_runs.start_run(agent_id, owner_id=None, input_text="Find it")
+        run_uuid = _uuid.UUID(started["run_id"])
+
+        async with get_sessionmaker()() as s:
+            contexts = (await s.execute(_select(ToolCallContext).where(
+                ToolCallContext.agent_run_id == run_uuid
+            ))).scalars().all()
+
+            assert contexts, "the agent's tool call left no durable record"
+            context = contexts[0]
+            assert context.surface == "agent"
+            assert context.tool_key == "web_search"
+            assert context.turn_id is not None          # the model step it belonged to
+            assert context.arguments_digest             # arguments are fixed at admission
+
+            events = (await s.execute(_select(ToolLifecycleEvent).where(
+                ToolLifecycleEvent.call_context_id == context.id
+            ).order_by(ToolLifecycleEvent.sequence))).scalars().all()
+
+            kinds = [e.kind for e in events]
+            assert kinds[0] in ("call_admitted", "call_rejected")
+            if kinds[0] == "call_admitted":
+                # a body that ran must record that it started BEFORE its outcome
+                assert "body_started" in kinds
+                assert kinds.index("body_started") < kinds.index("terminal_outcome")
+            assert [e.sequence for e in events] == list(range(1, len(events) + 1))
     finally:
         await _delete_agent(agent_id)

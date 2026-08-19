@@ -138,6 +138,14 @@ async def _boot_and_serve() -> None:
     from backend.features import agent_runs as _agent_runs
     await _agent_runs.reconcile_orphans()  # agent runs left 'running' by a closed app
 
+    # Close tool calls a crash left open (ADR-005 slice 1). This never re-runs a body: it records
+    # whether the call had started, so an effect that may have happened is marked unknown rather
+    # than quietly presented as safe to retry.
+    from backend.tools import lifecycle as _lifecycle
+    _recovered = await _lifecycle.reconcile_incomplete_calls()
+    if any(_recovered.values()):
+        log.info("Recovered interrupted tool calls: %s", _recovered)
+
     from backend.features import skills as _skills
     await _skills.refresh_user_skills()  # load the user's own enabled skills into memory
 

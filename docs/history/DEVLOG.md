@@ -3517,3 +3517,32 @@ refused call recording exactly `call_rejected` while a successful one records `c
 
 Next in Slice 1: the canonical provider request envelope, and pointing Chat, Agents, and Automations
 at the new `execution` parameter so their calls actually carry lineage.
+
+## Step 172 - The agent surface actually produces evidence now (August 19, 2026)
+
+Step 171 built the evidence machinery but left it inert: nothing in the codebase passed `execution`,
+so `run_tool()` still took the old path everywhere and `reconcile_incomplete_calls()` was never
+called. This connects the first surface.
+
+Agent runs now carry lineage into every tool call. A turn id is minted per model step - a turn being
+one model request plus the tool calls it produces, which is the audit's definition - and the run id
+is the parent. The identity is built from primitives rather than the `AgentRun` row, because that
+row is detached by the time a tool executes and reading a detached attribute would take a real run
+down for the sake of an audit record.
+
+Startup now also closes tool calls a crash left open. That path never re-runs a body: it checks
+whether `body_started` was recorded and marks the call either never-dispatched and retry-safe, or
+unknown-outcome and explicitly not, which is the distinction the whole slice exists to preserve.
+
+Fourteen test stubs that stand in for `run_tool` needed their signatures widened. That is real
+churn, not incidental: those fakes assert the tool boundary's shape, so a signature change has to
+pass through them rather than around them.
+
+Verified: 772 backend tests pass, including a new one that runs a real agent to completion and then
+reads the database back - the call context exists with `surface='agent'`, the right tool key, a turn
+id and an argument digest, and its events are sequenced 1..n with `body_started` recorded before the
+terminal outcome. `ruff check .` is clean.
+
+Still open in Slice 1: the canonical provider request envelope and its reconstruction invariant,
+which the audit calls the point of the slice, plus the Chat and Automation surfaces, which still
+call `run_tool()` without an identity.

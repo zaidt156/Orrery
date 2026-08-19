@@ -443,6 +443,20 @@ async def _dispatch(run_id: str) -> None:
         await execute_run(run_id)
 
 
+def _tool_execution(run_id: uuid.UUID, owner_id: str | None, turn: uuid.UUID):
+    """Lineage for one agent tool call (ADR-005 slice 1).
+
+    Primitives rather than the ORM row: the row is detached by the time a tool runs, and reading a
+    detached attribute is exactly the kind of failure that would take a run down for an audit
+    record. This only records who is calling - grants and approvals still belong to run_tool.
+    """
+    from backend.tools import lifecycle
+
+    return lifecycle.ToolExecutionIdentity(
+        surface="agent", owner_id=owner_id, agent_run_id=run_id, turn_id=turn,
+    )
+
+
 async def execute_run(run_id: str) -> None:
     """Drive one run from its durable state to completion/suspension. Never raises."""
     from backend import tools as tool_registry
@@ -462,6 +476,7 @@ async def execute_run(run_id: str) -> None:
         await s.commit()
         config = json.loads(run.config_snapshot or "{}")
         started_at = run.started_at
+        run_owner_id = run.owner_id
 
     budgets = config.get("budgets") or {}
     max_steps = int(budgets.get("max_steps_per_run") or 8)
@@ -489,6 +504,7 @@ async def execute_run(run_id: str) -> None:
                 )).scalars().all()
                 usage = _usage_dict(run.usage)
                 active_before = float(usage.get("active_seconds") or 0)
+            turn_id = uuid.uuid4()  # one model request plus the tool calls it produces
             model_steps = sum(1 for st in steps if st.kind == "model")
             if model_steps >= max_steps:
                 error = f"Reached the {max_steps}-step budget before finishing."
@@ -673,7 +689,10 @@ async def execute_run(run_id: str) -> None:
             try:
                 result = await _run_operation(
                     rid,
-                    tool_registry.run_tool(key, call["args"], allowed=set(grants), grant=grant),
+                    tool_registry.run_tool(
+                        key, call["args"], allowed=set(grants), grant=grant,
+                        execution=_tool_execution(rid, run_owner_id, turn_id),
+                    ),
                     remaining_runtime,
                 )
             except TimeoutError:
