@@ -12,6 +12,7 @@ import uuid
 from collections import defaultdict, deque
 
 from backend.automation.registry import get_node
+from backend.tools import lifecycle
 from backend.core.database import get_sessionmaker
 from backend.core.models import Workflow, WorkflowRun, WorkflowRunStep
 
@@ -106,6 +107,7 @@ async def execute_run(run_id: str) -> None:
         run.started_at = datetime.datetime.now(datetime.timezone.utc)
         await s.commit()
         spec_raw = wf.spec
+        run_owner_id = wf.owner_id   # the workflow owns the run; evidence is owner-scoped
 
     status, error = "done", None
     try:
@@ -127,12 +129,19 @@ async def execute_run(run_id: str) -> None:
             raw_config = _substitute(node_def.get("config") or {}, outputs)
             config = node.config_model.model_validate(raw_config) if node.config_model else None
             started = time.monotonic()
+            # ADR-005 slice 1: every tool a node calls belongs to this run and this node.
+            identity_token = lifecycle.set_identity(lifecycle.ToolExecutionIdentity(
+                surface="automation", owner_id=run_owner_id, workflow_run_id=rid,
+                turn_id=uuid.uuid4(),
+            ))
             try:
                 out = await node.execute(dict(outputs), config)
             except Exception as exc:  # noqa: BLE001 — a node failure fails the run, recorded
                 await _record_step(rid, nid, ntype, "failed", raw_config, None, str(exc)[:2000],
                                    int((time.monotonic() - started) * 1000))
                 raise ValueError(f"Node '{nid}' ({ntype}) failed: {str(exc)[:300]}")
+            finally:
+                lifecycle.reset_identity(identity_token)
             outputs[nid] = out if isinstance(out, dict) else {"value": out}
             await _record_step(rid, nid, ntype, "done", raw_config, outputs[nid], None,
                                int((time.monotonic() - started) * 1000))

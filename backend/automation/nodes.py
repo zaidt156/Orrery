@@ -13,7 +13,7 @@ import json
 from pydantic import BaseModel, Field
 
 from backend.automation.registry import Node, register_node
-from backend.tools import run_tool
+from backend.tools import lifecycle, run_tool
 
 
 class LlmPromptConfig(BaseModel):
@@ -50,6 +50,7 @@ class SearchDocsNode(Node):
 
     async def execute(self, inputs: dict, config: SearchDocsConfig) -> dict:
         return await run_tool("doc_search", {"collection_id": config.collection_id, "query": config.query},
+                              execution=lifecycle.current_identity(),
                               allowed={"doc_search"})
 
 
@@ -66,6 +67,7 @@ class DbQueryNode(Node):
 
     async def execute(self, inputs: dict, config: DbQueryConfig) -> dict:
         return await run_tool("db_query", {"connection_id": config.connection_id, "sql": config.sql},
+                              execution=lifecycle.current_identity(),
                               allowed={"db_query"})
 
 
@@ -108,7 +110,8 @@ class RunPythonNode(Node):
     config_model = RunPythonConfig
 
     async def execute(self, inputs: dict, config: RunPythonConfig) -> dict:
-        return await run_tool("run_python", {"code": config.code}, allowed={"run_python"})
+        return await run_tool("run_python", {"code": config.code}, allowed={"run_python"},
+                              execution=lifecycle.current_identity())
 
 
 class RunShellConfig(BaseModel):
@@ -122,7 +125,8 @@ class RunShellNode(Node):
     config_model = RunShellConfig
 
     async def execute(self, inputs: dict, config: RunShellConfig) -> dict:
-        return await run_tool("run_shell", {"script": config.script}, allowed={"run_shell"})
+        return await run_tool("run_shell", {"script": config.script}, allowed={"run_shell"},
+                              execution=lifecycle.current_identity())
 
 
 class WebSearchConfig(BaseModel):
@@ -136,7 +140,8 @@ class WebSearchNode(Node):
     config_model = WebSearchConfig
 
     async def execute(self, inputs: dict, config: WebSearchConfig) -> dict:
-        return await run_tool("web_search", {"query": config.query}, allowed={"web_search"})
+        return await run_tool("web_search", {"query": config.query}, allowed={"web_search"},
+                              execution=lifecycle.current_identity())
 
 
 class IfBranchConfig(BaseModel):
@@ -183,6 +188,7 @@ class RefreshDashboardNode(Node):
 
     async def execute(self, inputs: dict, config: RefreshDashboardConfig) -> dict:
         return await run_tool("dashboard_refresh", {"dashboard_id": config.dashboard_id},
+                              execution=lifecycle.current_identity(),
                               allowed={"dashboard_refresh"})
 
 
@@ -204,4 +210,5 @@ class McpToolNode(Node):
         except ValueError:
             return {"ok": False, "error": "args_json is not valid JSON"}
         return await run_tool("mcp_call", {"server_id": config.server_id, "tool": config.tool, "args": args},
+                              execution=lifecycle.current_identity(),
                               allowed={"mcp_call"})

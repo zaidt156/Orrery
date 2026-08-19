@@ -154,3 +154,47 @@ def test_run_detail_for_an_unknown_run_is_404(client, auth):
         assert r.status_code == 404
     finally:
         client.delete(f"/api/workflows/{wid}", headers=auth)
+
+
+def test_a_workflow_run_leaves_tool_evidence(client, auth):
+    """ADR-005 slice 1: the automation surface records its tool calls like the others.
+
+    Workflow nodes execute through a fixed signature and cannot be handed an identity, so the engine
+    scopes one around each node. This checks that the scoping actually reaches the registry.
+    """
+    import asyncio as _asyncio
+    import uuid as _uuid
+
+    from sqlalchemy import select as _select
+
+    from backend.core.database import get_sessionmaker
+    from backend.core.models import ToolCallContext
+
+    created = _create(client, auth, "Evidence workflow")
+    wid = created["id"]
+    try:
+        # web_search is a registered node whose body calls the shared registry
+        saved = client.patch(f"/api/workflows/{wid}", json={"spec": {
+            "nodes": [{"id": "look", "type": "web_search", "config": {"query": "orrery"}}],
+            "edges": [],
+        }}, headers=auth)
+        assert saved.status_code == 200
+
+        started = client.post(f"/api/workflows/{wid}/runs", headers=auth)
+        assert started.status_code == 201
+        run_id = _uuid.UUID(started.json()["run_id"])
+
+        async def _read():
+            async with get_sessionmaker()() as s:
+                return (await s.execute(_select(ToolCallContext).where(
+                    ToolCallContext.workflow_run_id == run_id
+                ))).scalars().all()
+
+        contexts = _asyncio.run(_read())
+
+        assert contexts, "the workflow's tool call left no durable record"
+        assert contexts[0].surface == "automation"
+        assert contexts[0].tool_key == "web_search"
+        assert contexts[0].workflow_run_id == run_id
+    finally:
+        client.delete(f"/api/workflows/{wid}", headers=auth)

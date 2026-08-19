@@ -5,6 +5,7 @@ Nothing in this module grants authority; registry guards still make every admiss
 """
 from __future__ import annotations
 
+import contextvars
 import hashlib
 import json
 import uuid
@@ -227,6 +228,27 @@ class ToolCallLifecycle:
         await self.complete(outcome, presentation)
 
 
+# Workflow nodes execute through a fixed `execute(inputs, config)` signature, so they cannot be
+# handed an identity as an argument. The engine sets it around each node instead. Chat and Agents
+# pass theirs explicitly and never read this.
+_ambient: contextvars.ContextVar[ToolExecutionIdentity | None] = contextvars.ContextVar(
+    "orrery_tool_identity", default=None
+)
+
+
+def current_identity() -> ToolExecutionIdentity | None:
+    return _ambient.get()
+
+
+def set_identity(value: ToolExecutionIdentity | None):
+    """Returns the token to reset with; always reset in a `finally`."""
+    return _ambient.set(value)
+
+
+def reset_identity(token) -> None:
+    _ambient.reset(token)
+
+
 def start(
     identity: ToolExecutionIdentity,
     tool_key: str,
@@ -249,12 +271,15 @@ async def _parent_owner(session, identity: ToolExecutionIdentity) -> str | None 
     if identity.surface == "agent":
         parent = await session.get(AgentRun, identity.agent_run_id)
         return _MISSING if parent is None else parent.owner_id
+    # `.first()`, not `.scalar_one_or_none()`: a solo-mode workflow has a NULL owner, and a scalar
+    # lookup cannot tell that apart from "no such run" - which refused every automation tool call
+    # in the default single-user configuration.
     row = (await session.execute(
         select(Workflow.owner_id)
         .join(WorkflowRun, WorkflowRun.workflow_id == Workflow.id)
         .where(WorkflowRun.id == identity.workflow_run_id)
-    )).scalar_one_or_none()
-    return _MISSING if row is None else row
+    )).first()
+    return _MISSING if row is None else row[0]
 
 
 async def _create_call(writer: ToolCallLifecycle, first_kind: str, payload: dict[str, Any]) -> None:

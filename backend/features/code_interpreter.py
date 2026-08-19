@@ -16,9 +16,11 @@ on a fenced text convention, so no native provider tool-calling is required.
 from __future__ import annotations
 
 import json
+import uuid as _uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
 
 from backend import tools as tool_registry
+from backend.providers import envelope
 from backend.features import approvals
 from backend.features import events as stream_events
 from backend.features.prompting import strip_think
@@ -120,6 +122,20 @@ def _tool_observation(key: str, result: dict, artifacts: list[dict] | None = Non
     return "\n\n".join(parts)
 
 
+def _chat_execution(context: dict):
+    """Lineage for a tool call inside a chat turn (ADR-005 slice 1), or None if unwired."""
+    conversation_id = context.get("conversation_id")
+    turn_id = context.get("turn_id")
+    if conversation_id is None or turn_id is None:
+        return None
+    from backend.tools import lifecycle
+
+    return lifecycle.ToolExecutionIdentity(
+        surface="chat", owner_id=context.get("owner_id"),
+        conversation_id=conversation_id, turn_id=turn_id,
+    )
+
+
 async def _run_registry_tool(
     servers: list[dict],
     body: str,
@@ -148,6 +164,7 @@ async def _run_registry_tool(
             {"server_id": server["id"], "tool": tool, "args": args},
             allowed=allowed_tools,
             approval_id=approval_id,
+            execution=_chat_execution(context),
         )
         artifacts = _tool_artifacts(result)
         out = {
@@ -171,7 +188,8 @@ async def _run_registry_tool(
         args.setdefault("effort", context.get("effort") or "")
         args.setdefault("trusted_context", context.get("trusted_context") or "")
         args.setdefault("untrusted_context", context.get("untrusted_context") or "")
-    result = await tool_registry.run_tool(key, args, allowed=allowed_tools, approval_id=approval_id)
+    result = await tool_registry.run_tool(key, args, allowed=allowed_tools,
+                                          approval_id=approval_id, execution=_chat_execution(context))
     artifacts = _tool_artifacts(result)
     out = {
         "ok": result.get("ok", False),
@@ -199,6 +217,8 @@ async def run(
     system_prompt: str | None = None,
     trusted_context: str | None = None,
     untrusted_context: str | None = None,
+    conversation_id=None,
+    owner_id: str | None = None,
 ) -> AsyncIterator[dict]:
     """Drive the tool loop (run code / search web -> observe -> continue), then persist the answer.
 
@@ -207,6 +227,17 @@ async def run(
     sources / message_id / usage / done / error).
     """
     work = list(messages)
+    if owner_id is None and conversation_id is not None:
+        # Resolved here rather than threaded through the router: this runs in the caller's request
+        # context, and in solo mode it is correctly None.
+        from backend.features import team as _team
+        try:
+            owner_id = await _team.current_owner_id()
+        except Exception:  # noqa: BLE001 - evidence must never decide whether a chat runs
+            owner_id = None
+    # A chat turn is one user message and every model round and tool call it causes, so the turn id
+    # is minted once here rather than per round (ADR-005 slice 1).
+    _turn_id = _uuid.uuid4()
     visible_parts: list[str] = []
     all_files: list[dict] = []
     usage = {"in": 0, "out": 0, "cost": 0.0, "have_cost": False, "pricing_known": True, "provider": None, "model": None}
@@ -217,6 +248,15 @@ async def run(
         blocks: list[tuple[str, str]] = []
         iter_visible: list[str] = []
         usage_out: dict = {}
+        # Chat records evidence only when its caller supplied a conversation; an unwired caller
+        # keeps the old behavior rather than inventing a parent for the record.
+        _env_token = None if conversation_id is None else envelope.set_recording(
+            envelope.RequestRecording(
+                surface="chat", owner_id=owner_id, conversation_id=conversation_id,
+                turn_id=_turn_id,
+                tool_catalog=sorted(allowed_tools) if allowed_tools else None,
+            )
+        )
         try:
             async for delta in ai.stream_chat(model, work, formatted_prompt, effort, usage_out):
                 if isinstance(delta, ai.ReasoningDelta):
@@ -271,6 +311,10 @@ async def run(
             message_id = await persist(failed_text, all_files or None)
             yield stream_events.message_id(message_id)
             return
+        finally:
+            # However this round ended, the recording belongs to it and must not reach the next.
+            if _env_token is not None:
+                envelope.reset_recording(_env_token)
 
         actionable = [(k, b) for k, b in blocks if b.strip()]
         if not actionable or run_index == max_runs - 1:
@@ -358,6 +402,9 @@ async def run(
                     "effort": effort or "",
                     "trusted_context": trusted_context or "",
                     "untrusted_context": untrusted_context or "",
+                    "conversation_id": conversation_id,
+                    "owner_id": owner_id,
+                    "turn_id": _turn_id,
                 }
                 tool_res = await _run_registry_tool(
                     mcp_servers or [], body, allowed_tools=allowed_tools, context=tool_context,

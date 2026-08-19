@@ -3584,3 +3584,35 @@ Verified: 783 backend tests pass (11 new), both CI configurations are green, `ru
 The new tests cover digest stability, eight distinct single-field changes that must each break the
 proof, corrupt records proving nothing, opt-in silence, scoped reset, a failed write never breaking
 the model call, a database round trip that still proves itself, and deletion with the parent.
+
+## Step 174 - All three surfaces produce evidence, and a solo-mode bug that hid inside it (August 19, 2026)
+
+Slice 1's evidence only covered Agents. Chat and Automations still called the registry anonymously,
+so the durable record answered "what did this agent do" but not "what did this chat do". Both are
+wired now, and Slice 1's surface coverage is complete.
+
+Chat mints one turn id per turn - a turn being one user message and every model round and tool call
+it causes - and passes it with the conversation into each tool call, while the request envelope is
+recorded per model round. It only records when the caller supplied a conversation, so a tool loop
+invoked without one keeps its old behavior rather than inventing a parent. The owner is resolved
+inside the loop instead of threaded through the router, because that is where the request actually
+runs and where the answer is correct in solo mode.
+
+Automations needed a different mechanism. Workflow nodes execute through a fixed
+`execute(inputs, config)` signature and cannot be handed an identity, so widening it would have
+touched every node. The engine scopes an ambient identity around each node instead, reset in
+`finally`; Chat and Agents pass theirs explicitly and never read it.
+
+Wiring the third surface immediately exposed a real defect in the evidence layer itself, and the
+failure mode was the good one: the tool was *refused* rather than run unrecorded. `_parent_owner()`
+resolved a workflow's owner with `scalar_one_or_none()`, which returns `None` both for "no such run"
+and for "found it, and the owner is NULL". A solo Orrery - the default, single-user configuration -
+has NULL owners everywhere, so every automation tool call would have been refused with
+`evidence_unavailable`. It reads the row and then its column now, so an absent parent and an
+unowned one are different answers. A regression test covers all three surfaces, because the same
+trap applied to each.
+
+Verified: 785 backend tests pass in both CI configurations, `ruff check .` is clean. New tests cover
+a workflow run leaving `surface='automation'` evidence with the right run id and tool key, and the
+NULL-owner distinction including that a genuinely missing parent still reports missing. Three more
+`run_tool` stubs in chat and capability tests needed widened signatures.

@@ -912,6 +912,7 @@ async def _route_model_reply(
             model, formatted_prompt, limited_messages, gen_effort, trace=trace, persist=_persist,
             allow_web=web_ready, mcp_servers=mcp_servers, allowed_tools=allowed_tools,
             system_prompt=gen_system, trusted_context=trusted_context, untrusted_context=rag_context,
+            conversation_id=cid,   # ADR-005 slice 1: lineage for this turn
         ):
             if "error" in event:
                 outcome = "failed"
