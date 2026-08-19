@@ -763,6 +763,48 @@ class ToolLifecycleEvent(Base):
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class ModelRequestEnvelope(Base):
+    """The exact post-redaction request handed to a model adapter for one turn (ADR-005 slice 1).
+
+    Deleted with its parent conversation or run: this is owner-private evidence, not an archive."""
+    __tablename__ = "model_request_envelopes"
+    __table_args__ = (
+        CheckConstraint(
+            "(surface = 'chat' AND conversation_id IS NOT NULL AND agent_run_id IS NULL "
+            "AND workflow_run_id IS NULL) OR "
+            "(surface = 'agent' AND conversation_id IS NULL AND agent_run_id IS NOT NULL "
+            "AND workflow_run_id IS NULL) OR "
+            "(surface = 'automation' AND conversation_id IS NULL AND agent_run_id IS NULL "
+            "AND workflow_run_id IS NOT NULL)",
+            name="ck_model_request_envelopes_surface_parent",
+        ),
+        Index("ix_model_request_envelopes_turn", "turn_id", "created_at"),
+        Index("ix_model_request_envelopes_owner_created", "owner_id", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    owner_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    surface: Mapped[str] = mapped_column(String(16))
+    conversation_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("conversations.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    agent_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("agent_runs.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    workflow_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("workflow_runs.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    turn_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True))
+    provider: Mapped[str] = mapped_column(String(40))
+    model: Mapped[str] = mapped_column(String(200))
+    effort: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    # Empty when the request was too large to retain; the digest still proves which request it was.
+    body: Mapped[str] = mapped_column(Text, default="")
+    body_retained: Mapped[bool] = mapped_column(default=True)
+    body_digest: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class TeamUser(Base):
     """A member of a shared (team) Orrery, identified by an access key. Only present when team mode is on.
 

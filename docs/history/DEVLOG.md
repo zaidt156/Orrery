@@ -3546,3 +3546,41 @@ terminal outcome. `ruff check .` is clean.
 Still open in Slice 1: the canonical provider request envelope and its reconstruction invariant,
 which the audit calls the point of the slice, plus the Chat and Automation surfaces, which still
 call `run_tool()` without an identity.
+
+## Step 173 - The exact request a model was given is now provable (August 19, 2026)
+
+The audit calls this the point of Slice 1: not that a request was logged somewhere, but that the
+record can be *reconstructed* and shown to be the same structure the adapter received. A transcript
+that cannot be checked is a claim about the past; this is evidence of it.
+
+Capture happens at the adapter boundary inside `_stream_chat_once`, after privacy redaction and
+after route selection, because that is the only place where what exists is exactly what the provider
+will be handed. It deliberately does not capture HTTP wire bytes: those carry transport auth headers,
+and comparing them would turn a correctness check into a secret-handling problem. Credentials are
+resolved below this layer and never appear in the record.
+
+The envelope is provider, model, effort, whether that effort was defaulted, privacy mode, system
+prompt, messages, and tool catalogue. `proves()` is the invariant: rebuild from what was stored and
+compare canonical-serialization digests, so key order and whitespace cannot make two different
+requests look alike or one request look like two. A request too large to keep still stores its
+digest, so identity remains provable even where the body does not.
+
+Capture is opt-in per surface through a context variable, which means a surface nobody has wired
+records nothing - this cannot quietly start storing request bodies for callers that never asked.
+Agent runs opt in around their model step and reset in `finally`, so one turn's identity cannot leak
+into the next. Chat and Automations are untouched so far and still record nothing.
+
+Sensitive text a user intentionally sent is part of this record by design: it is owner-private, sits
+in the same PostgreSQL trust domain as the conversation, and is deleted with its parent - which is
+asserted rather than assumed.
+
+One honest limit worth recording. A test that replaces `stream_chat` never reaches the capture
+inside `_stream_chat_once`, so the agent-side test asserts the half the agent actually owns - that
+the step declares correct lineage and that the recording does not outlive it - while the storage
+half is proven directly against PostgreSQL. Writing one test that pretended to cover both would have
+looked stronger and checked less.
+
+Verified: 783 backend tests pass (11 new), both CI configurations are green, `ruff check .` is clean.
+The new tests cover digest stability, eight distinct single-field changes that must each break the
+proof, corrupt records proving nothing, opt-in silence, scoped reset, a failed write never breaking
+the model call, a database round trip that still proves itself, and deletion with the parent.

@@ -1383,3 +1383,41 @@ async def test_agent_tool_calls_leave_durable_evidence(monkeypatch):
             assert [e.sequence for e in events] == list(range(1, len(events) + 1))
     finally:
         await _delete_agent(agent_id)
+
+
+@pytest.mark.anyio
+async def test_an_agent_step_declares_the_lineage_its_request_belongs_to(monkeypatch):
+    """ADR-005 slice 1: the surface opts in and says which run and turn the request is for.
+
+    Capturing the request itself happens at the adapter boundary inside `_stream_chat_once`, which
+    a test that replaces `stream_chat` never reaches - so what is asserted here is the agent's half
+    of the contract: correct lineage, present during the step, and gone after it.
+    """
+    import uuid as _uuid
+
+    from backend.providers import ai, envelope
+
+    observed: dict = {}
+
+    async def watching_model(model, messages, system_prompt=None, effort=None, usage_out=None):
+        recording = envelope.recording()
+        observed["surface"] = recording.surface if recording else None
+        observed["run"] = recording.agent_run_id if recording else None
+        observed["turn"] = recording.turn_id if recording else None
+        observed["tools"] = recording.tool_catalog if recording else None
+        yield "Done."
+
+    agent_id = await _make_agent()
+    try:
+        _inline_dispatch(monkeypatch)
+        monkeypatch.setattr(ai, "stream_chat", watching_model)
+
+        started = await agent_runs.start_run(agent_id, owner_id=None, input_text="Prove it")
+
+        assert observed["surface"] == "agent"
+        assert observed["run"] == _uuid.UUID(started["run_id"])
+        assert observed["turn"] is not None
+        assert observed["tools"] == ["web_search"]      # the grants this step actually had
+        assert envelope.recording() is None, "the step's recording outlived the step"
+    finally:
+        await _delete_agent(agent_id)

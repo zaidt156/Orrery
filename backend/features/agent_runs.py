@@ -460,7 +460,7 @@ def _tool_execution(run_id: uuid.UUID, owner_id: str | None, turn: uuid.UUID):
 async def execute_run(run_id: str) -> None:
     """Drive one run from its durable state to completion/suspension. Never raises."""
     from backend import tools as tool_registry
-    from backend.providers import ai
+    from backend.providers import ai, envelope
     from backend.tools import hooks as tool_hooks
 
     rid = uuid.UUID(run_id)
@@ -546,6 +546,15 @@ async def execute_run(run_id: str) -> None:
                     if sum(len(c) for c in chunks) > max_out:
                         break
 
+            # ADR-005 slice 1: record the exact request this step hands the adapter. Scoped to the
+            # step and reset in `finally`, so one turn's identity can never leak into the next.
+            _envelope_token = envelope.set_recording(envelope.RequestRecording(
+                surface="agent",
+                owner_id=run_owner_id,
+                agent_run_id=rid,
+                turn_id=turn_id,
+                tool_catalog=sorted(grants),
+            ))
             try:
                 await _run_operation(rid, collect_model_reply(), remaining_runtime)
             except TimeoutError:
@@ -556,6 +565,8 @@ async def execute_run(run_id: str) -> None:
                 operation_cancelled = True
             except Exception as exc:  # provider failures still settle any reported usage
                 model_exception = exc
+            finally:
+                envelope.reset_recording(_envelope_token)
             reply = _clip("".join(chunks), max_out)
             usage_fields = {"tokens_in", "tokens_out"}.intersection(usage_out)
             if usage_fields:

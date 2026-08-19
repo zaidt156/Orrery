@@ -9,7 +9,7 @@ from collections.abc import AsyncIterator
 
 import httpx
 
-from backend.providers import accounts
+from backend.providers import accounts, envelope
 from backend.security import secrets
 
 log = logging.getLogger("orrery.ai")
@@ -815,6 +815,7 @@ async def _stream_chat_once(
     # Privacy boundary: every cloud-bound route (API keys, custom endpoints, CLI plans) passes
     # user/document text through PII redaction first. Local (Ollama) models are exempt — nothing
     # leaves the machine. Controlled by the "privacy_mode" setting (off / basic / strict).
+    mode = "local"
     if provider != "ollama":
         from backend.core import appconfig
         from backend.security import privacy
@@ -825,6 +826,23 @@ async def _stream_chat_once(
         messages, system_prompt = privacy.prepare_request_for_model(
             messages, system_prompt, is_local=False, mode=mode
         )
+
+    # ADR-005 slice 1: this is the adapter boundary, and what exists here is exactly what the
+    # provider will be given - after redaction, after route selection. Recording it here (rather
+    # than where the caller assembled it) is what lets the invariant prove the two are the same.
+    # Surfaces that have not opted in record nothing.
+    _recording = envelope.recording()
+    if _recording is not None:
+        await envelope.capture(envelope.RequestEnvelope(
+            provider=provider,
+            model=model_id,
+            effort=effort,
+            effort_defaulted=effort is None,
+            privacy_mode=mode,
+            system_prompt=system_prompt,
+            messages=list(messages),
+            tool_catalog=_recording.tool_catalog,
+        ))
 
     if provider == "claude_plan":
         try:
