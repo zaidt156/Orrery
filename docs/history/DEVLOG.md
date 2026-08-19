@@ -3478,3 +3478,42 @@ No runtime code was changed because ADR-005 remains Proposed for user review. Ve
 revision and 7,466-file inventory still match, the audit ledger covers all 49 package groups, every
 relative link across the affected canonical/audit/decision documents resolves, and `git diff
 --check` is clean.
+
+## Step 171 - Slice 1: tool calls leave evidence before they leave effects (August 19, 2026)
+
+Continues ADR-005's first slice, picking up work already in the tree: `backend/tools/lifecycle.py`,
+the `tool_call_contexts` / `tool_lifecycle_events` tables, and the registry contract tests. What was
+missing was the wiring - `run_tool()` did not accept an `execution` identity at all, so five tests
+described a contract nothing implemented.
+
+`run_tool(..., execution=…)` now records durable evidence around the existing guard sequence.
+Callers that pass nothing keep exactly the old behavior, so this adds a capability without changing
+any current path. Every guard that used to return a bare `{"ok": False, "error": …}` now returns a
+stable structured outcome - `out_of_scope`, `unknown_tool`, `feature_disabled`,
+`grant_missing_action`, `grant_missing_resource`, `grant_denied`, `validation_failed`,
+`policy_denied`, `approval_required` - each carrying `retry_safe`, and each recorded as the refusal
+that opened the call's record.
+
+The ordering is the point. Admission is written only after every guard has passed, then the loop
+check, then `body_started`, and only then may the body touch anything. If the admission or dispatch
+record cannot be written, the call is refused as retry-safe rather than run unrecorded. If the
+*outcome* cannot be written after the body already ran, the caller is told `unknown_outcome` and
+explicitly not to retry - the one honest answer when an effect may have happened and cannot be
+proven either way.
+
+Two things only a real database could show, both found by running it rather than trusting the mocks:
+
+- The first draft admitted the call at the top of `run_tool`, before the guards. That collides with
+  the schema: `reject()` *creates* the call row, so a refusal after an admission violates the
+  primary key and the refusal was silently swallowed by its own error handler - a call could be
+  refused with no durable record of why. Admission belongs after the guards, because admitting a
+  call means it was authorized.
+- Evidence cascades with its parent. Deleting the conversation removed the context and its events,
+  which is the retention rule ADR-005 asks for rather than an accident.
+
+Verified: 771 backend tests pass, `ruff check .` is clean, and a live run against PostgreSQL shows a
+refused call recording exactly `call_rejected` while a successful one records `call_admitted`,
+`body_started`, `result`, `terminal_outcome` in sequence.
+
+Next in Slice 1: the canonical provider request envelope, and pointing Chat, Agents, and Automations
+at the new `execution` parameter so their calls actually carry lineage.

@@ -679,6 +679,90 @@ class AgentTriggerEvent(Base):
     received_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class ToolCallContext(Base):
+    """Immutable authority/lineage snapshot for one shared-registry tool call."""
+    __tablename__ = "tool_call_contexts"
+    __table_args__ = (
+        CheckConstraint(
+            "(surface = 'chat' AND conversation_id IS NOT NULL AND agent_run_id IS NULL "
+            "AND workflow_run_id IS NULL) OR "
+            "(surface = 'agent' AND conversation_id IS NULL AND agent_run_id IS NOT NULL "
+            "AND workflow_run_id IS NULL) OR "
+            "(surface = 'automation' AND conversation_id IS NULL AND agent_run_id IS NULL "
+            "AND workflow_run_id IS NOT NULL)",
+            name="ck_tool_call_contexts_surface_parent",
+        ),
+        CheckConstraint(
+            "arguments_state IN ('validated', 'rejected')",
+            name="ck_tool_call_contexts_arguments_state",
+        ),
+        Index("ix_tool_call_contexts_owner_created", "owner_id", "created_at"),
+        Index("ix_tool_call_contexts_turn_created", "turn_id", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
+    owner_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    surface: Mapped[str] = mapped_column(String(16))
+    conversation_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("conversations.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    agent_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("agent_runs.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    workflow_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("workflow_runs.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    turn_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True))
+    provider_call_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    # Opaque lineage only: deletion of a source run must not delete or block a surviving fork.
+    parent_call_context_id: Mapped[uuid.UUID | None] = mapped_column(PGUUID(as_uuid=True), nullable=True)
+    tool_key: Mapped[str] = mapped_column(String(80))
+    safe_arguments: Mapped[str] = mapped_column(Text)
+    arguments_state: Mapped[str] = mapped_column(String(16))
+    arguments_digest: Mapped[str] = mapped_column(String(64))
+    grant_snapshot_ref: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    config_snapshot_ref: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    context_digest: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ToolLifecycleEvent(Base):
+    """Append-only ordered facts for a ToolCallContext."""
+    __tablename__ = "tool_lifecycle_events"
+    __table_args__ = (
+        UniqueConstraint("call_context_id", "sequence", name="uq_tool_lifecycle_events_sequence"),
+        CheckConstraint("sequence >= 1", name="ck_tool_lifecycle_events_sequence"),
+        CheckConstraint(
+            "kind IN ('call_admitted', 'call_rejected', 'body_started', 'phase', "
+            "'approval_requested', 'approval_decided', 'cancel_requested', 'cancelled', "
+            "'timed_out', 'result', 'terminal_outcome')",
+            name="ck_tool_lifecycle_events_kind",
+        ),
+        Index(
+            "uq_tool_lifecycle_events_body_started",
+            "call_context_id",
+            unique=True,
+            postgresql_where=text("kind = 'body_started'"),
+        ),
+        Index(
+            "uq_tool_lifecycle_events_terminal",
+            "call_context_id",
+            unique=True,
+            postgresql_where=text("kind IN ('call_rejected', 'terminal_outcome')"),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    call_context_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tool_call_contexts.id", ondelete="CASCADE"), index=True
+    )
+    sequence: Mapped[int] = mapped_column(Integer)
+    kind: Mapped[str] = mapped_column(String(32))
+    payload: Mapped[str] = mapped_column(Text)
+    payload_digest: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class TeamUser(Base):
     """A member of a shared (team) Orrery, identified by an access key. Only present when team mode is on.
 

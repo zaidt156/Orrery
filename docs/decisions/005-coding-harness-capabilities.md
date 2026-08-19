@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed - implementation requires user review of this decision and slice order.
+Accepted - approved by the user on 2026-08-18; implementation proceeds in the slice order below.
 
 ## Date
 
@@ -233,6 +233,5 @@ as a serious repository coding harness.
   event vocabulary is introduced.
 - Generated tool/event/settings catalogs and model-visible golden tests should become CI drift
   gates as each slice lands.
-- This ADR remains Proposed until the user approves or revises the order; acceptance changes its
-  status before Slice 1 code begins.
+- The user approved the decision and slice order on 2026-08-18 before Slice 1 code began.
 

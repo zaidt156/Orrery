@@ -1,8 +1,11 @@
 """The shared tool registry: registration, discovery, scope enforcement, validation, error shape."""
+import uuid
+
 import pytest
 from pydantic import BaseModel
 
 from backend import tools
+from backend.tools import lifecycle
 from backend.tools.registry import Tool, register_tool, run_tool
 
 
@@ -100,6 +103,135 @@ def test_duplicate_keys_are_a_bug():
         @register_tool("_test_echo")
         class Duplicate(Tool):  # noqa: N801
             pass
+
+
+class _RecordingLifecycle:
+    def __init__(self, events, *, warning=None, fail_at=None):
+        self.events = events
+        self.warning = warning
+        self.fail_at = fail_at
+
+    async def admit(self):
+        self.events.append("admitted")
+        if self.fail_at == "admitted":
+            raise RuntimeError("database unavailable")
+
+    async def reject(self, outcome, presentation):
+        self.events.append(("rejected", outcome.code, presentation.text))
+
+    async def repeated_call_warning(self):
+        self.events.append("repeat_checked")
+        return self.warning
+
+    async def body_started(self):
+        self.events.append("body_started")
+
+    async def complete(self, outcome, presentation):
+        self.events.append(("completed", outcome.code, presentation.text))
+        if self.fail_at == "completed":
+            raise RuntimeError("database unavailable")
+
+    async def cancelled(self):
+        self.events.append("cancelled")
+
+
+def _chat_execution():
+    return lifecycle.ToolExecutionIdentity(
+        surface="chat",
+        owner_id=None,
+        conversation_id=uuid.uuid4(),
+        turn_id=uuid.uuid4(),
+    )
+
+
+@pytest.mark.anyio
+async def test_evidenced_call_commits_admission_and_body_start_before_execute(monkeypatch):
+    events = []
+
+    def start(*_args, **_kwargs):
+        return _RecordingLifecycle(events)
+
+    original = EchoTool.execute
+
+    async def observed_execute(self, config):
+        events.append("tool_body")
+        return await original(self, config)
+
+    monkeypatch.setattr(lifecycle, "start", start)
+    monkeypatch.setattr(EchoTool, "execute", observed_execute)
+
+    out = await run_tool("_test_echo", {"text": "hi"}, execution=_chat_execution())
+
+    assert out == {"ok": True, "echo": "hi"}
+    assert events[:4] == ["admitted", "repeat_checked", "body_started", "tool_body"]
+    assert events[4][0] == "completed"
+    assert events[4][1] == "succeeded"
+
+
+@pytest.mark.anyio
+async def test_evidence_failure_before_body_fails_closed(monkeypatch):
+    events = []
+    monkeypatch.setattr(
+        lifecycle,
+        "start",
+        lambda *_args, **_kwargs: _RecordingLifecycle(events, fail_at="admitted"),
+    )
+
+    out = await run_tool("_test_echo", {"text": "hi"}, execution=_chat_execution())
+
+    assert out["ok"] is False
+    assert out["code"] == "evidence_unavailable"
+    assert out["retry_safe"] is True
+    assert events == ["admitted"]
+
+
+@pytest.mark.anyio
+async def test_evidence_failure_after_body_returns_unknown_outcome(monkeypatch):
+    events = []
+    monkeypatch.setattr(
+        lifecycle,
+        "start",
+        lambda *_args, **_kwargs: _RecordingLifecycle(events, fail_at="completed"),
+    )
+
+    out = await run_tool("_test_echo", {"text": "hi"}, execution=_chat_execution())
+
+    assert out["ok"] is False
+    assert out["code"] == "unknown_outcome"
+    assert out["retry_safe"] is False
+    assert "do not retry" in out["error"].lower()
+
+
+@pytest.mark.anyio
+async def test_repeat_warning_is_additive_and_model_visible(monkeypatch):
+    events = []
+    warning = "You have made this identical call 3 times; inspect the result before repeating it."
+    monkeypatch.setattr(
+        lifecycle,
+        "start",
+        lambda *_args, **_kwargs: _RecordingLifecycle(events, warning=warning),
+    )
+
+    out = await run_tool("_test_echo", {"text": "hi"}, execution=_chat_execution())
+
+    assert out["ok"] is True
+    assert out["loop_warning"] == warning
+
+
+@pytest.mark.anyio
+async def test_evidenced_rejections_have_stable_structured_outcomes(monkeypatch):
+    events = []
+    monkeypatch.setattr(lifecycle, "start", lambda *_a, **_k: _RecordingLifecycle(events))
+
+    unknown = await run_tool("no_such_tool", {}, execution=_chat_execution())
+    invalid = await run_tool("_test_echo", {}, execution=_chat_execution())
+
+    assert (unknown["code"], unknown["retry_safe"]) == ("unknown_tool", True)
+    assert (invalid["code"], invalid["retry_safe"]) == ("validation_failed", True)
+    assert [event[1] for event in events if isinstance(event, tuple)] == [
+        "unknown_tool",
+        "validation_failed",
+    ]
 
 
 @pytest.mark.anyio
