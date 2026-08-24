@@ -198,3 +198,38 @@ def test_a_workflow_run_leaves_tool_evidence(client, auth):
         assert contexts[0].workflow_run_id == run_id
     finally:
         client.delete(f"/api/workflows/{wid}", headers=auth)
+
+
+def test_a_refused_node_fails_its_run_instead_of_reporting_success(client, auth):
+    """A blocked tool call must not be recorded as a completed step.
+
+    `run_tool` reports a refusal by returning `{"ok": False, ...}` rather than raising, so the
+    engine's `except` never saw one. The run finished "done", the step was written "done", and the
+    refusal text travelled downstream as though it were the node's result. An approval-gated node
+    in a headless run is the case that matters: it must fail visibly, not succeed quietly.
+    """
+    created = _create(client, auth, "Refusal workflow")
+    wid = created["id"]
+    try:
+        # mcp_tool refuses deterministically on malformed args, without touching anything external
+        saved = client.patch(f"/api/workflows/{wid}", json={"spec": {
+            "nodes": [{"id": "call", "type": "mcp_tool", "config": {
+                "server_id": "s" * 12, "tool": "anything", "args_json": "not json",
+            }}],
+            "edges": [],
+        }}, headers=auth)
+        assert saved.status_code == 200
+
+        started = client.post(f"/api/workflows/{wid}/runs", headers=auth)
+        assert started.status_code == 201
+        run_id = started.json()["run_id"]
+
+        detail = client.get(f"/api/workflows/{wid}/runs/{run_id}", headers=auth).json()
+
+        assert detail["status"] == "failed", "a refused node must fail its run"
+        assert detail["error"], "the run must say why it failed"
+        steps = {s["node_id"]: s for s in detail["steps"]}
+        assert steps["call"]["status"] == "failed", "the refused step must not read as done"
+        assert steps["call"]["error"], "the refusal reason belongs on the step"
+    finally:
+        client.delete(f"/api/workflows/{wid}", headers=auth)

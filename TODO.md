@@ -33,8 +33,9 @@ do not keep a second checklist of completed tasks here.
 - [ ] Build canvas editing for Automations: the screen now reads real workflows, the registered node
       catalog, and durable run steps, but a spec can only be changed through the API — there is no
       way to add, connect, configure, or position a node in the UI.
-- [ ] Surface tool-approval requests from gated Automation nodes (headless runs currently fail them
-      safely) so a user can decide.
+- [ ] Surface tool-approval requests from gated Automation nodes so a user can decide. A refused
+      node now fails its run and the refusal is recorded on the step, but nothing renders the
+      pending approval, so it expires undecided and the run has to be started again afterwards.
 - [ ] Add a small management view for the remembered "always allow" tool approvals so grants can be
       reviewed and revoked without re-approving.
 - [ ] Add an Automation schedule tick and support only trigger types the runtime actually implements.

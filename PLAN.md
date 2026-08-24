@@ -72,10 +72,17 @@ before it.
 
 ### Workstream 1 — Close production trust-boundary gaps
 
-**Complete (22 July 2026).** The shared enforcement layer now exists: the checkpoint below is met by
-abuse-case regression tests in `tests/features/test_approvals.py`, `tests/features/test_team_failclosed.py`,
+**Complete (22 July 2026; one gap found and closed 24 August 2026).** The shared enforcement layer
+exists: the checkpoint below is met by abuse-case regression tests in
+`tests/features/test_approvals.py`, `tests/features/test_team_failclosed.py`,
 `tests/security/test_netguard_fetch.py`, and the dataset credential tests. Workstream 2 is the
 current priority.
+
+A code audit on 24 August found item 1 was not literally true: the Automation `http_request` node
+reached the internet without entering `run_tool`, so it never met the gate, the deny-only hook, or
+the evidence layer. It is now a registered tool. The lesson generalises — "every path" is a claim
+about the registry's reach, so a new capability that talks to the outside world belongs in the
+registry, never beside it.
 
 1. Add a central approval gate for Chat and every non-Agent tool execution path that can write,
    contact an external system, use credentials, or has unknown MCP risk. The approval must bind to a

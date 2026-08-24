@@ -90,6 +90,22 @@ def _clip(obj) -> str:
         return str(obj)[:_MAX_IO_CHARS]
 
 
+def _refusal(out) -> str | None:
+    """Read the registry's refusal contract out of a node's return value.
+
+    `run_tool` reports a blocked call by RETURNING `{"ok": False, ...}`; it does not raise. Without
+    this check a node that was denied, gated, or out of scope came back looking like ordinary
+    output, so the step was recorded "done" and the refusal text was handed to the next node as
+    data. Only an explicit `ok: False` counts — nodes like `delay` and `if_branch` never speak the
+    contract and are untouched.
+    """
+    if not isinstance(out, dict) or out.get("ok") is not False:
+        return None
+    code = str(out.get("code") or "refused")
+    message = str(out.get("error") or "The tool call was refused.")
+    return f"{code}: {message}"
+
+
 async def execute_run(run_id: str) -> None:
     """Execute one queued run to completion, recording every step. Never raises."""
     rid = uuid.UUID(run_id)
@@ -143,8 +159,15 @@ async def execute_run(run_id: str) -> None:
             finally:
                 lifecycle.reset_identity(identity_token)
             outputs[nid] = out if isinstance(out, dict) else {"value": out}
-            await _record_step(rid, nid, ntype, "done", raw_config, outputs[nid], None,
-                               int((time.monotonic() - started) * 1000))
+            elapsed_ms = int((time.monotonic() - started) * 1000)
+            # A refusal is a failure of this node, not its result. The output is still recorded so
+            # the run-debug view keeps the whole refusal — including any approval it carries.
+            refusal = _refusal(outputs[nid])
+            if refusal is not None:
+                await _record_step(rid, nid, ntype, "failed", raw_config, outputs[nid], refusal,
+                                   elapsed_ms)
+                raise ValueError(f"Node '{nid}' ({ntype}) was refused: {refusal[:300]}")
+            await _record_step(rid, nid, ntype, "done", raw_config, outputs[nid], None, elapsed_ms)
             # a false if_branch prunes everything downstream of it
             if ntype == "if_branch" and not outputs[nid].get("matched"):
                 skipped |= _descendants(nid, edges)

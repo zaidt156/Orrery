@@ -83,20 +83,9 @@ class HttpRequestNode(Node):
     config_model = HttpRequestConfig
 
     async def execute(self, inputs: dict, config: HttpRequestConfig) -> dict:
-        from backend.features import team
-        from backend.security import netguard
-        method = config.method.upper() if config.method.upper() in ("GET", "HEAD") else "GET"
-        # every redirect hop validated, connection pinned, body streamed into a hard cap
-        resp = await netguard.fetch_checked(
-            config.url, method=method, timeout=20,
-            allow_private=not await team.team_mode(), max_bytes=2_000_000,
-        )
-        body = resp.text[:20_000]
-        try:
-            data = resp.json()
-        except ValueError:
-            data = None
-        return {"status": resp.status_code, "body": body, "json": data}
+        return await run_tool("http_request", {"url": config.url, "method": config.method},
+                              execution=lifecycle.current_identity(),
+                              allowed={"http_request"})
 
 
 class RunPythonConfig(BaseModel):

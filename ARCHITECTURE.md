@@ -545,7 +545,11 @@ node catalog. Registered node types are `llm_prompt`, `search_docs`, `db_query`,
 Current gaps are explicit:
 
 - There is no canvas authoring: nodes, edges, configuration, and positions cannot be changed in the UI.
-- A gated Automation tool call fails safely because headless workflow runs cannot pause for a user decision.
+- A gated Automation tool call fails its run, because headless workflow runs cannot pause for a user
+  decision. `run_tool` reports a refusal by returning `{"ok": false, ...}` rather than raising, so
+  the engine reads that contract explicitly (`_refusal`): the step is recorded `failed` with the
+  refusal — including any approval payload — and the run ends `failed`. There is still no way to
+  answer the approval; the run has to be started again once the decision exists.
 - The saved workflow `schedule` field has no schedule tick.
 - Trigger/retry and connector behavior exists only where a registered node or runtime path implements it.
 
@@ -684,8 +688,13 @@ Known security gaps are kept explicit rather than hidden in separate review docu
 
 - Pending tool approvals live in memory, like detached chat runs: a backend restart clears them and
   the affected tool call fails safely. Headless Automation runs cannot pause for a decision, so a
-  gated node fails with an approval-required error until durable Automation approval pause/resume
-  and its decision UI exist.
+  gated node fails its run with an approval-required error until durable Automation approval
+  pause/resume and its decision UI exist. The refusal is visible in the run-debug view, but no
+  screen lets a user act on it, so the approval expires undecided.
+- Every Automation node that reaches outside Orrery now does so through `run_tool`, so the scope
+  allow-list, deny-only hook, risk tiering, and evidence layer apply to all of them. The one
+  remaining exception is `llm_prompt`, which calls the provider layer directly: it is covered by the
+  privacy boundary and model routing but not by the tool registry.
 - The "always allow" tool list is enforced per owner but is editable only by re-approving; a
   management UI to review/revoke remembered grants has not been built yet.
 
@@ -697,7 +706,7 @@ Code anchors: `backend/api/__init__.py`, `backend/security`, `backend/features/t
 
 Settings resolve through five ordered layers — defaults, an `orrery.toml` profile beside the project (or `ORRERY_PROFILE`), a `config.toml` in the per-user data directory, `.env`, then real environment variables, which always win. `backend/core/profiles.py` owns the layers; `orrery --dump-config` prints each setting with the layer that supplied it and redacts anything credential-shaped. No secret is read from or written to a layer — provider keys and the database URL stay in the OS keychain.
 
-Two extension seams exist, both **deny-only** (ADR-004). `tools/pre-execute` runs inside `run_tool()` after every built-in guard — scope allow-list, feature gate, grant actions and resources, argument validation — and before the central approval gate, so it covers Chat, Automations, and Agents at once and a refusal never raises a pointless approval prompt. `agent/pre-step` runs before each model request in an agent run and can stop the run. A hook returning nothing has not approved anything; it has only declined to object, so removing every hook leaves behaviour exactly as strict.
+Two extension seams exist, both **deny-only** (ADR-004). `tools/pre-execute` runs inside `run_tool()` after every built-in guard — scope allow-list, feature gate, grant actions and resources, argument validation — and before the central approval gate, so it covers Chat, Automations, and Agents at once and a refusal never raises a pointless approval prompt. Its reach is exactly the set of calls that enter `run_tool`; the one Automation node still outside that set is `llm_prompt` (see §17). `agent/pre-step` runs before each model request in an agent run and can stop the run. A hook returning nothing has not approved anything; it has only declined to object, so removing every hook leaves behaviour exactly as strict.
 
 A configuration layer may name plugins (`plugins = [...]`). A plugin is an importable module the user installed; mounting imports it and calls `setup(ctx)`, and the context exposes only the two hook registrations. Nothing is fetched — names that look like URLs or paths are refused before import. Registrations are recorded so unmounting reverses them, a `setup()` that raises part-way is rolled back, and a declared plugin that cannot be imported fails startup rather than running without the policy the user asked for.
 

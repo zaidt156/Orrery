@@ -3653,3 +3653,52 @@ candidates that do not exist there were dropped rather than guessed at.
 
 Verified: 793 backend tests pass (8 new), `ruff check .` is clean, the bundle builds, and the
 ChatGPT-plan route was connected for real against the rate-limited account.
+
+## Step 176 - Two refusals that did not look like refusals (August 24, 2026)
+
+A code audit of every workstream turned up two defects with the same shape, and the shape is worth
+naming: a refusal that the surrounding code could not recognise as one.
+
+`run_tool` reports a blocked call by *returning* `{"ok": false, ...}`. It does not raise — that is
+deliberate, because a tool failure is data the model has to be able to read. The Automation engine,
+though, only caught exceptions. So when a node's tool call was denied, gated, or out of scope, the
+refusal came back looking like an ordinary result: the step was written `done`, the run finished
+`done`, and the refusal text was handed to the next node as if it were the value it had asked for.
+The case that matters is an approval-gated node in a headless run. It reported success.
+
+The engine now reads the registry's contract explicitly. Only a literal `ok: false` counts, so
+nodes that never speak that contract — `delay`, `if_branch`, `llm_prompt` — are untouched. A refused
+node records a `failed` step and fails its run, and the step keeps the whole output rather than just
+the message, so whatever the refusal carried (an approval payload included) is visible in the
+run-debug view. There is still no way to *answer* that approval; that remains open, and TODO.md now
+says so in those terms rather than claiming the run "fails safely" when it did not fail at all.
+
+The second defect was the `http_request` node calling `netguard.fetch_checked` directly. The fetch
+itself was hardened — every redirect hop validated, a hard byte cap — which is exactly why this was
+easy to miss: the dangerous-looking part was fine. What was missing was everything the registry adds
+around a call. Living outside `run_tool` meant living outside the scope allow-list, the ADR-004
+deny-only hook, the approval gate's risk tiering, and the ADR-005 evidence layer. A policy plugin
+written to stop Orrery reaching the network could not see it.
+
+It is a registered tool now, and the node calls it like every other node does. The telling detail is
+that `nodes.py` already imported `run_tool` and already used it for `doc_search` and `db_query`, so
+this was an omission rather than a decision — which is also why the fix is four lines. Risk is
+`network`, matching `web_search`: GET and HEAD read the outside world, they do not change it, so it
+is inside the gate's sequence without prompting for a decision it does not warrant. Chat's allow-list
+is built by naming tools explicitly, so registering this one did not widen what Chat can do.
+
+Verified: 13 new tests, all failing first. The engine's contract is pinned by small database-free
+tests so the rule holds independently of PostgreSQL, and a `db`-marked test proves the whole path —
+a refused node fails its run and its step. The clearest of the network tests registers a deny-all
+policy and asserts the node is stopped with `policy_denied` while a stubbed `netguard` raises if it
+is reached at all: that is the property, stated as a test. 129 tests pass across the tools, security,
+core, and capability suites, and `ruff check .` is clean.
+
+One honest limit. The full local suite could not be used as the gate: several tests in
+`tests/features/test_chat.py` hang on this machine, on a clean checkout as much as with these
+changes, so the hang is pre-existing and unrelated. The `db`-marked test was collected but not run
+locally, because Docker is not available here. CI runs both.
+
+Next: the same audit found that Chat's `run_python`, `run_shell`, and `web_search` still call the
+registry without an execution identity, so Slice 1's "all three surfaces" claim is not yet true for
+the three tools Chat actually advertises.

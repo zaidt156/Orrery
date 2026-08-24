@@ -252,6 +252,43 @@ class DashboardRefreshTool(Tool):
         }
 
 
+class HttpRequestConfig(BaseModel):
+    url: str = Field(min_length=8, max_length=500)
+    method: str = "GET"
+
+
+@register_tool("http_request")
+class HttpRequestTool(Tool):
+    """Fetch one URL through the guarded network boundary.
+
+    This existed as an Automation node that called `netguard` directly. The fetch was hardened, but
+    living outside the registry meant it also lived outside the scope allow-list, the ADR-004 deny
+    hook, the approval gate's risk tiering, and the ADR-005 evidence layer. It is registered here so
+    a capability that reaches the internet passes the same boundary as every other one.
+    """
+
+    label = "HTTP request"
+    category = "net"
+    risk = "network"   # GET/HEAD only: it reads the outside world, it does not change it
+    config_model = HttpRequestConfig
+
+    async def execute(self, config: HttpRequestConfig) -> dict:
+        from backend.features import team
+        from backend.security import netguard
+
+        method = config.method.upper() if config.method.upper() in ("GET", "HEAD") else "GET"
+        # every redirect hop validated, connection pinned, body streamed into a hard cap
+        resp = await netguard.fetch_checked(
+            config.url, method=method, timeout=20,
+            allow_private=not await team.team_mode(), max_bytes=2_000_000,
+        )
+        try:
+            data = resp.json()
+        except ValueError:
+            data = None
+        return {"status": resp.status_code, "body": resp.text[:20_000], "json": data}
+
+
 class McpCallConfig(BaseModel):
     server_id: str = Field(min_length=8)
     tool: str = Field(min_length=1, max_length=120)
