@@ -238,6 +238,12 @@ async def run(
     # A chat turn is one user message and every model round and tool call it causes, so the turn id
     # is minted once here rather than per round (ADR-005 slice 1).
     _turn_id = _uuid.uuid4()
+    # One identity for the whole turn. The three inline tool branches below and the MCP branch (which
+    # builds its own from `tool_context`) both go through _chat_execution on the same three values,
+    # so there is no second construction that can drift away from this one.
+    _execution = _chat_execution({
+        "conversation_id": conversation_id, "owner_id": owner_id, "turn_id": _turn_id,
+    })
     visible_parts: list[str] = []
     all_files: list[dict] = []
     usage = {"in": 0, "out": 0, "cost": 0.0, "have_cost": False, "pricing_known": True, "provider": None, "model": None}
@@ -328,7 +334,8 @@ async def run(
                     "Running Python", "Executing the model's code in the secure sandbox (no network, capped, isolated).",
                     kind="tool", status="running", phase="execute", metadata={"run": run_index + 1},
                 )
-                result = await tool_registry.run_tool("run_python", {"code": body}, allowed=allowed_tools)
+                result = await tool_registry.run_tool("run_python", {"code": body},
+                                                      allowed=allowed_tools, execution=_execution)
                 produced = _tool_artifacts(result)
                 if produced:
                     all_files.extend(produced)
@@ -348,7 +355,8 @@ async def run(
                     "Running shell commands", "Executing in the secure sandbox (no network, capped, isolated).",
                     kind="tool", status="running", phase="execute", metadata={"run": run_index + 1},
                 )
-                result = await tool_registry.run_tool("run_shell", {"script": body}, allowed=allowed_tools)
+                result = await tool_registry.run_tool("run_shell", {"script": body},
+                                                      allowed=allowed_tools, execution=_execution)
                 produced = _tool_artifacts(result)
                 if produced:
                     all_files.extend(produced)
@@ -371,7 +379,9 @@ async def run(
                 query = next((line.strip() for line in body.splitlines() if line.strip()), "")
                 yield trace.step("Searching the web", query or "(empty query)",
                                  kind="tool", status="running", phase="gather", metadata={"run": run_index + 1})
-                search_res = await tool_registry.run_tool("web_search", {"query": query}, allowed=allowed_tools) if query else {"ok": False, "results": []}
+                search_res = await tool_registry.run_tool(
+                    "web_search", {"query": query}, allowed=allowed_tools, execution=_execution,
+                ) if query else {"ok": False, "results": []}
                 results = search_res.get("results") if isinstance(search_res.get("results"), list) else []
                 urls = [r["url"] for r in results if r.get("url")][:8]
                 if urls:

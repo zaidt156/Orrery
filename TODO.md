@@ -1,6 +1,6 @@
 # Orrery TODO
 
-Last reconciled with executable code: **18 August 2026**.
+Last reconciled with executable code: **24 August 2026**.
 
 This file contains unfinished work only. Product direction and ordering live in [`PLAN.md`](PLAN.md),
 implemented behavior lives in [`ARCHITECTURE.md`](ARCHITECTURE.md), and completed work lives in the
@@ -55,6 +55,14 @@ do not keep a second checklist of completed tasks here.
 - [ ] Decide Slack/Gmail connection style after threat-model review; then implement authenticated,
       deduplicated receivers and least-privilege connector grants.
 
+## P1 — finish ADR-005 slice 1
+
+- [ ] Populate the lineage columns the ADR's acceptance depends on: `parent_call_context_id`,
+      `provider_call_id`, `grant_snapshot_ref`, and `config_snapshot_ref` exist but nothing writes
+      them, so "retries and forks retain exact lineage" is not met.
+- [ ] Decide whether Automations should capture a model-request envelope. Tool evidence covers all
+      three surfaces; envelopes cover Chat and Agents only.
+
 ## P2 — durability, UX, and release polish
 
 - [ ] Make detached Chat runs durable across backend restarts or explicitly expose their
@@ -72,10 +80,10 @@ do not keep a second checklist of completed tasks here.
 
 ## Decisions that require the user
 
-- [ ] Approve or revise
-      [`ADR-005`](docs/decisions/005-coding-harness-capabilities.md), including the dependency order
-      from exact execution evidence through coding workspaces, LSP, and bounded subagents. Slice 1
-      adds durable evidence only and does not grant new filesystem/process authority.
+- [ ] Confirm the slice order for [`ADR-005`](docs/decisions/005-coding-harness-capabilities.md)
+      beyond slice 1. The ADR was accepted on 18 August and slice 1 shipped; slice 2 (bounded
+      output retention behind owner-scoped artifact IDs) is the next one that needs a decision,
+      because it sets the retention and replay horizon.
 - [ ] Choose Slack/Gmail authentication: user-supplied credentials or a maintained OAuth application.
 - [ ] Decide whether a container-only persistent terminal is worth its lifecycle and isolation cost
       after durable one-shot coding jobs have real usage evidence.

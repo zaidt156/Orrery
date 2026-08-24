@@ -905,6 +905,10 @@ async def decide_approval(approval_id: str, *, approve: bool, owner_id: str | No
                 "execution_id": execution_id,
                 "remaining_runtime": remaining_runtime,
                 "started_at": action_started,
+                # Read here, while the row is still attached — the tool runs after this session
+                # closes, and a detached read is exactly what would take a run down for an audit
+                # record.
+                "owner_id": run.owner_id,
             }
         else:
             run.status = "queued"
@@ -926,7 +930,15 @@ async def decide_approval(approval_id: str, *, approve: bool, owner_id: str | No
         try:
             result = await _run_operation(
                 uuid.UUID(run_id_value),
-                tool_registry.run_tool(tool_key, args, allowed=set(grants), grant=grant),
+                tool_registry.run_tool(
+                    tool_key, args, allowed=set(grants), grant=grant,
+                    # The one call a human explicitly authorised is the last one that should run
+                    # unrecorded. Resuming is its own turn: it happens after the run was suspended,
+                    # so it gets its own turn id rather than borrowing the one that asked.
+                    execution=_tool_execution(
+                        uuid.UUID(run_id_value), claimed_action["owner_id"], uuid.uuid4(),
+                    ),
+                ),
                 claimed_action["remaining_runtime"],
             )
         except TimeoutError:

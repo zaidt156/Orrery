@@ -3702,3 +3702,58 @@ locally, because Docker is not available here. CI runs both.
 Next: the same audit found that Chat's `run_python`, `run_shell`, and `web_search` still call the
 registry without an execution identity, so Slice 1's "all three surfaces" claim is not yet true for
 the three tools Chat actually advertises.
+
+## Step 177 - The three tools Chat actually uses were the three with no record (August 24, 2026)
+
+Step 174 was titled "All three surfaces produce evidence" and said slice 1's surface coverage was
+complete. It was not, and the gap was in the least convenient place.
+
+Chat has five paths into the registry. Two of them - the MCP branch and the generic keyed branch,
+both reached through the `orrery-tool` JSON block - passed an execution identity. The other three
+did not: `run_python`, `run_shell`, and `web_search`, invoked from the ```orrery-run```,
+```orrery-shell``` and ```orrery-search``` fences. Those are the ones the chat prompt actually tells
+the model to use. So the durable record answered "what did this chat do" only for the path a model
+rarely takes, and said nothing about sandboxed code execution or web search.
+
+Nothing failed when this happened, which is the whole problem. `run_tool` takes a `writer=None` path
+when no identity arrives and runs the tool perfectly well. An omission at a call site is invisible at
+runtime and invisible in review.
+
+So alongside the fix there is now a structural test that walks the backend's syntax tree, finds
+every `run_tool(...)` call, and fails if one passes no `execution=`. It has one documented
+exemption. This is a slightly unusual test - it reads source rather than behaviour - but it matches
+the shape of the defect: the next branch that forgets will be caught whether or not anyone thinks to
+write a behavioural test for it.
+
+The turn identity is now minted once next to the turn id and reused by all three branches, built
+through the same `_chat_execution` helper the MCP branch uses, so there is no second construction
+that can drift. A caller that supplies no conversation still records nothing; that opt-in is
+deliberate and has its own test.
+
+The fourth site was the agent's post-approval resume. When a run suspends for a human decision and
+then resumes, the tool executes through a different code path from the in-loop one - and that path
+called the registry anonymously. The single call a person explicitly authorised was the only one
+with no durable record. It carries an identity now. The run's owner is read while the row is still
+attached, because the tool runs after that session closes and a detached read is exactly the failure
+that would take a run down for the sake of an audit record. Resuming gets a fresh turn id rather
+than borrowing the one that asked for approval: it is genuinely a later turn.
+
+ARCHITECTURE.md gained §17a, which is overdue - the evidence layer shipped on 19 August across two
+new modules and three tables and the architecture document had never mentioned it. The section
+states the four load-bearing properties (evidence never grants authority; it gates the body; a
+refusal is a record rather than a silence; the envelope proves itself) and, just as importantly, the
+current limits: the lineage columns are declared but nothing writes them, so the ADR's "retries and
+forks retain exact lineage" is not met yet, and Automations still capture no request envelope. Both
+are now TODO items rather than facts buried in a log entry.
+
+PLAN.md's Workstream 3 no longer calls itself "proposed" - it was accepted on 18 August - and it now
+warns that its numbering merges several ADR slices, so the two documents cannot be cross-referenced
+by number. TODO.md's "approve ADR-005" decision has been replaced by the decision that is actually
+outstanding: the slice 2 retention and replay horizon. All three canonical documents are dated
+today; they had been claiming 18 August while five commits from the 19th sat above them.
+
+Verified: 6 new tests, 5 of which failed first (the sixth pins the existing opt-in silence and
+passed from the start, which is the point of it). 135 tests pass across the tools, security, core,
+and capability suites; `ruff check .` is clean. The same local limitation as Step 176 applies -
+several `tests/features/test_chat.py` tests hang on this machine on a clean checkout, so the full
+suite is not usable as the gate here and CI remains the real one.

@@ -1,6 +1,6 @@
 # Orrery architecture — as implemented
 
-This document describes the code that exists in this repository on **18 August 2026**. It is the
+This document describes the code that exists in this repository on **24 August 2026**. It is the
 single source of truth for implemented architecture, not a product roadmap. Future work belongs in
 [`PLAN.md`](PLAN.md) and [`TODO.md`](TODO.md). When a plan or UI mock disagrees with executable code,
 the code wins here.
@@ -321,8 +321,8 @@ Current Chat gating matters:
   enabled. The loop itself is provider-agnostic, so this rule is the same for API, CLI-plan, and local
   models.
 - The Activity panel renders the current turn's SSE events in order, but that browser projection is
-  not an authoritative durable event log. Dynamic prompt inputs and exact tool call/results cannot
-  yet be reconstructed from it after the turn.
+  not an authoritative durable event log. The durable record is the evidence layer described in §17a;
+  the panel is a view of a turn in progress, not the record of it.
 - Python and shell run against sandbox scratch/input/output mounts. Orrery does not currently grant
   a model access to a local checkout: there is no explicit coding root, project file read/search/edit
   tool set, workspace-mounted command, LSP service, persistent terminal, or child-agent hierarchy.
@@ -699,6 +699,60 @@ Known security gaps are kept explicit rather than hidden in separate review docu
   management UI to review/revoke remembered grants has not been built yet.
 
 Code anchors: `backend/api/__init__.py`, `backend/security`, `backend/features/team.py`, `backend/features/prompting.py`, `backend/features/sandbox.py`, `ui/src/lib/officePreview.js`.
+
+---
+
+## 17a. Execution evidence (ADR-005 slice 1)
+
+Chat, Agents, and Automations record what they asked a model and what they asked a tool, durably,
+before either becomes visible. The point is not that something was logged — it is that the record
+can be *reconstructed* and shown to be the same thing that ran.
+
+Three tables carry it. `tool_call_contexts` is one immutable row per guarded tool call: surface,
+owner, the parent (conversation, agent run, or workflow run), a turn id, the tool key, and a digest
+of the validated arguments. `tool_lifecycle_events` is its append-only event stream, sequenced from
+1, with `body_started` recorded before any terminal outcome. `model_request_envelopes` holds the
+exact request handed to a provider.
+
+```mermaid
+flowchart LR
+    caller["Chat · Agent · Automation<br/>passes an execution identity"] --> gate["run_tool guards<br/>scope · flag · grant · validation · hook · approval"]
+    gate -->|refused| rec1["refusal recorded<br/>never_dispatched"]
+    gate -->|authorized| adm["admit → body_started"]
+    adm --> body["tool body runs"]
+    body --> term["succeeded / failed / cancelled<br/>or unknown_outcome"]
+```
+
+Four properties are load-bearing:
+
+- **Evidence never grants authority.** Every guard still decides. Recording happens around the
+  decision, never instead of it.
+- **It gates the body.** If the admission record cannot be written the call is refused as retry-safe
+  rather than run unrecorded; if the outcome cannot be written after the body ran, the caller is told
+  the effect is `unknown_outcome` rather than that it is safe to repeat.
+- **A refusal is a record, not a silence.** A denied call opens its own record with
+  `dispatch_state=never_dispatched`, so "was not allowed" and "never asked" are different answers.
+- **The request envelope proves itself.** `proves()` rebuilds the envelope from what was stored and
+  compares canonical-serialization digests, so key order and whitespace cannot make two different
+  requests look alike. Capture is at the adapter boundary, after privacy redaction and route
+  selection, and deliberately excludes HTTP wire bytes so transport credentials never enter it. A
+  request too large to keep still stores its digest.
+
+Capture is opt-in per surface through a context variable, so a surface nobody wired records nothing.
+Chat and Agents pass an identity explicitly; Automation nodes execute through a fixed signature and
+cannot be handed one, so the engine scopes an ambient identity around each node and resets it in
+`finally`. Interrupted calls are reconciled at startup (`reconcile_incomplete_calls`).
+
+Current limits, stated plainly: `parent_call_context_id`, `provider_call_id`, `grant_snapshot_ref`,
+and `config_snapshot_ref` exist as columns but nothing populates them, so ADR-005's "retries and
+forks retain exact lineage" is not yet met. Model-request envelopes are captured for Agents and for
+Chat; Automations record tool evidence but no envelope. Records are owner-private, live in the same
+PostgreSQL trust domain as the conversation or run they belong to, and are deleted with their parent.
+
+Code anchors: `backend/tools/lifecycle.py`, `backend/providers/envelope.py`,
+`backend/tools/registry.py`, `backend/features/code_interpreter.py`,
+`backend/features/agent_runs.py`, `backend/automation/engine.py`,
+`docs/decisions/005-coding-harness-capabilities.md`.
 
 ---
 

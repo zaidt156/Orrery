@@ -1,6 +1,6 @@
 # Orrery plan
 
-Last reconciled with executable code: **18 August 2026**.
+Last reconciled with executable code: **24 August 2026**.
 
 This is the single roadmap for Orrery. It explains what should be built, why it is ordered this
 way, and what “done” means. The current implementation is documented in
@@ -112,13 +112,21 @@ This is the current priority.
 **Checkpoint:** untrusted documents never require an ambient host parser for the supported path;
 focused and full CI gates are deterministic.
 
-### Workstream 3 — Build a safe coding harness (proposed)
+### Workstream 3 — Build a safe coding harness (accepted; slice 1 in progress)
 
-This workstream is proposed in
-[`ADR-005`](docs/decisions/005-coding-harness-capabilities.md) from the pinned
-[`DeepSeek Harness rc.7 audit`](docs/research/deepseek-harness-rc7-audit.md). It begins only after
-the user accepts or revises the decision and slice order. Orrery borrows the capabilities, not the
-Cordis/TypeScript runtime.
+This workstream is decided in
+[`ADR-005`](docs/decisions/005-coding-harness-capabilities.md), accepted 18 August 2026, from the
+pinned [`DeepSeek Harness rc.7 audit`](docs/research/deepseek-harness-rc7-audit.md). Orrery borrows
+the capabilities, not the Cordis/TypeScript runtime.
+
+Slice 1 is largely built: durable call contexts, an append-only lifecycle event stream, and a
+provable model-request envelope, recorded by all three surfaces and described in
+[`ARCHITECTURE.md` §17a](ARCHITECTURE.md). What remains of it is tracked in `TODO.md` — the lineage
+columns are declared but unpopulated, and Automations capture no request envelope. Nothing beyond
+slice 1 has started, and no new filesystem or process authority exists.
+
+Note that the numbering below merges some ADR slices (ADR slices 3–5 appear here as item 3, and
+8–9 as item 6), so the two documents cannot be cross-referenced by number.
 
 Build in dependency order:
 
