@@ -77,7 +77,6 @@ do not keep a second checklist of completed tasks here.
 
 - [ ] Make detached Chat runs durable across backend restarts or explicitly expose their
       process-lifetime limitation in the interface.
-- [ ] Make strict privacy stronger than basic privacy, or rename the modes to match reality.
 - [ ] Review the generic HTML preview policy and tighten it with compatibility regression tests.
 - [ ] Build the dedicated dashboard editing workspace.
 - [ ] Profile very long Chat threads and add virtualization only if measurements justify it.

@@ -3839,3 +3839,39 @@ Also recorded in TODO.md: the local suite cannot be used as a single gate. Sever
 involving `tests/features/test_chat.py`, `tests/test_api.py`, and `tests/test_app_startup.py` hang
 on a clean checkout. Every file passes alone, so something leaks between them. CONTRIBUTING.md
 presents `pytest -q -m "not db"` as the gate and on a developer machine it currently is not one.
+
+## Step 180 - Strict privacy is now stronger than basic, instead of just being called that (August 24, 2026)
+
+Settings offered three privacy modes for the cloud boundary and described strict as "Basic redaction
+plus a stronger boundary; broader detection coming. Best when sharing sensitive documents."
+
+There was no stronger boundary. `privacy.py` branched on `mode not in ("basic", "strict")` in both
+of its entry points and then ran the same five regexes either way. ARCHITECTURE.md was honest about
+it - it said outright that strict was "a hook for a broader detector, not a stronger detector today"
+- but the Settings screen is where the choice is made, and there the promise was false. That is the
+worst place for this kind of gap, because a person selects strict exactly when the content is
+sensitive: the mode's whole audience is people relying on the claim.
+
+PLAN.md allowed either fix, strengthen it or rename it. Strengthening turned out to be cheap,
+because the hard part already existed. `secrets.redact_secrets` has been scrubbing key shapes,
+bearer tokens, URL passwords, and secret query parameters on the web-search boundary for a while. A
+key pasted into a chat is the same risk as a key in a search query, so strict now applies it, plus
+an IBAN pattern and a rule for runs of 17 or more digits - the baseline card rule is anchored and
+caps at 16, so a longer account or reference number sails past it untouched.
+
+Strict is a superset of basic by construction rather than by promise: `redact_strict` calls `redact`
+first and only ever adds to the result. One test asserts that on ordinary PII the two modes produce
+identical output, so "stronger" can never quietly become "different".
+
+The extra patterns will sometimes mask something harmless - a long order number, an identifier
+shaped like an IBAN. That is stated in the Settings copy now rather than hidden, because it is the
+trade the mode exists to make and a user choosing between two options deserves to know which way
+each one errs.
+
+Both modes cover the system prompt as well as message bodies. That was already true and is worth
+restating, since project instructions and retrieved document context are assembled there.
+
+Verified: 8 privacy tests, 4 of which failed first; the other 4 pin properties that already held
+(strict is a superset, local routes stay exempt) so a future change cannot break them silently.
+154 backend tests pass across the tools, security, core, capability, and automation suites, all 51
+UI tests pass, `ruff check .` is clean, and the production bundle builds.

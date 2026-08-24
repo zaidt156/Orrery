@@ -670,7 +670,7 @@ function BrandingSection({ canManage }) {
 const PRIVACY_OPTIONS = [
   { id: "off", name: "Off", sub: "Send your text to cloud models exactly as written — no redaction." },
   { id: "basic", name: "Basic (recommended)", sub: "Mask common personal data (emails, phone numbers, card/SSN numbers, IPs) before it reaches a cloud model." },
-  { id: "strict", name: "Strict", sub: "Basic redaction plus a stronger boundary; broader detection coming. Best when sharing sensitive documents." },
+  { id: "strict", name: "Strict", sub: "Everything Basic masks, plus API keys, tokens, IBANs, and long account numbers. Masks more aggressively, so it will occasionally hide something harmless. Best when sharing sensitive documents." },
 ];
 
 function PrivacySection({ canManage }) {

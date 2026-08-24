@@ -626,11 +626,18 @@ flowchart LR
     local -->|"Yes"| ollama["Send locally without PII redaction"]
     local -->|"No"| mode{"Privacy mode"}
     mode -->|"off"| cloud["Send to configured cloud or custom route"]
-    mode -->|"basic / strict"| redact["Mask common email, card, SSN,<br/>phone, and IP patterns"]
+    mode -->|"basic"| redact["Mask common email, card, SSN,<br/>phone, and IP patterns"]
+    mode -->|"strict"| strict["Everything basic masks, plus<br/>API keys/tokens, IBANs,<br/>and 17+ digit numbers"]
     redact --> cloud
+    strict --> cloud
 ```
 
-“Strict” currently uses the same regex redaction implementation as “basic”; it is a hook for a broader detector, not a stronger detector today.
+“Strict” is a superset of “basic” by construction: `redact_strict` runs `redact` first and only adds
+to it, then applies the same secret scrubber used on the web-search boundary plus IBAN and long
+account-number patterns. Those extras have a higher false-positive rate on purpose — that is the
+trade a user accepts when the content is sensitive. Both modes cover the system prompt as well as
+message bodies, because project and retrieved context ride there. Local routes are exempt in every
+mode, since nothing leaves the machine.
 
 ### Generated preview boundary
 
