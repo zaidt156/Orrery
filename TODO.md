@@ -38,6 +38,9 @@ do not keep a second checklist of completed tasks here.
       pending approval, so it expires undecided and the run has to be started again afterwards.
 - [ ] Add a small management view for the remembered "always allow" tool approvals so grants can be
       reviewed and revoked without re-approving.
+- [ ] Decide what the `ontology` and `file_gen` flags should gate on the server. The Agents,
+      Automations, Dashboards, and MCP routers are gated; these two name capabilities rather than
+      whole surfaces, so gating a router would over-enforce and nothing currently under-enforces.
 - [ ] Add an Automation schedule tick and support only trigger types the runtime actually implements.
 - [ ] Build Media Hub generation adapters and a local media library; keep the screen disabled/honest
       until an end-to-end generation path exists.

@@ -41,6 +41,35 @@ async def _require_admin_access() -> None:
         raise HTTPException(status_code=403, detail="Admin access required.")
 
 
+def require_feature(name: str):
+    """Router dependency: refuse a whole surface when its admin feature flag is off.
+
+    Hiding a React tab is a courtesy, not a control. Anything that can reach loopback with the
+    session — a script, a tool, another local process — never saw the navigation bar, so the gate
+    has to live on the server (security.md §4).
+
+    `admin.feature_enabled` already fails closed on an unreadable flag state; this re-raises that
+    decision as a 403 and re-checks it here so an exception from the lookup cannot read as allowed.
+    Routes that administer the workspace or report its configuration are deliberately never gated —
+    gating them would make "turn everything off" unrecoverable.
+    """
+    async def _gate() -> None:
+        from backend.features import admin
+
+        try:
+            allowed = await admin.feature_enabled(name)
+        except Exception:  # noqa: BLE001 — an undecidable gate is a closed gate
+            allowed = False
+        if not allowed:
+            label = admin.FEATURES.get(name, (name, True))[0]
+            raise HTTPException(
+                status_code=403,
+                detail=f"{label} is turned off for this workspace.",
+            )
+
+    return _gate
+
+
 async def _activate_provider(provider: str) -> None:
     """Turn on a provider's curated models when it's first configured (best-effort)."""
     try:

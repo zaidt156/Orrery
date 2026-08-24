@@ -3757,3 +3757,53 @@ passed from the start, which is the point of it). 135 tests pass across the tool
 and capability suites; `ruff check .` is clean. The same local limitation as Step 176 applies -
 several `tests/features/test_chat.py` tests hang on this machine on a clean checkout, so the full
 suite is not usable as the gate here and CI remains the real one.
+
+## Step 178 - Turning a feature off now turns it off (August 24, 2026)
+
+Admin has a switch for each product surface. Turning Agents off hid the Agents tab. That was the
+entire effect. `GET /api/agents`, `POST /api/agents/{id}/runs`, the workflow routes, the dashboard
+routes and the MCP routes all still answered exactly as before.
+
+A hidden tab is not an authorization control. Anything that reaches loopback holding the session -
+a script, another local process, a tool, a stale browser tab that never re-rendered - never saw the
+navigation bar. The flag was a UI preference wearing the clothes of a security setting, and it had
+been that way since the flags were introduced.
+
+`require_feature(name)` is a router dependency now, on the four surfaces whose flag names that
+surface exactly: Agents, Automations, Dashboards, MCP. It refuses with 403 and a message naming the
+switch, so the answer says which one to flip rather than sending the user hunting.
+
+Three decisions worth recording, because each one is a place this could have gone wrong.
+
+The gate is not applied everywhere a flag exists. `ontology` gates *ontologies as chat context*, not
+collection CRUD, and the Data screen shares that router - gating it would have turned off more than
+the switch claims. `file_gen` is likewise a capability rather than a surface. Both are left alone and
+noted in TODO.md, because over-enforcing a gate is its own kind of dishonesty.
+
+Administration is never gated, and neither is the route that reports the flags. Gating either would
+make "turn everything off" a permanent state: the workspace has to be able to read and change its own
+configuration in order to recover it. There is a test for each, since this is the sort of thing a
+later refactor would happily break.
+
+It fails closed. `admin.feature_enabled` already returned False on an unreadable flag state, and the
+dependency re-checks rather than trusting that, so an exception from the lookup cannot read as
+allowed. A gate that opens when it cannot decide is not a gate.
+
+The cross-surface callers were checked rather than assumed: the top search bar, the Settings MCP
+list, and the Skills MCP list all reach these routes, and all three already catch and fall back to
+empty. A 403 there reads as "this feature is off", which is what it means.
+
+Verified: 13 new tests, all failing first. Their speed is itself the evidence - before the gate,
+requesting a disabled surface reached the handler and blocked on the database, and the tests hung;
+now they refuse before the handler and the file runs in three seconds. 148 tests pass across the
+tools, security, core, capability, and automation suites; `ruff check .` is clean.
+
+One mistake worth writing down, because it was mine and it cost a bisect. The new test module copied
+`asyncio.set_event_loop_policy(WindowsSelectorEventLoopPolicy())` from the database-backed suites,
+where psycopg needs it. That is an import-time global: it changed how every TestClient in the session
+ran and hung `tests/security/test_session.py`, a file it has nothing to do with. Tests that never
+reach a database need no policy, and the line is gone. Copying a fixture is copying its side effects.
+
+The pre-existing local hangs remain: several orderings involving `tests/features/test_chat.py`,
+`tests/test_api.py`, and `tests/test_app_startup.py` stall on a clean checkout too, so CI is still
+the real gate here.

@@ -697,6 +697,12 @@ Known security gaps are kept explicit rather than hidden in separate review docu
   privacy boundary and model routing but not by the tool registry.
 - The "always allow" tool list is enforced per owner but is editable only by re-approving; a
   management UI to review/revoke remembered grants has not been built yet.
+- Admin feature flags are enforced on the server for the surfaces whose flag names that surface:
+  the Agents, Automations, Dashboards, and MCP routers each carry a `require_feature` dependency and
+  answer 403 when their flag is off, so hiding the React tab is no longer the only control. The gate
+  fails closed on an unreadable flag state. Administration and the route that reports the flags are
+  deliberately not gated, or turning everything off would be unrecoverable. `ontology` still gates
+  only ontologies-as-chat-context rather than collection CRUD, and Media Hub has no backend to gate.
 
 Code anchors: `backend/api/__init__.py`, `backend/security`, `backend/features/team.py`, `backend/features/prompting.py`, `backend/features/sandbox.py`, `ui/src/lib/officePreview.js`.
 

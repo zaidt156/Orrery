@@ -238,13 +238,30 @@ def create_app(session_token: str) -> FastAPI:
         routes_mcp, routes_life, routes_models, routes_projects, routes_providers, routes_skills,
         routes_system, routes_tools, routes_workflows,
     )
+    # A surface whose admin flag is off is refused by the server, not merely hidden in the
+    # navigation. Only surfaces whose flag names exactly that surface are listed: `ontology` gates
+    # ontologies as chat context rather than collection CRUD, and Media Hub has no backend at all.
+    # Administration and the route that reports the flags are never gated — that would make
+    # "turn everything off" unrecoverable.
+    from backend.api.deps import require_feature
+
+    gated = {
+        routes_agents: "agents",
+        routes_workflows: "automations",
+        routes_dashboards: "dashboards",
+        routes_mcp: "mcp",
+    }
     for module in (
         routes_system, routes_models, routes_app_settings, routes_providers, routes_local_models,
         routes_data, routes_dashboards, routes_collections, routes_skills, routes_mcp,
         routes_admin_team, routes_agents, routes_approvals, routes_projects, routes_conversations,
         routes_files, routes_tools, routes_life, routes_workflows,
     ):
-        api.include_router(module.router, prefix="/api", dependencies=[Depends(require_token)])
+        guards = [Depends(require_token)]
+        flag = gated.get(module)
+        if flag is not None:
+            guards.append(Depends(require_feature(flag)))
+        api.include_router(module.router, prefix="/api", dependencies=guards)
 
     # serve the built UI last so /api routes take precedence
     if not settings.orrery_dev and _UI_DIST.is_dir():
