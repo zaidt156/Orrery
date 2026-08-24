@@ -24,7 +24,9 @@ FEATURES: dict[str, tuple[str, bool]] = {
     "ontology":     ("Ontologies as chat context", True),
     "file_gen":     ("File generation", True),
     "dashboards":   ("Dashboards", True),
-    "media":        ("Media Hub", True),
+    # Off until it has a backend: the screen is a design preview with no module, route, or table
+    # behind it, so shipping it enabled put a dead surface in front of every new install.
+    "media":        ("Media Hub", False),
     "automations":  ("Automations", True),
     "agents":       ("Agents", True),
     "mcp":          ("MCP servers", True),

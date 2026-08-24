@@ -3875,3 +3875,31 @@ Verified: 8 privacy tests, 4 of which failed first; the other 4 pin properties t
 (strict is a superset, local routes stay exempt) so a future change cannot break them silently.
 154 backend tests pass across the tools, security, core, capability, and automation suites, all 51
 UI tests pass, `ruff check .` is clean, and the production bundle builds.
+
+## Step 181 - Media Hub stops claiming to work (August 24, 2026)
+
+Media Hub is a mockup. There is no feature module, no API route, no table, and no test - the audit
+looked for all four and found none. The Generate button had no onClick of any kind, and the gallery
+was six divs with CSS gradients in them.
+
+That would be fine as an internal design preview. What was not fine is that it said otherwise, in
+two places, in its own body text: the hero read "prompts saved to your database, files in your local
+media library", and the footer repeated it as "prompts + settings saved to your database · files in
+your local media library". Both are false. And the `media` feature flag defaulted to on, so every
+fresh install showed the screen in the navigation with those sentences on it.
+
+The design is worth keeping - it is a real artifact of how the feature should look. So the screen
+stays and stops lying instead. There is a preview banner above the hero, the Generate button is
+rendered disabled with a title saying generation is not built, the hero now says the screen is a
+preview and points at what Chat genuinely can do today, and the footer states the same list as
+*planned* and notes the tiles are placeholder art. The flag defaults off, with a comment saying why,
+so the surface is opt-in until it exists.
+
+A test pins the default, and a companion test asserts the surfaces that do work still default on -
+because "turn the broken one off" is exactly the kind of fix that gets over-applied later.
+
+Chat's own media path is unaffected and is worth naming, since the honest copy now points at it: a
+model-authored sanitized SVG, and sandbox-computed PNG/GIF/WAV/MP3/MP4/WebM through matplotlib,
+Pillow, and ffmpeg. That is a real capability; it just is not this screen.
+
+Verified: 5 capability tests pass including the two new ones, and the production bundle builds.

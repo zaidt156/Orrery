@@ -2033,3 +2033,15 @@ button:focus-visible, .toggle:focus-visible, .node:focus-visible, .convo:focus-v
 .activity-toggle{cursor:pointer; display:inline-flex; align-items:center; gap:5px; border:none;
   font:inherit; font-size:11px}
 .activity-toggle.on{background:color-mix(in srgb,var(--blue) 16%,var(--bg1)); color:var(--text)}
+
+/* Media Hub is a design preview with no backend. The banner has to read as a state, not a decoration. */
+.media-preview-note {
+  margin: 0 0 14px;
+  padding: 9px 13px;
+  border: 1px solid var(--amber, #a77b2d);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--amber, #a77b2d) 12%, transparent);
+  color: var(--text, inherit);
+  font-size: 12.5px;
+  line-height: 1.45;
+}

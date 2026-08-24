@@ -159,7 +159,7 @@ flowchart TB
 | Local Models | Live | Ollama detection, install/start on Windows, pull, activate, and remove. |
 | Admin and Settings | Live | Team access, feature gates, providers, privacy, spending, updates, MCP, and LIFE review. |
 | Automations | Live read/run surface; editor incomplete | Authenticated CRUD, the registered node catalog, manual runs, durable run steps, and the React read/run view are connected. The canvas cannot yet add, connect, configure, or position nodes; approval pauses and scheduling are also unfinished. |
-| Media Hub | Static UI | The screen has no API imports and its Generate button has no backend handler. Chat can still create image, audio, and video files through its own artifact pipeline. |
+| Media Hub | Static UI, disabled by default | No backend of any kind: no feature module, no API route, no table, no test. The Generate button has no handler at all and is rendered disabled, the gallery tiles are placeholder art, and the screen says so. The `media` flag now defaults off, so a fresh install does not show it. Chat can still create image, audio, and video files through its own artifact pipeline. |
 
 Code anchors: `ui/src/App.jsx`, `ui/src/views`, `backend/api/__init__.py`.
 

@@ -9,10 +9,13 @@ export default function Media() {
   return (
     <section className="view">
       <div className="media-wrap">
+        <div className="media-preview-note" role="status">
+          Preview only — this screen is a mockup of a feature that has not been built.
+        </div>
         <PageHero
           compact
           title="Media Hub"
-          subtitle="Generate images and video on your own model keys — prompts saved to your database, files in your local media library."
+          subtitle="A design preview of the planned media workspace. Nothing here generates or saves anything yet — Chat can already create image, audio, and video files today."
         />
         <div className="media-toolbar">
           <div className="seg">
@@ -36,8 +39,8 @@ export default function Media() {
               <div className="aspect-row"><span className="aspect">×4</span><span className="aspect">seed 7741</span><span className="aspect">steps 30</span></div>
             </div>
             <div className="field"><label>Reference (img→img / img→video)</label><div className="refdrop">drop an image, or pin one from Chat</div></div>
-            <button className="gen-btn">✦ Generate</button>
-            <div className="gen-cost">runs on the provider you chose · local model = $0</div>
+            <button className="gen-btn" disabled title="Media generation is not built yet.">✦ Generate</button>
+            <div className="gen-cost">not connected yet — see the roadmap for the generation adapters</div>
           </div>
 
           <div className="gallery-wrap">
@@ -74,7 +77,7 @@ export default function Media() {
           </div>
         </div>
 
-        <div className="media-foot">prompts + settings saved to your database · files in your local media library · any asset is reusable from Chat and Automations</div>
+        <div className="media-foot">Planned: prompts and settings saved to your database, files in a local media library, assets reusable from Chat and Automations. None of it is implemented — the tiles below are placeholder art.</div>
       </div>
     </section>
   );

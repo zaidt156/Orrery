@@ -88,3 +88,22 @@ async def test_model_self_selects_file_generate_and_gets_context_injected(monkey
     assert seen["args"]["request"] == "a resume as LaTeX"
     assert seen["artifacts"] == [{"kind": "file", "id": "f1", "name": "resume.tex"}]
     assert any(e.get("message_id") == "m1" for e in events)
+
+
+def test_media_hub_does_not_ship_enabled_while_it_has_no_backend():
+    """A screen with no module, route, or table behind it must not be on by default.
+
+    Media Hub is a design preview: its Generate button has no handler and there is no media library.
+    Shipping it enabled put a non-functional surface in front of every new install.
+    """
+    from backend.features import admin
+
+    assert admin.FEATURES["media"][1] is False, "media must default off until it has a backend"
+
+
+def test_the_surfaces_that_do_work_still_default_on():
+    """Guard against the fix above being applied too widely."""
+    from backend.features import admin
+
+    for name in ("agents", "automations", "dashboards", "ontology", "mcp"):
+        assert admin.FEATURES[name][1] is True, f"{name} should still default on"

@@ -49,8 +49,10 @@ do not keep a second checklist of completed tasks here.
       Automations, Dashboards, and MCP routers are gated; these two name capabilities rather than
       whole surfaces, so gating a router would over-enforce and nothing currently under-enforces.
 - [ ] Add an Automation schedule tick and support only trigger types the runtime actually implements.
-- [ ] Build Media Hub generation adapters and a local media library; keep the screen disabled/honest
-      until an end-to-end generation path exists.
+- [ ] Build Media Hub generation adapters and a local media library. The screen is honest and the
+      flag defaults off now, so what remains is the build itself: provider adapters plus an optional
+      local backend behind one generation interface, a local file library with PostgreSQL metadata,
+      upload validation, retained provenance, and generation exposed through the tool registry.
 - [ ] Add Chat commands for Agent/Automation/Dashboard actions only after their product APIs and the
       central approval gate exist.
 - [ ] Replace the Chat tool-loop claim in public/user docs whenever the implemented command surface
