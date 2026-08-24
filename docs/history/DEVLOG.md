@@ -3903,3 +3903,47 @@ model-authored sanitized SVG, and sandbox-computed PNG/GIF/WAV/MP3/MP4/WebM thro
 Pillow, and ffmpeg. That is a real capability; it just is not this screen.
 
 Verified: 5 capability tests pass including the two new ones, and the production bundle builds.
+
+## Step 182 - The test suite could always run; nothing was ever able to say so (August 25, 2026)
+
+With PostgreSQL started, the full backend suite passes: 836 tests in 62 seconds. Before today it had
+never been run to completion on this machine, and yesterday's entries recorded that as "pre-existing
+local hangs" involving a leak between test files. That diagnosis was wrong, and the correction is
+worth more than the fix.
+
+There were three separate causes, each masquerading as the same symptom.
+
+**Configured is not reachable.** The `db` marker gate skipped when no database was *configured*. But
+`.env` still names one after `docker compose down`, so every marked test believed a database existed
+and blocked on connect until the per-test timeout killed the session - the exact failure the gate's
+own comment says it exists to prevent. It now asks the only question that matters, with one short
+TCP connect cached for the session: does anything answer. 80 marked tests skip in 2.8 seconds
+instead of hanging.
+
+**A missing marker.** `tests/features/test_team_failclosed.py` had no `db` marker. Seven of its eight
+tests patch `get_sessionmaker` to raise and genuinely need no database - which is why nobody noticed -
+but the eighth queries a real migrated, empty team table. Only that one is marked, so the seven P0
+fail-closed abuse cases stay in the cross-platform CI job where they belong.
+
+**Bindings, not modules.** The first attempt at a fail-fast fixture patched
+`backend.core.database.get_sessionmaker` and changed nothing at all, because almost every module
+does `from backend.core.database import get_sessionmaker` and binds the function into its own
+namespace at import. Patching the source leaves all those bindings pointing at the real connector.
+The fixture now rebinds the name wherever it actually lives. Worth remembering as a general trap:
+patching a module is not patching its importers.
+
+That left one test still hanging, and it turned out not to be a test problem at all.
+`tests/security/test_session.py::test_header_auth_still_works` calls `GET /api/health`, which calls
+`database.check_connection()`, which caught every exception but waited indefinitely for one. So with
+PostgreSQL down the endpoint whose entire job is to report a broken database was itself disabled by
+a broken database - and the sidebar indicator that polls it spun rather than turning red. A health
+probe that cannot finish is not a health probe. It is bounded by `HEALTH_TIMEOUT_SECONDS` now and
+reports `database: error`, which is the honest answer and the fast one.
+
+The result is that CONTRIBUTING.md's promise is finally true. `pytest -q -m "not db"` completes on a
+machine with no Docker at all: 756 passed, 1 skipped, 62 seconds. It used to stall at 14 per cent.
+
+Verified: 836 pass with a database (`ORRERY_REQUIRE_DB=1`), 756 pass with none, `ruff check .` is
+clean. Yesterday's database-marked test for the refused Automation node - written but never executed
+- passes against real PostgreSQL, so that fix is now proven end to end rather than by unit test
+alone.

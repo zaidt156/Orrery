@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from collections.abc import AsyncIterator
@@ -21,6 +22,9 @@ _CONN_KEY = "database_url"
 _engine: AsyncEngine | None = None
 _sessionmaker: async_sessionmaker[AsyncSession] | None = None
 _HEALTH_CACHE_TTL = 5.0
+# A health probe answers or it does not; it never waits. Long enough for a loaded local PostgreSQL
+# to respond, short enough that a down database is reported rather than waited on.
+HEALTH_TIMEOUT_SECONDS = 5.0
 _health_cache: tuple[float, bool] | None = None
 
 
@@ -121,17 +125,32 @@ def get_engine() -> AsyncEngine:
 
 
 async def check_connection(force: bool = False) -> bool:
-    """True if a trivial query succeeds. Errors are logged with secrets redacted."""
+    """True if a trivial query succeeds, within a bounded wait. Errors are logged redacted.
+
+    The bound is the point. This used to catch every exception but wait indefinitely for one, so a
+    database that was down — rather than refusing — left `GET /api/health` hanging forever: the one
+    endpoint whose job is to report a broken database was disabled by exactly that condition, and
+    the sidebar indicator that polls it spun instead of turning red. A health probe that cannot
+    finish is not a health probe.
+    """
     global _health_cache
     now = time.monotonic()
     if not force and _health_cache and now - _health_cache[0] < _HEALTH_CACHE_TTL:
         return _health_cache[1]
-    try:
+
+    async def _probe() -> None:
         engine = get_engine()
         async with engine.connect() as conn:
             await conn.execute(text("SELECT 1"))
+
+    try:
+        await asyncio.wait_for(_probe(), timeout=HEALTH_TIMEOUT_SECONDS)
         _health_cache = (now, True)
         return True
+    except TimeoutError:
+        log.error("Database connection timed out after %ss", HEALTH_TIMEOUT_SECONDS)
+        _health_cache = (now, False)
+        return False
     except Exception as exc:  # noqa: BLE001 — any failure means "not connected"
         log.error("Database connection failed: %s", secrets.redact_url(str(exc)))
         _health_cache = (now, False)

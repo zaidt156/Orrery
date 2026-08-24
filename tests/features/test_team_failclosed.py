@@ -78,6 +78,11 @@ async def test_outage_disables_all_feature_gates(db_outage):
     assert await admin.feature_enabled("mcp") is False
 
 
+# The seven tests above patch `get_sessionmaker` to raise, so they prove fail-closed behaviour
+# without a database and stay in the cross-platform CI job. This last one is different: it queries a
+# real, migrated, empty team table, so it carries the marker. Without it the file blocked on connect
+# whenever no database was listening, instead of skipping.
+@pytest.mark.db
 @pytest.mark.anyio
 async def test_healthy_empty_team_table_still_means_solo(monkeypatch):
     """The fail-closed change must not cost the real first-run state: a PROVEN empty

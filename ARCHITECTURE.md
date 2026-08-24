@@ -83,6 +83,7 @@ Startup facts:
 - A random 32-byte session token is minted per launch; the browser never sees it.
 - `ORRERY_DATA_DIR` overrides the per-user data directory.
 - The backend can auto-provision Orrery's local PostgreSQL through Docker.
+- `GET /api/health` is bounded: `check_connection` gives up after `HEALTH_TIMEOUT_SECONDS` and reports `database: error` rather than waiting, so a database that is down is reported instead of hanging the endpoint that reports it.
 - The API server and job worker run in the same Python process.
 - `orrery web --no-browser` starts everything and prints the URL instead of opening a browser.
 
