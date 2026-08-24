@@ -39,6 +39,7 @@ equivalent to `orrery`.
    ```bash
    python -m pytest -q             # backend tests
    python -m pytest -q -m "not db" # ...or skip the tests that need PostgreSQL
+   cd ui && npm test               # frontend unit tests
    cd ui && npm run build          # the frontend must build cleanly
    ```
    Tests marked `db` need the local database (`docker compose up -d`). Without one they skip with

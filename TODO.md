@@ -17,6 +17,13 @@ do not keep a second checklist of completed tasks here.
       and multilingual documents.
 - [ ] Split the backend suite further into named deterministic groups. The `db` group and per-test
       timeouts now exist; the remaining feature groups are still one undifferentiated run.
+- [ ] Add a frontend lint and typecheck gate. `npm test` now runs the 51 UI tests in CI, but there
+      is no eslint config, no `lint` script, and no jsconfig/tsconfig, so ~10k lines of JSX have no
+      static checking at all. Adding one means a new dev dependency and a lockfile change.
+- [ ] Fix the local test-ordering hangs. Several orderings involving `tests/features/test_chat.py`,
+      `tests/test_api.py`, and `tests/test_app_startup.py` stall on a clean checkout, so
+      `pytest -q -m "not db"` cannot be run as a single gate on a developer machine even though
+      CONTRIBUTING.md presents it as one. Each file passes alone; the leak is between them.
 - [ ] Add a web-search provider interface with the current keyless backend as default plus
       user-configured official/self-hosted routes; preserve per-turn consent and query screening.
 

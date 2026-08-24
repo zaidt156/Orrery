@@ -3807,3 +3807,35 @@ reach a database need no policy, and the line is gone. Copying a fixture is copy
 The pre-existing local hangs remain: several orderings involving `tests/features/test_chat.py`,
 `tests/test_api.py`, and `tests/test_app_startup.py` stall on a clean checkout too, so CI is still
 the real gate here.
+
+## Step 179 - The 51 frontend tests had never run anywhere (August 24, 2026)
+
+Seven files under `ui/src` contain 51 `node:test` tests. They are real tests of real logic - the
+activity log's folding, dashboard presentation, office preview, chat threading, reasoning state.
+Several DEVLOG entries cite them as verification: "all 38 UI tests pass", later "51 total, up from
+38".
+
+There was no way to run them. `ui/package.json` had `dev`, `build`, `preview`, and `relink-deps` -
+no `test` script and no runner configured. CI's `ui` job ran `npm ci` and `npm run build` and
+nothing else. CONTRIBUTING.md's "test before you push" checklist named three commands, none of
+which touched the frontend. So the tests were written, committed, counted in verification notes,
+and never executed by anyone except whoever ran node by hand at the time.
+
+`npm test` is `node --test`. The bare form is deliberate: it recursively discovers the test files
+from the package root and skips `node_modules` on its own, and it works across Node versions, while
+`node --test src/lib/` and `node --test src/lib src/views` both fail outright on Node 24 and the
+glob form needs Node 21 or newer. CI runs it before the build, and CONTRIBUTING lists it.
+
+All 51 pass, which is worth stating plainly: this found no bugs. The point is that from now on a
+break in them is visible, and the DEVLOG's habit of citing a UI test count means something.
+
+Not done, and now tracked instead of unmentioned: there is still no frontend lint or typecheck.
+No eslint config, no `lint` script, no jsconfig or tsconfig, and no TypeScript, across roughly ten
+thousand lines of JSX. That needs a new dev dependency and a lockfile change, which is a different
+kind of change from wiring up a runner that was already there, so it is a TODO rather than something
+smuggled into this one.
+
+Also recorded in TODO.md: the local suite cannot be used as a single gate. Several orderings
+involving `tests/features/test_chat.py`, `tests/test_api.py`, and `tests/test_app_startup.py` hang
+on a clean checkout. Every file passes alone, so something leaks between them. CONTRIBUTING.md
+presents `pytest -q -m "not db"` as the gate and on a developer machine it currently is not one.
