@@ -66,6 +66,12 @@ elif suffix in (".xlsx", ".xlsm"):
     html = office_render._xlsx_html(data)
 elif suffix == ".pptx":
     html = office_render._pptx_html(data)
+elif suffix == ".odt":
+    html = office_render._odt_html(data)
+elif suffix == ".ods":
+    html = office_render._ods_html(data)
+elif suffix == ".odp":
+    html = office_render._odp_html(data)
 else:
     raise SystemExit("unsupported Office type: " + suffix)
 
@@ -196,6 +202,9 @@ Path("/work/out/document.txt").write_text("\n".join(parts).strip(), encoding="ut
 """.strip()
 
 OFFICE_SUFFIXES = (".docx", ".xlsx", ".xlsm", ".pptx")
+# Preview understands OpenDocument too; ingestion does not, and `rag` keys off the tuple
+# above, so widening that one would send ODF files to the OOXML text extractor.
+OFFICE_PREVIEW_SUFFIXES = OFFICE_SUFFIXES + (".odt", ".ods", ".odp")
 
 
 def _docker_bin() -> str:
@@ -448,7 +457,7 @@ def render_office_html(name: str, data: bytes) -> bytes:
     hostile filename never reaches the container.
     """
     suffix = Path(name.lower()).suffix
-    if suffix not in OFFICE_SUFFIXES:
+    if suffix not in OFFICE_PREVIEW_SUFFIXES:
         raise SandboxError("Unsupported Office document type.")
     module = Path(__file__).with_name("office_render.py").read_bytes()
     result = _run_entry(

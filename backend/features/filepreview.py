@@ -186,7 +186,9 @@ def install_office_preview(acknowledged: bool = False) -> dict:
 
 
 def is_office_file(name: str) -> bool:
-    return Path(name).suffix.lower() in {".pptx", ".docx", ".xlsx", ".xlsm"}
+    # OpenDocument is included: it previews through the container, though only the OOXML formats
+    # have a host fallback or a LibreOffice conversion path.
+    return Path(name).suffix.lower() in {".pptx", ".docx", ".xlsx", ".xlsm", ".odt", ".ods", ".odp"}
 
 
 @dataclass
@@ -739,6 +741,8 @@ def _office_html(name: str, ext: str, data: bytes) -> bytes | None:
         return office_render._xlsx_html(data)
     if ext == "docx":
         return office_render._docx_html(data)
+    # No host branch for OpenDocument: odfpy is in the sandbox image and deliberately not on the
+    # host, so ODF is a capability the worker provides rather than one it merely protects.
     return None
 
 
@@ -776,7 +780,7 @@ def to_preview(
             if rendered_pdf is not None:
                 return rendered_pdf, "text/html; charset=utf-8"
     try:
-        if ext in ("pptx", "docx", "xlsx", "xlsm"):
+        if ext in ("pptx", "docx", "xlsx", "xlsm", "odt", "ods", "odp"):
             rendered = _office_html(name, ext, data)
             if rendered is None:
                 return (

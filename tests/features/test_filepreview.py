@@ -1054,3 +1054,36 @@ def test_the_archive_guard_still_runs_before_the_container(monkeypatch):
     body, _ = filepreview.to_preview("r.docx", "application/octet-stream", _tiny_docx())
 
     assert b"Macro-enabled" in body
+
+
+def test_opendocument_counts_as_an_office_file():
+    for name in ("notes.odt", "figures.ods", "deck.odp"):
+        assert filepreview.is_office_file(name), name
+
+
+def test_opendocument_is_rendered_in_the_container(monkeypatch):
+    from backend.features import sandbox
+
+    monkeypatch.setattr(sandbox, "image_ready", lambda *a, **k: True)
+    monkeypatch.setattr(sandbox, "render_office_html", lambda name, data: b"<html>odt</html>")
+
+    body, mime = filepreview.to_preview("notes.odt", "application/octet-stream", b"PK\x03\x04odf")
+
+    assert body == b"<html>odt</html>"
+    assert mime == "text/html; charset=utf-8"
+
+
+def test_opendocument_has_no_host_fallback(monkeypatch):
+    """odfpy ships in the sandbox image and deliberately not on the host.
+
+    Without a container there is no ODF renderer at all, and saying so is better than importing a
+    library the host does not have and failing somewhere less obvious.
+    """
+    from backend.features import sandbox
+
+    monkeypatch.setattr(sandbox, "image_ready", lambda *a, **k: False)
+
+    assert filepreview._office_html("notes.odt", "odt", b"x") is None
+
+    body, _ = filepreview.to_preview("notes.odt", "application/octet-stream", b"x")
+    assert b"unavailable" in body.lower()

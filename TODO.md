@@ -15,8 +15,9 @@ do not keep a second checklist of completed tasks here.
       conversion, and the python-docx/openpyxl/python-pptx HTML renderers behind it.
 - [ ] Time-box the two remaining host fallbacks above, and decide whether LibreOffice belongs in
       the sandbox image or whether container-side HTML renderers replace it entirely.
-- [ ] Extend faithful previews to ODT/ODS/ODP/RTF (today only the optional LibreOffice converter
-      covers them; the Python renderers cover OOXML, CSV/TSV, and Markdown).
+- [ ] Extend previews to RTF. ODT/ODS/ODP now render in the bounded worker through `odfpy`; the
+      earlier claim that the LibreOffice converter covered them was wrong — it is gated on OOXML,
+      so an `.odt` never reached it. RTF still has no renderer anywhere.
 - [ ] Add real-container CI fixtures for embedded, scanned, mixed, encrypted, malformed, oversized,
       and multilingual documents.
 - [ ] Split the backend suite further into named deterministic groups. The `db` group and per-test

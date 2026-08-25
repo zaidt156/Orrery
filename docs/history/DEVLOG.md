@@ -4141,3 +4141,37 @@ image, 780 with no database at all, and `ruff check .` is clean.
 
 Still ahead in this slice: ODT/ODS/ODP through odfpy, which the image already carries, and demoting
 LibreOffice from prerequisite to enhancement in the status route and Settings.
+
+## Step 188 - OpenDocument previews, which never worked at all (August 25, 2026)
+
+TODO.md said ODT/ODS/ODP were covered by "the optional LibreOffice converter". They were not, and it
+was not close: `to_preview` gates that converter on `ext in ("pptx","docx","xlsx","xlsm")`, so an
+`.odt` never reached it and fell through to "Preview unavailable for this file type" — with
+LibreOffice installed or without it. The line had been wrong for as long as it had been there.
+
+`odfpy` has been sitting in the sandbox image unused. It renders all three formats now, in the
+container, alongside the OOXML renderers moved there in the previous step.
+
+The interesting decision was not to add `odfpy` to the host. That makes OpenDocument
+**container-only**: with no sandbox image there is no ODF preview at all. It would have been easy to
+add the dependency and get a host fallback for symmetry, but symmetry is not a reason — it would put
+a new parser for a new untrusted format into the backend process, which is precisely the direction
+this work is moving away from. So the sandbox stops being only a safety wrapper around something the
+host already did and becomes a capability the host does not have. A test pins that: no image means
+`_office_html` returns None and the user gets an honest notice.
+
+The suffix sets had to stay separate, and there is a test explaining why. `rag` keys off
+`OFFICE_SUFFIXES` to decide what to hand the OOXML text extractor, so widening that tuple would have
+routed `.odt` files into an extractor that understands only docx, xlsx and pptx. Preview gets its own
+`OFFICE_PREVIEW_SUFFIXES`, a strict superset, and the test asserts the subset relationship rather
+than the literal contents so it keeps meaning something as formats are added.
+
+ODP renders as text per slide rather than positioned shapes. PPTX gets absolute geometry because
+python-pptx exposes EMU offsets that map cleanly to pixels; ODP's model is different enough that
+guessing would produce a confident-looking wrong layout. A readable outline is the honest result
+until there is a reason to do more.
+
+Verified: 7 new tests, and real documents end to end — an ODT with a heading, body text, a bulleted
+list and a table; an ODS with a named sheet; an ODP with two slides — all built by odfpy inside the
+container and then previewed through `to_preview`, each rendering its actual content rather than a
+notice. 867 tests pass, `ruff check .` is clean, and CI run #26 was green for the previous step.

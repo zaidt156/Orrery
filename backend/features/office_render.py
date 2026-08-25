@@ -586,3 +586,156 @@ def _inline_image(blob: bytes, content_type: str, image_state: dict) -> str:
     image_state["bytes"] += len(blob)
     encoded = base64.b64encode(blob).decode("ascii")
     return f'<img src="data:{content_type};base64,{encoded}" alt="Embedded image">'
+
+
+# --- OpenDocument -------------------------------------------------------------------------------
+#
+# Container-only by design. odfpy ships in the sandbox image but deliberately not on the host, so an
+# ODF preview requires the worker. That is a capability the sandbox adds rather than a safety wrapper
+# it puts around something the host already did: before this, ODT/ODS/ODP previewed as
+# "Preview unavailable for this file type" whether or not LibreOffice was installed.
+
+ODF_SUFFIXES = (".odt", ".ods", ".odp")
+
+
+def _odf_local_name(node) -> str:
+    """The element's local name, without the OpenDocument namespace it is qualified with."""
+    qname = getattr(node, "qname", None)
+    if not qname:
+        return ""
+    return qname[1] if isinstance(qname, tuple) else str(qname)
+
+
+def _odt_html(data: bytes) -> bytes:
+    """Render an OpenDocument Text file to bounded HTML, in the same shape as the DOCX renderer."""
+    from odf import teletype
+    from odf.opendocument import load
+
+    document = load(io.BytesIO(data))
+    budget = _PreviewBudget()
+    parts = ['<div class="doc">']
+    in_list = False
+
+    def close_list() -> None:
+        nonlocal in_list
+        if in_list:
+            parts.append("</ul>")
+            in_list = False
+
+    for child in document.text.childNodes:
+        if not budget.node():
+            break
+        kind = _odf_local_name(child)
+        if kind == "h":
+            close_list()
+            plain = teletype.extractText(child).strip()
+            if not plain:
+                continue
+            level = str(child.getAttribute("outlinelevel") or "1")
+            tag = "h1" if level == "1" else "h2"
+            parts.append(f"<{tag}>{html.escape(budget.text(plain))}</{tag}>")
+        elif kind == "p":
+            close_list()
+            plain = teletype.extractText(child).strip()
+            if not plain:
+                continue
+            parts.append(f"<p>{html.escape(budget.text(plain))}</p>")
+        elif kind == "list":
+            if not in_list:
+                parts.append("<ul>")
+                in_list = True
+            for item in child.childNodes:
+                if not budget.node():
+                    break
+                plain = teletype.extractText(item).strip()
+                if plain:
+                    parts.append(f"<li>{html.escape(budget.text(plain))}</li>")
+        elif kind == "table":
+            close_list()
+            rows: list[str] = []
+            for row in child.childNodes:
+                if _odf_local_name(row) != "table-row" or not budget.node():
+                    continue
+                cells: list[str] = []
+                for cell in row.childNodes:
+                    if _odf_local_name(cell) != "table-cell":
+                        continue
+                    if not budget.cell():
+                        break
+                    cells.append(f"<td>{html.escape(budget.text(teletype.extractText(cell).strip()))}</td>")
+                if cells:
+                    rows.append(f"<tr>{''.join(cells)}</tr>")
+                if budget.cells >= _MAX_OFFICE_CELLS:
+                    break
+            if rows:
+                parts.append(f"<table>{''.join(rows)}</table>")
+    close_list()
+    parts.append("</div>")
+    return _finish_html("Document", "".join(parts), truncated=budget.truncated)
+
+
+def _ods_html(data: bytes) -> bytes:
+    """Render an OpenDocument Spreadsheet as bounded tables, one per sheet."""
+    from odf import teletype
+    from odf.opendocument import load
+
+    document = load(io.BytesIO(data))
+    budget = _PreviewBudget()
+    parts: list[str] = []
+    sheets = [n for n in document.spreadsheet.childNodes if _odf_local_name(n) == "table"]
+    if len(sheets) > _MAX_OFFICE_SHEETS:
+        budget.truncated = True
+    for sheet in sheets[:_MAX_OFFICE_SHEETS]:
+        title = str(sheet.getAttribute("name") or "Sheet")
+        rows: list[str] = []
+        row_nodes = [n for n in sheet.childNodes if _odf_local_name(n) == "table-row"]
+        if len(row_nodes) > _MAX_OFFICE_ROWS:
+            budget.truncated = True
+        for row in row_nodes[:_MAX_OFFICE_ROWS]:
+            cells: list[str] = []
+            cell_nodes = [n for n in row.childNodes if _odf_local_name(n) == "table-cell"]
+            if len(cell_nodes) > _MAX_OFFICE_COLUMNS:
+                budget.truncated = True
+            for cell in cell_nodes[:_MAX_OFFICE_COLUMNS]:
+                if not budget.cell():
+                    break
+                cells.append(f"<td>{html.escape(budget.text(teletype.extractText(cell).strip()))}</td>")
+            if cells:
+                rows.append(f"<tr>{''.join(cells)}</tr>")
+            if budget.cells >= _MAX_OFFICE_CELLS:
+                break
+        parts.append(
+            f'<section class="sheet"><h2>{html.escape(title)}</h2>'
+            f"<table>{''.join(rows)}</table></section>"
+        )
+    return _finish_html("Spreadsheet", "".join(parts), truncated=budget.truncated)
+
+
+def _odp_html(data: bytes) -> bytes:
+    """Render an OpenDocument Presentation as one block per slide.
+
+    Text only, deliberately: ODP shape geometry is a different model from PPTX's, and guessing at
+    absolute positions would produce a confident-looking wrong layout. A readable outline is the
+    honest result until there is reason to do more.
+    """
+    from odf import teletype
+    from odf.opendocument import load
+
+    document = load(io.BytesIO(data))
+    budget = _PreviewBudget()
+    parts: list[str] = []
+    slides = [n for n in document.presentation.childNodes if _odf_local_name(n) == "page"]
+    for index, slide in enumerate(slides, start=1):
+        if not budget.node():
+            break
+        lines: list[str] = []
+        for frame in slide.childNodes:
+            if not budget.node():
+                break
+            plain = teletype.extractText(frame).strip()
+            if plain:
+                lines.append(f"<p>{html.escape(budget.text(plain))}</p>")
+        parts.append(
+            f'<section class="slide"><div class="meta">Slide {index}</div>{"".join(lines)}</section>'
+        )
+    return _finish_html("Presentation", "".join(parts), truncated=budget.truncated)

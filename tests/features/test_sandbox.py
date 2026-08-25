@@ -467,3 +467,34 @@ def test_render_office_html_raises_when_nothing_came_back(monkeypatch):
 
     with pytest.raises(sandbox.SandboxError):
         sandbox.render_office_html("report.docx", b"x")
+
+
+# --- OpenDocument is a preview capability, not an ingestion one ----------------------------------
+
+def test_preview_understands_opendocument_but_ingestion_does_not():
+    """These two suffix sets must not be merged.
+
+    `rag` keys off OFFICE_SUFFIXES to decide what to hand the OOXML text extractor. Widening that
+    tuple to include ODF would route .odt files into a extractor that only understands docx/xlsx/
+    pptx, so the preview set is deliberately separate.
+    """
+    assert ".odt" in sandbox.OFFICE_PREVIEW_SUFFIXES
+    assert ".ods" in sandbox.OFFICE_PREVIEW_SUFFIXES
+    assert ".odp" in sandbox.OFFICE_PREVIEW_SUFFIXES
+    assert ".odt" not in sandbox.OFFICE_SUFFIXES, "ingestion cannot parse ODF"
+    assert set(sandbox.OFFICE_SUFFIXES) < set(sandbox.OFFICE_PREVIEW_SUFFIXES)
+
+
+@pytest.mark.parametrize("filename", ["notes.odt", "figures.ods", "deck.odp"])
+def test_render_office_html_accepts_opendocument(monkeypatch, filename):
+    seen = {}
+
+    def fake_run_entry(content, name, argv, *, input_files=None):
+        seen["names"] = sorted(input_files or {})
+        return _office_result(b"<html>odf</html>")
+
+    monkeypatch.setattr(sandbox, "_run_entry", fake_run_entry)
+
+    assert sandbox.render_office_html(filename, b"x") == b"<html>odf</html>"
+    suffix = filename.rsplit(".", 1)[1]
+    assert f"document.{suffix}" in seen["names"]

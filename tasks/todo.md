@@ -23,7 +23,7 @@
 
 - [x] **CHECKPOINT** — the last in-process parse of untrusted Office files is gone.
 
-- [ ] **3. ODT/ODS/ODP via `odfpy`.** Already in the image, currently unused. Render in the
+- [x] **3. ODT/ODS/ODP via `odfpy`.** Already in the image, currently unused. Render in the
       container like the OOXML formats. Add the extensions to `is_office_file` and to the preview
       dispatch. Start with ODT, judge the output, then decide on ODS/ODP.
       *Done when:* an `.odt` previews as formatted HTML instead of "Preview unavailable for this
