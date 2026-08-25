@@ -388,3 +388,82 @@ def test_render_pdf_pages_raises_when_the_archive_is_unreadable(monkeypatch):
 
     with pytest.raises(sandbox.SandboxError):
         sandbox.render_pdf_pages(b"%PDF", max_pages=4)
+
+
+# --- rendering an untrusted Office document inside the container --------------------------------
+#
+# python-docx/openpyxl/python-pptx parsing an attacker-supplied file in the backend process was the
+# last in-process parse of untrusted documents. The renderers now live in a module with no host-only
+# imports, so the same code runs in the container against the same libraries.
+
+def _office_result(html: bytes) -> sandbox.SandboxResult:
+    return sandbox.SandboxResult(
+        ok=True, stdout="", stderr="", exit_code=0, timed_out=False,
+        files=[sandbox.SandboxFile(name="preview.html", data=html)])
+
+
+def test_render_office_html_ships_the_renderer_and_the_document(monkeypatch):
+    """The container needs both the code and the file, and neither may be guessed at."""
+    captured = {}
+
+    def fake_run_entry(content, name, argv, *, input_files=None):
+        captured["inputs"] = dict(input_files or {})
+        captured["entry"] = content
+        return _office_result(b"<html>ok</html>")
+
+    monkeypatch.setattr(sandbox, "_run_entry", fake_run_entry)
+
+    out = sandbox.render_office_html("report.docx", b"PK\x03\x04docx-bytes")
+
+    assert out == b"<html>ok</html>"
+    assert captured["inputs"]["document.docx"] == b"PK\x03\x04docx-bytes"
+    assert b"def _docx_html" in captured["inputs"]["office_render.py"], \
+        "the renderer module itself has to travel into the container"
+    assert "/work/input" in captured["entry"], "the entry script must put the module on sys.path"
+
+
+def test_render_office_html_keeps_the_real_extension(monkeypatch):
+    """openpyxl and python-pptx dispatch on the suffix, so it cannot be normalised away."""
+    seen = {}
+
+    def fake_run_entry(content, name, argv, *, input_files=None):
+        seen["names"] = sorted(input_files or {})
+        return _office_result(b"<html/>")
+
+    monkeypatch.setattr(sandbox, "_run_entry", fake_run_entry)
+    sandbox.render_office_html("Quarterly Results.xlsx", b"x")
+
+    assert "document.xlsx" in seen["names"]
+
+
+def test_render_office_html_rejects_an_unsupported_type(monkeypatch):
+    def fake_run_entry(*args, **kwargs):
+        raise AssertionError("the container should not have been started")
+
+    monkeypatch.setattr(sandbox, "_run_entry", fake_run_entry)
+
+    with pytest.raises(sandbox.SandboxError):
+        sandbox.render_office_html("notes.txt", b"x")
+
+
+def test_render_office_html_raises_when_the_container_fails(monkeypatch):
+    def fake_run_entry(content, name, argv, *, input_files=None):
+        return sandbox.SandboxResult(ok=False, stdout="", stderr="python-docx exploded",
+                                     exit_code=1, timed_out=False, files=[])
+
+    monkeypatch.setattr(sandbox, "_run_entry", fake_run_entry)
+
+    with pytest.raises(sandbox.SandboxError):
+        sandbox.render_office_html("report.docx", b"x")
+
+
+def test_render_office_html_raises_when_nothing_came_back(monkeypatch):
+    """An empty output directory is a failed render, not an empty document."""
+    def fake_run_entry(content, name, argv, *, input_files=None):
+        return sandbox.SandboxResult(ok=True, stdout="", stderr="", exit_code=0,
+                                     timed_out=False, files=[])
+
+    monkeypatch.setattr(sandbox, "_run_entry", fake_run_entry)
+
+    with pytest.raises(sandbox.SandboxError):
+        sandbox.render_office_html("report.docx", b"x")

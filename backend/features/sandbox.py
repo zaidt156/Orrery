@@ -46,6 +46,32 @@ _LAYOUT = {
     "output": "/work/out",
 }
 
+_OFFICE_HTML_RENDERER = r"""
+import sys
+from pathlib import Path
+
+# The renderer module travels in beside the document, on the read-only input mount.
+sys.path.insert(0, "/work/input")
+import office_render
+
+source = next(
+    path for path in sorted(Path("/work/input").iterdir()) if path.name.startswith("document.")
+)
+suffix = source.suffix.lower()
+data = source.read_bytes()
+
+if suffix == ".docx":
+    html = office_render._docx_html(data)
+elif suffix in (".xlsx", ".xlsm"):
+    html = office_render._xlsx_html(data)
+elif suffix == ".pptx":
+    html = office_render._pptx_html(data)
+else:
+    raise SystemExit("unsupported Office type: " + suffix)
+
+Path("/work/out/preview.html").write_bytes(html)
+"""
+
 _PDF_PAGE_RENDERER = r"""
 import io
 import json
@@ -409,6 +435,36 @@ def render_pdf_pages(
             raise SandboxError("The PDF preview sandbox returned an unreadable archive.") from exc
     reason = manifest.get("reason") or None
     return pages, int(manifest.get("total_pages") or 0), reason
+
+
+def render_office_html(name: str, data: bytes) -> bytes:
+    """Render an untrusted Office document to preview HTML inside the locked container.
+
+    The renderer module is shipped in on the read-only input mount and imported there, so the code
+    that parses the document is the same code that used to parse it on the host - only the
+    privileges differ. python-docx, openpyxl and python-pptx are already in the image.
+
+    The suffix is preserved because openpyxl and python-pptx dispatch on it; the stem is not, so a
+    hostile filename never reaches the container.
+    """
+    suffix = Path(name.lower()).suffix
+    if suffix not in OFFICE_SUFFIXES:
+        raise SandboxError("Unsupported Office document type.")
+    module = Path(__file__).with_name("office_render.py").read_bytes()
+    result = _run_entry(
+        _OFFICE_HTML_RENDERER,
+        "render_office.py",
+        ["python", "/runner/render_office.py"],
+        input_files={f"document{suffix}": data, "office_render.py": module},
+    )
+    if not result.ok:
+        raise SandboxError(result.stderr or "The Office preview sandbox failed.")
+    rendered = next((item for item in result.files if item.name == "preview.html"), None)
+    if rendered is None:
+        # An empty output directory means the render did not happen, which is not the same thing
+        # as a document with nothing in it.
+        raise SandboxError("The Office preview sandbox produced no output.")
+    return rendered.data
 
 
 def extract_office_text(name: str, data: bytes) -> str:

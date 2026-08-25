@@ -972,3 +972,85 @@ def test_pdf_rendering_is_unavailable_with_neither(monkeypatch):
     monkeypatch.setattr(filepreview, "_host_pdf_renderer_available", lambda: False)
 
     assert filepreview.pdf_renderer_available() is False
+
+
+# --- Office HTML is rendered in the container, not in this process ------------------------------
+
+def _tiny_docx() -> bytes:
+    document = Document()
+    document.add_paragraph("hello")
+    stream = io.BytesIO()
+    document.save(stream)
+    return stream.getvalue()
+
+
+def _host_office_renderers_must_not_run(monkeypatch):
+    def _forbidden(*_args, **_kwargs):
+        raise AssertionError("an untrusted Office file was parsed in this process")
+
+    for name in ("_docx_html", "_xlsx_html", "_pptx_html"):
+        monkeypatch.setattr(office_render, name, _forbidden)
+
+
+def test_office_preview_is_rendered_in_the_sandbox_when_the_image_is_ready(monkeypatch):
+    from backend.features import sandbox
+
+    _host_office_renderers_must_not_run(monkeypatch)
+    monkeypatch.setattr(filepreview, "_office_pdf", lambda *a, **k: None)
+    monkeypatch.setattr(sandbox, "image_ready", lambda *a, **k: True)
+    monkeypatch.setattr(sandbox, "render_office_html",
+                        lambda name, data: b"<html>from the container</html>")
+
+    body, mime = filepreview.to_preview("r.docx", "application/octet-stream", _tiny_docx())
+
+    assert body == b"<html>from the container</html>"
+    assert mime == "text/html; charset=utf-8"
+
+
+def test_a_failing_office_sandbox_never_parses_on_the_host(monkeypatch):
+    """Failing closed: a broken container must not become an in-process parse."""
+    from backend.features import sandbox
+
+    _host_office_renderers_must_not_run(monkeypatch)
+    monkeypatch.setattr(filepreview, "_office_pdf", lambda *a, **k: None)
+    monkeypatch.setattr(sandbox, "image_ready", lambda *a, **k: True)
+
+    def _explode(name, data):
+        raise sandbox.SandboxError("the container died")
+
+    monkeypatch.setattr(sandbox, "render_office_html", _explode)
+
+    body, mime = filepreview.to_preview("r.docx", "application/octet-stream", _tiny_docx())
+
+    assert mime == "text/html; charset=utf-8"
+    assert b"unavailable" in body.lower(), "the user should get an honest notice"
+
+
+def test_the_host_office_renderer_runs_only_without_a_sandbox_image(monkeypatch):
+    """The documented, temporary fallback for a machine with no Docker."""
+    from backend.features import sandbox
+
+    monkeypatch.setattr(filepreview, "_office_pdf", lambda *a, **k: None)
+    monkeypatch.setattr(sandbox, "image_ready", lambda *a, **k: False)
+    monkeypatch.setattr(office_render, "_docx_html", lambda data: b"<html>host</html>")
+
+    body, _ = filepreview.to_preview("r.docx", "application/octet-stream", _tiny_docx())
+
+    assert body == b"<html>host</html>"
+
+
+def test_the_archive_guard_still_runs_before_the_container(monkeypatch):
+    """A zip bomb must be refused before a container is ever started for it."""
+    from backend.features import sandbox
+
+    def _never(*_args, **_kwargs):
+        raise AssertionError("a container was started for a document the guard rejected")
+
+    monkeypatch.setattr(sandbox, "image_ready", lambda *a, **k: True)
+    monkeypatch.setattr(sandbox, "render_office_html", _never)
+    monkeypatch.setattr(filepreview, "_office_archive_issue",
+                        lambda data, name="": "Macro-enabled Office files are not converted.")
+
+    body, _ = filepreview.to_preview("r.docx", "application/octet-stream", _tiny_docx())
+
+    assert b"Macro-enabled" in body

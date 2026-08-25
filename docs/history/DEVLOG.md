@@ -4101,3 +4101,43 @@ other direction. A fourth test was left alone: `_source_html` stayed behind, so 
 read the re-exported binding.
 
 Verified: 851 tests pass, `ruff check .` is clean, and the byte-identical comparison above.
+
+## Step 187 - Office documents are parsed in the container now (August 25, 2026)
+
+The last in-process parse of untrusted documents is gone. When a DOCX, XLSX or PPTX is previewed and
+the sandbox image exists, python-docx, openpyxl and python-pptx run inside the offline container -
+no network, read-only root, non-root user, dropped capabilities, memory and PID caps - instead of
+inside the backend process with the keychain and the database connection in reach.
+
+The renderer module travels in on the read-only input mount beside the document, and the entry
+script puts `/work/input` on `sys.path` and imports it. That is the whole trick, and it is why this
+was worth doing as a move rather than a rewrite: the code that parses the document in the container
+is character-for-character the code that used to parse it on the host.
+
+Which makes the verification unusually strong. Rendering the same DOCX, XLSX and PPTX fixtures
+through the host renderer and through the container gives byte-for-byte identical HTML - not
+"looks right", not "passes the same assertions", identical. Any future divergence between the two
+paths is therefore a bug with an obvious signature.
+
+The suffix is preserved into the container because openpyxl and python-pptx dispatch on it. The stem
+is not: the file always arrives as `document.<ext>`, so a hostile filename never reaches the
+container in the first place.
+
+Failure behaviour matches the PDF renderer from Step 183. A sandbox failure produces no preview and
+an honest notice, never a host parse - falling back at exactly the moment the container broke would
+make the boundary optional for the documents most likely to break a parser. The in-process renderers
+survive only where no sandbox image exists.
+
+Two guards were checked rather than assumed. The zip-bomb and macro pre-filter still runs before a
+container is ever started, so a hostile archive is refused without spending a container on it; there
+is a test that fails if a container is started for a document the guard rejected. And an empty output
+directory raises rather than returning an empty document, because "the render did not happen" and
+"the document is blank" must not look the same.
+
+Verified: 9 new tests, all failing first, plus a live container run showing byte-identical output for
+all three formats, and a DOCX previewing as a real formatted document with LibreOffice explicitly
+disabled - which is the point of the exercise. 860 tests pass with a database, 860 with no sandbox
+image, 780 with no database at all, and `ruff check .` is clean.
+
+Still ahead in this slice: ODT/ODS/ODP through odfpy, which the image already carries, and demoting
+LibreOffice from prerequisite to enhancement in the status route and Settings.

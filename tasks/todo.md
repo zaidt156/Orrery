@@ -11,7 +11,7 @@
 
 - [x] **CHECKPOINT** — pure refactor verified before anything moves into a container.
 
-- [ ] **2. Render OOXML inside the container.** Add `sandbox.render_office_html(name, data)`: ship
+- [x] **2. Render OOXML inside the container.** Add `sandbox.render_office_html(name, data)`: ship
       `office_render.py` in as a read-only input file, `sys.path` it, run it, return the HTML as one
       output file. `to_preview` prefers the container whenever `sandbox.image_ready()`, and a
       `SandboxError` yields the inert notice — never a host parse. Host renderers remain the
@@ -21,7 +21,7 @@
       container run renders all three formats.
       *Scope:* M — 3 files + tests.
 
-- [ ] **CHECKPOINT** — the last in-process parse of untrusted Office files is gone.
+- [x] **CHECKPOINT** — the last in-process parse of untrusted Office files is gone.
 
 - [ ] **3. ODT/ODS/ODP via `odfpy`.** Already in the image, currently unused. Render in the
       container like the OOXML formats. Add the extensions to `is_office_file` and to the preview

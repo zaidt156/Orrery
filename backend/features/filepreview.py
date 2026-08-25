@@ -26,6 +26,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from backend.core import proc
+from backend.features import office_render
 from backend.features.office_render import (  # noqa: F401 - re-exported for callers/tests
     # shared with the container-side renderers; some names exist here only so existing
     # callers and tests keep reading them through `filepreview`.
@@ -716,6 +717,31 @@ def _source_html(name: str, data: bytes) -> bytes:
     return _finish_html(name, body, truncated=input_truncated or char_truncated)
 
 
+def _office_html(name: str, ext: str, data: bytes) -> bytes | None:
+    """Render an Office document to HTML, preferring the offline bounded worker.
+
+    None means "no preview": the container was available and could not render it. That is
+    deliberately not a cue to parse on the host, because the documents most likely to break a
+    parser are exactly the ones an attacker sends. The in-process renderers run only where no
+    sandbox image exists, and that fallback is explicit and temporary (PLAN.md Workstream 2).
+    """
+    from backend.features import sandbox
+
+    if sandbox.image_ready():
+        try:
+            return sandbox.render_office_html(name, data)
+        except sandbox.SandboxError:
+            log.warning("Office preview refused: the bounded worker could not render %s", ext)
+            return None
+    if ext == "pptx":
+        return office_render._pptx_html(data)
+    if ext in ("xlsx", "xlsm"):
+        return office_render._xlsx_html(data)
+    if ext == "docx":
+        return office_render._docx_html(data)
+    return None
+
+
 def to_preview(
     name: str,
     mime: str,
@@ -750,12 +776,14 @@ def to_preview(
             if rendered_pdf is not None:
                 return rendered_pdf, "text/html; charset=utf-8"
     try:
-        if ext == "pptx":
-            return _pptx_html(data), "text/html; charset=utf-8"
-        if ext in ("xlsx", "xlsm"):
-            return _xlsx_html(data), "text/html; charset=utf-8"
-        if ext == "docx":
-            return _docx_html(data), "text/html; charset=utf-8"
+        if ext in ("pptx", "docx", "xlsx", "xlsm"):
+            rendered = _office_html(name, ext, data)
+            if rendered is None:
+                return (
+                    _notice_html(name, "Preview is unavailable for this document right now."),
+                    "text/html; charset=utf-8",
+                )
+            return rendered, "text/html; charset=utf-8"
         if ext in ("csv", "tsv"):
             return _csv_html(name, data), "text/html; charset=utf-8"
         if ext in ("md", "markdown"):
