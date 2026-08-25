@@ -123,3 +123,75 @@ async def test_the_tools_are_gated_by_the_orrery_work_flag(root, monkeypatch):
 
     assert out["ok"] is False
     assert out["code"] == "feature_disabled"
+
+
+# --- running a command ----------------------------------------------------------------------------
+
+async def test_run_needs_approval_and_does_not_run_without_it(root):
+    """The gate is the whole point of routing this through the registry. Without an approval the
+    command must not have started — not "started and been reported"."""
+    out = await registry.run_tool("work_run", {"root_id": "abc", "command": "echo hello"})
+
+    assert out["ok"] is False
+    assert out["code"] == "approval_required"
+    assert "echo hello" in out["approval"]["summary"]   # the command, not "Run a tool"
+
+
+async def test_run_is_remembered_per_folder_not_as_a_blanket_grant():
+    """Approving `ls` in one folder must not pre-approve anything in another. Blanket is too broad
+    to be honest; per-command is too narrow to live with, since a build is dozens of them."""
+    from backend.features import approvals
+
+    one = approvals._remember_key("work_run", {"root_id": "folder-one", "command": "ls"})
+    two = approvals._remember_key("work_run", {"root_id": "folder-two", "command": "ls"})
+
+    assert one != two
+    assert one == approvals._remember_key("work_run", {"root_id": "folder-one", "command": "pytest"})
+
+
+async def test_run_will_not_accept_whatever_folder_happens_to_be_current(root):
+    """A remembered approval must not survive the user attaching a different folder, which is only
+    guaranteed if the dangerous tool names its boundary instead of inheriting it."""
+    out = await registry.run_tool("work_run", {"command": "echo hello"})
+
+    assert out["ok"] is False
+    assert out["code"] == "validation_failed"
+
+
+async def test_run_reports_that_it_writes_so_the_gate_applies():
+    tool = registry.get_tool("work_run")
+
+    assert tool.writes is True
+    assert tool.risk in {"external_write", "destructive"}
+    assert tool.feature_flag == "orrery_work"
+
+
+async def test_an_approved_command_actually_runs(root, monkeypatch):
+    from backend.features import approvals
+
+    async def approved(_tool, _args, _approval_id=None):
+        return {"allowed": True}
+
+    monkeypatch.setattr(approvals, "gate", approved)
+
+    out = await registry.run_tool(
+        "work_run", {"root_id": "abc", "command": "python -c \"print('ran')\""}
+    )
+
+    assert out["ok"] is True
+    assert "ran" in out["stdout"]
+    assert out["cwd"] == str(root.resolve())
+
+
+async def test_a_machine_destroying_command_is_refused_as_data(root, monkeypatch):
+    from backend.features import approvals
+
+    async def approved(_tool, _args, _approval_id=None):
+        return {"allowed": True}
+
+    monkeypatch.setattr(approvals, "gate", approved)
+
+    out = await registry.run_tool("work_run", {"root_id": "abc", "command": "rm -rf /"})
+
+    assert out["ok"] is False
+    assert "destroys the machine" in out["error"]

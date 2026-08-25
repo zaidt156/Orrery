@@ -4526,3 +4526,51 @@ enabled.
 Verified: 1012 tests pass, including the 9 root tests against a real PostgreSQL and 48 covering
 confinement, attachment and the read layer. Next: `work_run`, where the folder stops being the only
 thing that matters.
+
+## Step 198 - Running a command in the folder, and the bug that would have shipped (August 26, 2026)
+
+Slice 3: `work_run`. This is where Orrery Work stops being safe by construction, and the module says
+so at the top rather than burying it — ADR-007 is explicit that path confinement bounds where files
+are touched, not what a process may do once running. A command here has the user's privileges and
+the user's toolchain. `pip install`, `git push`, anything reaching the network: none of that is
+prevented by resolving a path.
+
+So the tests pin what is actually promised rather than pretending to promise containment. It runs in
+the root. It stops when told, and the **whole tree** stops — killing the shell and leaving its
+children is how a "stopped" command keeps writing to the user's folder minutes later, and there is a
+test that spawns a grandchild specifically to prove it dies. It stops on its own eventually. Its
+output is bounded keeping the **end** as well as the beginning, because a failing build prints
+thousands of lines and then the reason, and head-only truncation throws away the only part anyone
+wanted. Failures are data, not exceptions. And Orrery's own `DATABASE_URL` and `ORRERY_*` variables
+are scrubbed from the environment the command inherits — the user's real environment is passed on
+purpose, but Orrery being the parent process shouldn't hand its credentials to every command.
+
+**The bug.** The first version used `asyncio.create_subprocess_exec`, which is the obvious spelling,
+and every test passed. Then the full suite failed — but only when `test_workspace_roots.py` ran
+first. That file sets the Windows *Selector* event loop, matching what `app.py` does at line 15,
+because psycopg async requires it. The Selector loop does not implement subprocesses at all. So
+`work_run` raised `NotImplementedError` in the exact configuration Orrery ships in on Windows, and
+passed cleanly in isolation because pytest's default loop is a Proactor.
+
+It is worth naming what nearly happened: the tests were green, the feature was broken, and the only
+reason it surfaced was an unrelated test file changing global state before mine ran. That is luck.
+The fix is to use blocking `subprocess` in a worker thread — which is what every other CLI call in
+Orrery already does, for exactly this reason — and the regression test now runs a command on a real
+`SelectorEventLoop` rather than trusting whichever loop the runner happens to provide.
+
+**Approval granularity** was the last open question in the plan, and the answer is *per folder*.
+Blanket is too broad to be honest: approving `ls` would pre-approve `rm -rf`. Per command is too
+narrow to live with: a build is dozens of them, and a user asked thirty times stops reading. The
+folder is the unit someone actually reasoned about when they attached it. That is also why
+`work_run` requires a root id rather than accepting whatever is currently attached — a remembered
+approval must not survive the user switching folders. The approval prompt shows the command itself,
+because "Run a tool" tells nobody anything they need in order to decide.
+
+The deny-list refuses `rm -rf /`, `mkfs`, `dd` onto a disk device, fork bombs, `format C:`,
+`vssadmin delete shadows`. It is not a security boundary and does not claim to be — anyone trying
+walks past it in a second. It is for the likely case rather than the adversarial one: a model that
+has misunderstood its task and reached for something catastrophic. It is also deliberately narrow,
+because `rm -rf node_modules` is exactly what people mean, and a guard that catches real work is a
+guard people turn off.
+
+Verified: 1047 tests pass, in random order and with a live PostgreSQL. Next: writes, with the log.

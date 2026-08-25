@@ -58,6 +58,13 @@ def _remember_key(tool_key: str, args: dict) -> str:
     # MCP is remembered per server+tool, not as a blanket "all MCP" grant
     if tool_key == "mcp_call":
         return f"mcp:{args.get('server_id')}:{args.get('tool')}"
+    # Orrery Work is remembered per attached folder. Blanket-approving "run commands" is far too
+    # broad — approving `ls` would pre-approve `rm -rf`; approving per command is far too narrow to
+    # live with, since a build is dozens of them. The folder is the unit the user actually reasoned
+    # about when they attached it, which is why `work_run` requires a root_id rather than accepting
+    # "whatever is current": an approval must not survive the user switching folders.
+    if tool_key == "work_run":
+        return f"work:{args.get('root_id')}"
     return tool_key
 
 
@@ -68,6 +75,10 @@ def _summary_for(tool_key: str, label: str, args: dict) -> str:
     if tool_key == "crabbox_run":
         command = args.get("shell") or " ".join(args.get("command") or [])
         return f"Run remotely: {str(command)[:200]}"
+    if tool_key == "work_run":
+        # The command itself, because "Run a command in the attached folder" tells the user nothing
+        # they need in order to decide.
+        return f"Run in the attached folder: {str(args.get('command') or '')[:200]}"
     return f"Run {label or tool_key}"
 
 

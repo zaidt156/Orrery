@@ -15,13 +15,13 @@
       *Done when:* each reads only inside the root and refuses outside it; output is capped.
       *Scope:* M — 2 files + tests.
 
-- [ ] **3. Run a command in the root.** `work_run`: host execution, cwd pinned to the root, timeout,
+- [x] **3. Run a command in the root.** `work_run`: host execution, cwd pinned to the root, timeout,
       bounded output, cancellable, approval-gated.
       *Done when:* a command runs and returns output; cwd is the root; a timeout kills it; cancel is
       honoured at the tool boundary.
       *Scope:* M — 2 files + tests.
 
-- [ ] **CHECKPOINT** — the model can understand a folder and run things in it, and still cannot
+- [x] **CHECKPOINT** — the model can understand a folder and run things in it, and still cannot
       touch a byte outside it.
 
 - [ ] **4. Writes, with a log.** `work_write`, `work_edit` (observed-version), `work_delete`, and a

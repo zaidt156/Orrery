@@ -66,6 +66,13 @@ path. This is not convenience validation: attach `C:\` and confinement still hol
 every path resolves inside the root, every check passes — and the guarantee is emptied rather than
 weakened. `workspace.check_attachable` runs once, when the folder is chosen.
 
+**Should `work_run` require approval every time, once per root, or once per distinct command?**
+Once per root. Blanket is too broad to be honest — approving `ls` would pre-approve `rm -rf`. Per
+command is too narrow to live with, since a build is dozens of them and a user who is asked thirty
+times stops reading. The folder is the unit the user actually reasoned about when they attached it.
+This is why `work_run` *requires* a root id instead of accepting "whatever is current": a remembered
+approval must not survive the user switching folders.
+
 ## Open questions
 
-- Should `work_run` require approval every time, once per root, or once per distinct command?
+- (none open)

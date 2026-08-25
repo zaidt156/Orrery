@@ -23,7 +23,7 @@ import asyncio
 
 from pydantic import BaseModel, Field
 
-from backend.features import workspace, workspace_roots
+from backend.features import workspace, workspace_roots, workspace_run
 from backend.tools.registry import Tool, register_tool
 
 FEATURE_FLAG = "orrery_work"
@@ -95,3 +95,38 @@ class WorkGrepTool(_WorkspaceTool):
         return await asyncio.to_thread(
             workspace.grep, root, config.expression, glob=config.glob, limit=config.limit
         )
+
+
+class WorkRunConfig(BaseModel):
+    """`root_id` is required here, unlike the read tools.
+
+    Approval for running commands is remembered *per folder* (see `approvals._remember_key`), and a
+    remembered approval must not survive the user attaching a different folder. Accepting "whatever
+    is currently attached" would make that impossible to guarantee, so the dangerous tool is made to
+    name its boundary explicitly.
+    """
+
+    root_id: str = Field(min_length=1, max_length=64)
+    command: str = Field(min_length=1, max_length=10_000)
+    timeout: int = Field(default=workspace_run.DEFAULT_TIMEOUT, ge=1, le=workspace_run.MAX_TIMEOUT)
+
+
+@register_tool("work_run")
+class WorkRunTool(_WorkspaceTool):
+    """Run a command on the host, in the attached folder.
+
+    `writes` and the `external_write` risk are both deliberate. This is the tool that can change the
+    user's machine, so it goes through the approval gate every time it is not already approved for
+    that folder — and `external_write` rather than `destructive` because `destructive` can never be
+    remembered at all, which would mean approving every single step of a build. The folder is the
+    unit a user can actually reason about.
+    """
+
+    label = "Run a command in the attached folder"
+    writes = True
+    risk = "external_write"
+    config_model = WorkRunConfig
+
+    async def execute(self, config: WorkRunConfig) -> dict:
+        root = await self._root(config)
+        return await workspace_run.run_command(root, config.command, timeout=config.timeout)
