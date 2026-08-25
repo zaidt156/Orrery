@@ -367,14 +367,25 @@ Small apps receive extra controls:
 
 Generated files live under the per-user `tmp/generated` directory and expire after the configured TTL, seven days by default. File bytes are not stored in PostgreSQL.
 
-Previews render locally with Python libraries so documents look like documents even without the
-optional LibreOffice converter: PDFs rasterize to page images (QtPdf); Word previews keep run
+Previews render locally with Python libraries so documents look like documents without any office
+suite installed. Wherever the sandbox image exists that rendering happens **inside the offline
+container**, not in this process: `office_render.py` is mounted read-only into the worker and run
+there, so an attacker-supplied document is parsed with no network, a read-only root, a non-root user
+and dropped capabilities. A sandbox failure produces a notice, never a host parse. The in-process
+renderers survive only where no image exists, and OpenDocument has no host path at all — `odfpy`
+ships in the image and deliberately not on the host, so ODT/ODS/ODP are a capability the worker
+provides rather than one it merely protects.
+
+Format by format: PDFs rasterize to page images (pypdfium2 in the container, QtPdf on a host without
+one); Word previews keep run
 formatting (bold/italic/underline/color), alignment, and bounded inline images; Excel previews keep
 merged cells, cell styles, and column widths; PowerPoint previews position each shape on the slide
 with its text styling, pictures, and tables; CSV/TSV render as real tables; and Markdown renders as
-HTML with raw HTML escaped and remote image loading disabled. When LibreOffice is installed, Office
-files convert to PDF for pixel-faithful pages instead. All preview parsing runs under fixed input,
-node, cell, and output budgets.
+HTML with raw HTML escaped and remote image loading disabled; and ODT/ODS/ODP render through
+`odfpy`, with ODP as an outline per slide rather than positioned shapes. When LibreOffice is
+installed, OOXML files convert to PDF for page-faithful pages instead — an enhancement, not a
+requirement, and `office_preview_status()` reports it that way. All preview parsing runs under fixed
+input, node, cell, and output budgets.
 
 Code anchors: `backend/features/docgen.py`, `backend/features/filegen.py`, `backend/features/sandbox.py`, `backend/features/files.py`, `backend/features/filepreview.py`.
 
@@ -454,9 +465,9 @@ the versioned offline sandbox and run OCR only on pages without usable embedded 
 document work is moving behind the bounded worker one path at a time: Office ingestion is
 worker-first, and PDF page rendering for previews now runs in the container via pypdfium2, where a
 sandbox failure yields no preview rather than a host parse and the in-process QtPdf renderer
-survives only where no sandbox image exists. Still on the host: the LibreOffice conversion behind
-faithful Office previews, and the python-docx/openpyxl/python-pptx HTML renderers used when that
-conversion is unavailable.
+survives only where no sandbox image exists. Office HTML rendering moved the same way, so the only
+untrusted-document parsing left on the host is the optional LibreOffice conversion — which is a
+separate process, is never required, and is absent by default.
 
 Code anchors: `backend/features/rag.py`, `backend/features/chat/retrieval.py`, `backend/core/models.py`, `backend/core/queue.py`.
 

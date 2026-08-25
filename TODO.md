@@ -9,12 +9,11 @@ do not keep a second checklist of completed tasks here.
 
 ## P1 — bounded documents and deterministic verification
 
-- [ ] Finish moving Office preview parsing into the offline bounded document worker. Done so far:
-      DOCX/XLSX/PPTX ingestion, and PDF page rendering for previews (pypdfium2 in the container,
-      failing closed rather than falling back to a host parse). Still on the host: the LibreOffice
-      conversion, and the python-docx/openpyxl/python-pptx HTML renderers behind it.
-- [ ] Time-box the two remaining host fallbacks above, and decide whether LibreOffice belongs in
-      the sandbox image or whether container-side HTML renderers replace it entirely.
+- [ ] Decide whether LibreOffice belongs in the sandbox image. Office ingestion, PDF rasterization
+      and Office/OpenDocument HTML rendering all run in the worker now
+      ([`ADR-006`](docs/decisions/006-office-previews-without-libreoffice.md)); the only host parser
+      left is the optional LibreOffice conversion, which is a separate process and never required.
+      Adding it to the image would remove that last one at a cost of roughly 500 MB per user.
 - [ ] Extend previews to RTF. ODT/ODS/ODP now render in the bounded worker through `odfpy`; the
       earlier claim that the LibreOffice converter covered them was wrong — it is gated on OOXML,
       so an `.odt` never reached it. RTF still has no renderer anywhere.

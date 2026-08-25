@@ -41,7 +41,7 @@
 - [x] **CHECKPOINT** — fresh machine, no LibreOffice: every supported Office format previews, the
       parse happens in the container, and nothing in the UI claims something is missing.
 
-- [ ] **5. Reconcile the documents.** ARCHITECTURE.md §11 and the Office-preview section, TODO.md's
+- [x] **5. Reconcile the documents.** ARCHITECTURE.md §11 and the Office-preview section, TODO.md's
       two Workstream 2 items, PLAN.md's Workstream 2 checkpoint, and an ADR recording why the
       renderers moved rather than being rewritten. Append a DEVLOG entry.
       *Done when:* no canonical document still says Office previews need LibreOffice or that ODF is

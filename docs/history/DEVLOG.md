@@ -4214,3 +4214,32 @@ Verified: 871 backend tests, 54 UI tests, `ruff check .` clean, and the producti
 That completes the slice: on a machine with Docker and no LibreOffice, every supported Office format
 previews, the parse happens inside the container, and nothing in the interface claims something is
 missing.
+
+## Step 190 - The documents catch up, and a decision gets written down (August 25, 2026)
+
+Closing out the slice. ARCHITECTURE.md's preview section described a world where Python renderers ran
+locally "even without the optional LibreOffice converter" — true as far as it went, and now
+misleading about where that rendering happens. It says plainly that Office rendering runs inside the
+container wherever an image exists, that a worker failure yields a notice rather than a host parse,
+and that OpenDocument has no host path at all by design.
+
+PLAN.md's Workstream 2 item 1 is marked done with the date and the one honest exception: the optional
+LibreOffice conversion is still a host parser, but it is a separate process and is never required.
+That distinction matters enough to keep rather than round off.
+
+TODO.md's two entries collapse into the single decision that is actually left — whether LibreOffice
+belongs in the sandbox image, roughly 500 MB per user to remove the last host parser.
+
+`ADR-006` records the reasoning, including the alternatives that were rejected and why. Two are worth
+repeating. Parsing in the container and rendering from a structured document model on the host is
+cleaner in principle, and was rejected because it means rewriting three renderers with no visual
+regression tests, to protect HTML that is already treated as untrusted output. And adding `odfpy` to
+the host for symmetry with the OOXML fallback was rejected precisely because it is symmetry: it would
+put a new parser for a new untrusted format back into the process this work is emptying.
+
+The slice as a whole: `tasks/plan.md` had five tasks and all five are done. Office documents are
+parsed in the offline container, OpenDocument previews for the first time, and a machine with Docker
+and no LibreOffice is told its previews work — because they do.
+
+Verified: 871 backend tests, 54 UI tests, `ruff check .` clean, the bundle builds, and every
+cross-reference in PLAN.md, TODO.md and ARCHITECTURE.md resolves.

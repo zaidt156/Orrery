@@ -101,8 +101,11 @@ chains to private hosts, DNS changes, oversized bodies, and credential-bearing U
 
 This is the current priority.
 
-1. Move Office ingestion and Office/PDF preview parsing into an offline, read-only, resource-bounded
-   worker. Keep any host fallback explicit and temporary.
+1. **Done (25 August 2026).** Office ingestion, PDF page rasterization, and Office/OpenDocument HTML
+   rendering all run in the offline, read-only, resource-bounded worker. The host renderers remain
+   only where no sandbox image exists; a worker failure yields no preview rather than a host parse.
+   The one host parser left is the optional LibreOffice conversion, which is a separate process and
+   is never required — see [`ADR-006`](docs/decisions/006-office-previews-without-libreoffice.md).
 2. Split backend tests into deterministic timed groups so a slow or hung test is named immediately.
 3. Promote real-container sandbox/OCR smoke checks to repeatable CI fixtures, including encrypted,
    malformed, oversized, mixed, and multilingual documents.
