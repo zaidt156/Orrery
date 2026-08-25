@@ -161,7 +161,7 @@ async def _boot_and_serve() -> None:
     # Warm it in a worker thread so that cost is paid while the user is still looking at the
     # loading screen, instead of stalling their first request behind it.
     from backend.providers import ai as _ai
-    threading.Thread(target=_ai.warm_litellm, name="orrery-warm-models", daemon=True).start()
+    threading.Thread(target=_ai.warm_model_metadata, name="orrery-warm-models", daemon=True).start()
 
     api = create_app(SESSION_TOKEN)
     _session_code.append(api.state.session.code)

@@ -4406,3 +4406,70 @@ is not a developer, which is the difference between software that runs and softw
 
 Verified: both pages' block tags balance, both name Git and carry the no-Git path, and the 886-test
 suite is unaffected.
+
+## Step 196 - The context window was a guess, and a guess that only ever failed quietly (August 26, 2026)
+
+The user sent the current model landscape as of late August 2026 — every frontier model with its
+context window — and said, bluntly, that Orrery's track record on context handling was bad. Before
+changing anything we measured what Orrery actually reported for those models. The measurement was
+worse than the complaint:
+
+    gemini-3.7-flash        131,072   (really 1,048,576)
+    chatgpt_plan/gpt-5.6    272,000   (really 1,050,000)
+    gpt-5.4-mini            272,000   (really 400,000)
+    every local model        32,768   (whatever it really is)
+
+The cause is one line with a comment that reads reasonably and is wrong. Orrery asked litellm for
+each model's window and, when litellm didn't know, fell back to a flat 131,072 — 32,768 for local
+models. litellm's database lags new releases by months, and **its miss path is silent**. So a model
+with a million tokens of context ran as an eighth of itself and nothing anywhere said so: the
+context window is the budget history is trimmed against, so the only symptom is the assistant
+quietly forgetting things the user said earlier in the same conversation.
+
+That is the shape of every bug in this area, and it is worth naming because it decides the design:
+**understating a window is silent, overstating it is loud.** Too small and context disappears with
+no error; too large and the provider rejects the request in a way you cannot miss. So the numbers
+are now written down rather than inferred, `backend/providers/model_context.py` holds them, and
+where a vendor quotes both a native window and an extended one, the native figure is what gets
+recorded. A number in that table is a citation, not an estimate — a model whose window isn't known
+is deliberately absent, so the lookup misses and litellm still gets its turn.
+
+Four separate wrongnesses came out of the same rework:
+
+**Plan CLIs were pinned per plan, not per model.** ChatGPT plan said 272,000, which was true for
+whatever Codex ran the day the line was written and false for every release after it. It now reads
+the manifest's pin, so the number moves when the pin does. The manifest was already being kept
+current; only this line wasn't reading it.
+
+**Claude Opus 4.8 is 500K over the API and up to 1M inside Claude Code.** Orrery reported 1M for
+both. That is the loud failure mode — a direct API call asking for 800K of context gets rejected —
+and it was introduced by an earlier fix in this same area that was right about the plan route and
+wrong about the API one. The two surfaces are now answered separately.
+
+**Local models were told nothing, and Ollama assumed 2048.** This is the worst of them. Ollama's
+own default context is 2,048 tokens and it truncates above that without a word, and Orrery never
+sent `num_ctx`. So a local model answered from 2K of history no matter how carefully Orrery had
+assembled the conversation and no matter what window the UI displayed. The request now carries the
+real size — the conversation's own budget rather than the model's maximum, because `num_ctx`
+allocates a KV cache and asking for the ceiling would charge the user memory for context they
+aren't using. And the ceiling itself is no longer guessed: Ollama is asked what each installed model
+serves, since the answer belongs to the weights on disk, not to the model's name.
+
+That last one had a trap in it. A chat's window is clamped to the model's maximum with a `min()`,
+and a `min()` only ever narrows — so a conversation created on a local model *before* anything had
+asked Ollama would be pinned at 32K permanently. The startup thread that already pre-pays litellm's
+import now warms the local windows too, which closes it.
+
+**Llama 4 Scout carries 10M tokens**, an order of magnitude past everything else, and it exposed two
+places still holding the old assumption: the API validator capped `context_window` at 2,000,000, so
+it would have rejected a size `/models` had just advertised, and the UI's size selector jumped from
+1M straight to the maximum with nothing in between. Both now reach 10M. The selector's tier logic
+moved into a tested `contextTiers.js` on the way, along with a label fix — 1,048,576 was being
+rounded up to "1.1M", putting a window on screen the model does not have.
+
+MiniMax M3 was also unreachable: it has no direct provider here and OpenRouter's keep-list, which
+decides which families survive filtering, didn't include it. One tuple entry, and a test that says
+why a missing family is invisible rather than merely absent.
+
+Verified by measurement, not by assertion: all 27 routes now report exactly the windows on the
+user's list. 884 backend tests and 67 UI tests pass, ruff is clean, and the UI builds.

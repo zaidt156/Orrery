@@ -5,12 +5,17 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
+MAX_CONTEXT_WINDOW = 10_000_000
+
+
 class NewConversation(BaseModel):
     model: str
     system_prompt: str | None = None
     effort: str | None = None
-    # any size the UI offers; clamped server-side to the chosen model's real maximum
-    context_window: int = Field(default=1_000_000, ge=4_096, le=2_000_000)
+    # Any size the UI offers; clamped server-side to the chosen model's real maximum. The ceiling
+    # only has to be above the largest window any model reports (Llama 4 Scout's 10M), or the
+    # validator would reject a size /models had just advertised.
+    context_window: int = Field(default=1_000_000, ge=4_096, le=MAX_CONTEXT_WINDOW)
     project_id: str | None = None
 
 
@@ -18,7 +23,7 @@ class UpdateConversation(BaseModel):
     model: str | None = None
     system_prompt: str | None = None
     effort: str | None = None
-    context_window: int | None = Field(default=None, ge=4_096, le=2_000_000)
+    context_window: int | None = Field(default=None, ge=4_096, le=MAX_CONTEXT_WINDOW)
     project_id: str | None = None
 
 

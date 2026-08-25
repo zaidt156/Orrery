@@ -335,3 +335,97 @@ async def test_stream_chat_skips_fallback_that_cannot_fit_the_input(monkeypatch)
             pass
 
     assert calls == ["claude"]
+
+
+# --- context windows: the number history is trimmed against --------------------------------------
+#
+# `model_context_window` is not a label. It is the budget `_limit_messages` cuts the conversation
+# down to, so every wrong number here quietly costs the user context or loudly costs them the
+# request. These pin the failure modes that were actually shipping.
+
+class _StaleLitellm:
+    """litellm as it really behaves for a model newer than its database: a miss, not an error."""
+
+    def get_model_info(self, model_id):
+        raise Exception(f"This model isn't mapped yet: {model_id}")
+
+
+def test_a_known_models_window_beats_a_stale_litellm_lookup(monkeypatch):
+    """These all reported 131,072 before the table — Gemini 3.7 Flash ran as an eighth of itself,
+    and nothing in the app said so."""
+    monkeypatch.setattr(ai, "_load_litellm", _StaleLitellm)
+
+    assert ai.model_context_window("gemini/gemini-3.7-flash") == 1_048_576
+    assert ai.model_context_window("moonshot/kimi-k3") == 1_048_576
+    assert ai.model_context_window("deepseek/deepseek-v4-pro") == 1_000_000
+    assert ai.model_context_window("openai/gpt-5.6") == 1_050_000
+    assert ai.model_context_window("openai/gpt-5.4-mini") == 400_000
+
+
+def test_grok_4_6_is_half_of_grok_4_3(monkeypatch):
+    """Newest is not longest. Any scheme that read the window off a version number gets this
+    backwards, and overstating it is the failure the provider rejects."""
+    monkeypatch.setattr(ai, "_load_litellm", _StaleLitellm)
+
+    assert ai.model_context_window("xai/grok-4.6") == 500_000
+    assert ai.model_context_window("xai/grok-4.3") == 1_000_000
+
+
+def test_opus_4_8_is_500k_on_the_api_and_1m_in_claude_code(monkeypatch):
+    """The one model whose window depends on the surface it is reached through. Claiming 1M for a
+    direct API call turns a silent truncation into a rejected request."""
+    monkeypatch.setattr(ai, "_load_litellm", _StaleLitellm)
+
+    assert ai.model_context_window("anthropic/claude-opus-4-8") == 500_000
+    assert ai.model_context_window("claude_plan/opus") == 1_000_000
+
+
+def test_chatgpt_plan_reports_the_window_of_the_model_codex_runs():
+    """Pinned per-plan at 272,000, this stayed wrong for every Codex release after it was written —
+    plan users were trimmed to a quarter of their context. It now follows the manifest's pin."""
+    assert ai.model_context_window("chatgpt_plan/gpt-5.6") == 1_050_000
+    assert ai.model_context_window("chatgpt_plan/gpt-5.6-terra") == 1_050_000
+    assert ai.model_context_window("chatgpt_plan/gpt-5.5-mini") == 400_000  # its flag pins 5.4-mini
+    assert ai.model_context_window("chatgpt_plan/default") == 1_050_000     # auto → the pinned model
+
+
+def test_an_unknown_model_still_falls_back_instead_of_guessing(monkeypatch):
+    monkeypatch.setattr(ai, "_load_litellm", _StaleLitellm)
+    assert ai.model_context_window("openai/gpt-9-unannounced") == 131_072
+
+
+def test_litellm_still_answers_for_anything_the_table_does_not_list(monkeypatch):
+    """The table is an override for what litellm gets wrong, not a replacement for it."""
+    class Known:
+        def get_model_info(self, _model_id):
+            return {"max_input_tokens": 199_999}
+
+    monkeypatch.setattr(ai, "_load_litellm", Known)
+    assert ai.model_context_window("openai/gpt-4o-fictional") == 199_999
+
+
+def test_a_local_model_reports_what_ollama_actually_serves(monkeypatch):
+    """Every local model reported 32,768 whatever it was. Ollama knows the real number for the
+    weights on disk, so ask it rather than assume."""
+    monkeypatch.setattr(ai, "_ollama_context", {"qwen3.8-27b:q4_K_M": 262_144})
+    assert ai.model_context_window("ollama/qwen3.8-27b:q4_K_M") == 262_144
+
+
+def test_a_local_model_is_never_given_its_architectures_ceiling(monkeypatch):
+    """Llama 4 Scout's 10M is what the architecture permits, not what a laptop serves, and the KV
+    cache for a wrong guess comes out of the user's RAM. Unknown stays conservative here."""
+    monkeypatch.setattr(ai, "_ollama_context", {})
+    monkeypatch.setattr(ai, "_probe_ollama_context", lambda _name: None)
+    assert ai.model_context_window("ollama/llama4-scout") == 32_768
+
+
+def test_ollama_is_told_the_context_size_instead_of_defaulting_to_2048(monkeypatch):
+    """Ollama's own default is 2048 tokens and it truncates above that silently — so a local model
+    ran at 2K however much history Orrery had assembled, and however large a window the UI offered.
+    The request now carries the real size, clamped to what the model serves."""
+    monkeypatch.setattr(ai, "_ollama_context", {"llama4-scout": 131_072})
+
+    assert ai._ollama_num_ctx("ollama/llama4-scout", 65_536) == 65_536
+    assert ai._ollama_num_ctx("ollama/llama4-scout", 1_000_000) == 131_072  # clamped to what it serves
+    assert ai._ollama_num_ctx("ollama/llama4-scout", 512) == 2_048          # never below Ollama's own
+    assert ai._ollama_num_ctx("ollama/llama4-scout", None) is None          # nothing chosen → unchanged

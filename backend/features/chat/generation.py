@@ -26,6 +26,7 @@ async def _generate(
     untrusted_context: str | None = None,
     trusted_context: str | None = None,
     branch_from: uuid.UUID | None = None,
+    context_window: int | None = None,
 ) -> AsyncIterator[dict]:
     """Stream the assistant reply and persist it (saved even if the client cancels)."""
     parts: list[str] = []
@@ -50,7 +51,9 @@ async def _generate(
     log_event(_log, "chat_generate_started", model=model, rag=bool(untrusted_context), effort=gen_effort or "default")
     think = ThinkStream()  # strips provider/inline hidden reasoning; public trace is emitted separately
     try:
-        async for delta in ai.stream_chat(model, messages, formatted_prompt, gen_effort, usage_out):
+        async for delta in ai.stream_chat(
+            model, messages, formatted_prompt, gen_effort, usage_out, context_window=context_window
+        ):
             if isinstance(delta, ai.ReasoningDelta):
                 for ev in think.feed_reasoning(str(delta)):
                     yield ev

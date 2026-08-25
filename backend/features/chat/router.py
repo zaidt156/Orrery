@@ -937,7 +937,10 @@ async def _route_model_reply(
                 yield trace.summary()
             yield event
     else:
-        async for event in generation._generate(cid, model, gen_system, limited_messages, effort, rag_context, trusted_context):
+        async for event in generation._generate(
+            cid, model, gen_system, limited_messages, effort, rag_context, trusted_context,
+            context_window=context_window,
+        ):
             if "error" in event:
                 outcome = "failed"
                 yield trace.error("Generation failed", event.get("error", "The model call failed."))
@@ -1283,7 +1286,10 @@ async def regenerate(conv_id: str) -> AsyncIterator[dict]:
     yield trace.outer("Regenerating the answer", "Re-answering the last turn with the selected model.", status="running", phase="route")
     if trusted_context:
         yield trace.step("Preparing project context", "Loaded the current project's standing context and instructions.", kind="context", status="done", phase="context")
-    async for event in generation._generate(cid, model, system_prompt, messages, effort, trusted_context=trusted_context, branch_from=anchor_id):
+    async for event in generation._generate(
+        cid, model, system_prompt, messages, effort, trusted_context=trusted_context,
+        branch_from=anchor_id, context_window=context_window,
+    ):
         if event.get("done"):
             yield trace.done("Finished streaming and saved the regenerated reply.")
             yield trace.summary()

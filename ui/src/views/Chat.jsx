@@ -24,6 +24,7 @@ import Markdown from "../components/Markdown.jsx";
 import { applyActivityEvent, elapsedLabel } from "../lib/activityLog.js";
 import { isCodeImagePrompt } from "../lib/chatCommands.js";
 import { copyTextResult } from "../lib/clipboard.js";
+import { contextOptionsFor, fmtTokens, modelCtx } from "../lib/contextTiers.js";
 import {
   appendDeltaToThread,
   createClientMessage,
@@ -58,23 +59,6 @@ import {
 // Reasoning depth modes shown to the user; the stored value is the underlying effort (see backend
 // reasoning.py for the canonical mapping). Standard = "" (the provider's own default depth).
 const REASONING_MODES = [["", "Standard"], ["low", "Quick"], ["high", "Deep"], ["xhigh", "Max"]];
-// Context sizes are offered per model: standard tiers up to the model's real maximum, plus the
-// maximum itself — so a 200K model shows 32K/64K/128K/200K, never a 1M it doesn't have.
-const CONTEXT_TIERS = [32768, 65536, 131072, 262144, 524288, 1000000];
-const fmtTokens = (n) =>
-  n >= 1000000 ? `${(n / 1000000).toFixed(n % 1000000 ? 1 : 0)}M` : `${Math.round(n / 1024)}K`;
-function contextOptionsFor(maxCtx) {
-  const max = Number(maxCtx) > 0 ? Number(maxCtx) : 131072;
-  const opts = CONTEXT_TIERS.filter((t) => t < max).map((t) => [String(t), `context: ${fmtTokens(t)}`]);
-  opts.push([String(max), `context: ${fmtTokens(max)} (max)`]);
-  return opts;
-}
-const DEFAULT_CTX = 131072;
-// A model's real context window from the loaded list (the /api/models entries carry it). Used to
-// default a new chat's window to what the model actually supports instead of a blanket 1M.
-function modelCtx(list, id) {
-  return Number(list.find((m) => m.id === id)?.context_window) || DEFAULT_CTX;
-}
 
 // Turn a base64 data URL (how the composer holds a freshly attached image/PDF/office file) into a
 // blob URL so the preview pane can render the real file, not a text extract.
@@ -945,7 +929,7 @@ export default function Chat({ features = null }) {
             title="Per-chat token window, limited to what this model actually supports. Orrery reserves 25% for the reply."
           >
             {(() => {
-              const maxCtx = models.find((m) => m.id === model)?.context_window || 131072;
+              const maxCtx = modelCtx(models, model);
               const opts = contextOptionsFor(maxCtx);
               // keep the stored value selectable even if it predates the per-model limits
               if (!opts.some(([v]) => v === contextWindow)) opts.push([contextWindow, `context: ${fmtTokens(Number(contextWindow) || 0)}`]);

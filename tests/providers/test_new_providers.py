@@ -147,9 +147,13 @@ def test_provider_of_a_model_id_resolves_for_the_new_prefixes():
     assert ai.model_provider("dashscope/qwen-max") == "dashscope"
 
 
-def test_openrouter_keeps_glm_and_kimi_families():
-    assert "z-ai/" in ai._OPENROUTER_KEEP   # GLM
-    assert "moonshotai/" in ai._OPENROUTER_KEEP
+def test_openrouter_keeps_the_open_weight_frontier_families():
+    """OpenRouter is the only route Orrery has to these, so a family missing from this tuple is
+    a family the user simply cannot reach — silently, since nothing reports a filtered model."""
+    assert "z-ai/" in ai._OPENROUTER_KEEP        # GLM
+    assert "moonshotai/" in ai._OPENROUTER_KEEP  # Kimi
+    assert "minimax/" in ai._OPENROUTER_KEEP     # MiniMax M3 has no direct provider here
+    assert "meta-llama/" in ai._OPENROUTER_KEEP  # Llama 4
 
 
 @pytest.mark.anyio

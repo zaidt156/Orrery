@@ -104,3 +104,26 @@ def test_ready_event_is_set_while_running_so_it_can_never_be_the_idle_wait():
         assert orrery_app._ready.wait(timeout=5) is True  # returns instantly - never idle on this
     finally:
         orrery_app._ready.clear()
+
+
+def test_startup_warms_local_context_windows_not_just_litellm(monkeypatch):
+    """A chat's window is clamped with `min()`, and a `min()` only narrows. If nothing has asked
+    Ollama what a local model serves before the first conversation is created, that conversation is
+    pinned to the 32K default for good — so the warm thread has to cover this too, not just the
+    import cost."""
+    called = []
+    monkeypatch.setattr(ai, "warm_litellm", lambda: called.append("litellm"))
+    monkeypatch.setattr(ai, "warm_ollama_context", lambda: called.append("ollama"))
+
+    ai.warm_model_metadata()
+
+    assert called == ["litellm", "ollama"]
+
+
+def test_warming_local_context_windows_is_silent_when_ollama_is_absent(monkeypatch):
+    """Not running Ollama is the normal case for most users, not an error to report."""
+    def refuse(*_args, **_kwargs):
+        raise OSError("connection refused")
+
+    monkeypatch.setattr(ai.httpx, "get", refuse)
+    ai.warm_ollama_context()  # must not raise

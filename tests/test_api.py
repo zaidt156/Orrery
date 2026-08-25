@@ -178,10 +178,13 @@ def test_context_window_has_safe_bounds():
     assert NewConversation(model="openai/test").context_window == 1_000_000
     assert NewConversation(model="openai/test", context_window=131072).context_window == 131072
     assert NewConversation(model="openai/test", context_window=65536).context_window == 65536
+    # The ceiling has to clear the largest window any model reports, or the validator rejects a
+    # size /models had just advertised — Llama 4 Scout's 10M is the current high-water mark.
+    assert NewConversation(model="openai/test", context_window=10_000_000).context_window == 10_000_000
     with pytest.raises(ValidationError):
         NewConversation(model="openai/test", context_window=1024)  # below the floor
     with pytest.raises(ValidationError):
-        NewConversation(model="openai/test", context_window=5_000_000)  # above the ceiling
+        NewConversation(model="openai/test", context_window=11_000_000)  # above the ceiling
 
 
 def test_branding_accepts_uploaded_raster_images_only():

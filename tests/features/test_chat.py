@@ -145,11 +145,13 @@ def test_cv_request_defaults_to_pdf_and_word():
 async def test_generate_adds_markdown_format_instructions(monkeypatch):
     seen = {}
 
-    async def fake_stream_chat(model, messages, system_prompt=None, effort=None, usage_out=None):
+    async def fake_stream_chat(model, messages, system_prompt=None, effort=None, usage_out=None,
+                               *, context_window=None):
         seen["model"] = model
         seen["messages"] = messages
         seen["system_prompt"] = system_prompt
         seen["effort"] = effort
+        seen["context_window"] = context_window
         yield "ok"
 
     async def fake_persist_assistant(*args, **kwargs):
@@ -1171,3 +1173,34 @@ async def test_a_genuine_render_failure_still_says_so(monkeypatch):
 
     assert "could not create a real downloadable file" in fake_persist.text
     assert "Builder detail" in fake_persist.text
+
+
+@pytest.mark.anyio
+async def test_generate_tells_the_provider_which_context_window_this_chat_uses(monkeypatch):
+    """Local models need the number, not just the trimmed history: Ollama allocates 2048 tokens
+    unless told otherwise and truncates above it silently, so the window has to reach the provider
+    layer and not stop at the trimmer."""
+    seen = {}
+
+    async def fake_stream_chat(model, messages, system_prompt=None, effort=None, usage_out=None,
+                               *, context_window=None):
+        seen["context_window"] = context_window
+        yield "ok"
+
+    async def fake_persist_assistant(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(chat.ai, "stream_chat", fake_stream_chat)
+    monkeypatch.setattr(chat.persistence, "_persist_assistant", fake_persist_assistant)
+
+    async for _ in chat._generate(
+        uuid.UUID("00000000-0000-0000-0000-000000000001"),
+        "ollama/llama4-scout",
+        None,
+        [{"role": "user", "content": "hi"}],
+        None,
+        context_window=65_536,
+    ):
+        pass
+
+    assert seen["context_window"] == 65_536

@@ -9,7 +9,7 @@ from collections.abc import AsyncIterator
 
 import httpx
 
-from backend.providers import accounts, envelope
+from backend.providers import accounts, envelope, model_context
 from backend.security import secrets
 
 log = logging.getLogger("orrery.ai")
@@ -108,6 +108,35 @@ def warm_litellm() -> None:
     log.info("Model metadata ready (%.1fs)", time.perf_counter() - started)
 
 
+def warm_model_metadata() -> None:
+    """Everything the first request would otherwise pay for. Runs in a startup thread.
+
+    The Ollama half matters for correctness, not just latency: a chat's context window is clamped
+    to the model's maximum with a `min()`, and a `min()` only ever narrows. A conversation created
+    on a local model before anything had asked Ollama what it serves would be pinned to the
+    conservative 32K default permanently — so the answer is fetched before it can be needed.
+    """
+    warm_litellm()
+    warm_ollama_context()
+
+
+def warm_ollama_context() -> None:
+    """Cache what each installed local model can serve. Silent when Ollama isn't running."""
+    try:
+        response = httpx.get(f"{_OLLAMA_BASE}/api/tags", timeout=4)
+        response.raise_for_status()
+        names = [m["name"] for m in response.json().get("models", []) if m.get("name")]
+    except Exception as exc:  # noqa: BLE001 - no Ollama is the normal case, not a failure
+        log.debug("Ollama not reachable while warming local context windows: %s", exc)
+        return
+    for name in names:
+        if name in _ollama_context:
+            continue
+        length = _probe_ollama_context(name)
+        if length:
+            _ollama_context[name] = length
+
+
 def model_provider(model_id: str) -> str:
     """The canonical provider a model id belongs to (from its routing prefix)."""
     if model_id.startswith("claude_plan/"):
@@ -130,12 +159,12 @@ def model_provider(model_id: str) -> str:
     return "openai"
 
 
-# Context-window sizes for routes litellm can't look up. Plan CLIs run the provider's standard
-# context; explicit "[1m]" plan variants opt into long context. Local/custom fallbacks stay
-# conservative — this is the history budget Orrery trims to, so overstating it makes models
-# silently lose context.
+# Last-resort context windows, used only when neither `model_context` nor litellm knows a model.
+# A plan CLI's number is the floor for its route: a plan variant that names a real model gets that
+# model's window instead (see `_plan_cli_window`), which is what stops these from going stale the
+# way `chatgpt_plan` did — pinned at 272,000 through every Codex release after it was written.
 _PLAN_CONTEXT: dict[str, int] = {
-    "claude_plan": 200_000,
+    "claude_plan": 200_000,   # Claude Code's standard tier; "[1m]" variants opt into long context
     "chatgpt_plan": 272_000,
     "gemini_plan": 1_048_576,
 }
@@ -159,12 +188,17 @@ def supports_1m_context(model_id: str) -> bool:
     return any(bare.startswith(p) for p in _ANTHROPIC_1M_PREFIXES)
 
 
-def _claude_plan_flag(model_id: str) -> str:
+def _plan_flag(plan: str, model_id: str) -> str:
+    """The real model a plan variant runs, or "" for the plan's own auto/adaptive route."""
     from backend.providers import manifest
-    for vid, _label, flag in manifest.variants("claude_plan"):
+    for vid, _label, flag in manifest.variants(plan):
         if vid == model_id:
             return flag or ""
     return ""
+
+
+def _claude_plan_flag(model_id: str) -> str:
+    return _plan_flag("claude_plan", model_id)
 
 
 def plan_long_context_model(model_id: str, context_window: int | None) -> str:
@@ -184,7 +218,18 @@ def plan_long_context_model(model_id: str, context_window: int | None) -> str:
 
 
 def model_context_window(model_id: str) -> int:
-    """Max usable context for a model, so the UI only offers sizes the model actually has."""
+    """Max usable context for a model, so the UI only offers sizes the model actually has.
+
+    Resolution order, and why it is that order:
+
+    1. **Plan CLIs** run whatever model the manifest pins, so ask about that model, not the plan.
+    2. **Local models** are whatever Ollama actually loaded, which only Ollama can answer.
+    3. **`model_context`**, the curated table — ahead of litellm because litellm's database lags
+       new releases and misses *silently*, which is how a 1M model came to run as an eighth of
+       itself with nothing anywhere reporting it.
+    4. **litellm**, still the answer for everything the table doesn't list.
+    5. A conservative default, which is a guess and is treated as one.
+    """
     provider = model_provider(model_id)
     if provider == "claude_plan":
         # 1M-capable plan models (Opus/Sonnet/Fable) expose the full window from a single entry; Orrery
@@ -194,17 +239,103 @@ def model_context_window(model_id: str) -> int:
         flag = _claude_plan_flag(model_id)
         return _1M if ("[1m]" in flag or supports_1m_context(flag.replace("[1m]", ""))) else _PLAN_CONTEXT[provider]
     if provider in _PLAN_CONTEXT:
-        return _PLAN_CONTEXT[provider]
+        return _plan_cli_window(provider, model_id)
+    if provider == "ollama":
+        return _ollama_window(model_id)
+
+    known = model_context.lookup(model_id)
+    if known:
+        return known
     if provider == "anthropic" and supports_1m_context(model_id):
         return _1M  # stream_chat sends the context-1m beta header for these
     try:
         info = _load_litellm().get_model_info(model_id)
-        known = int(info.get("max_input_tokens") or info.get("max_tokens") or 0)
-        if known > 0:
-            return known
+        found = int(info.get("max_input_tokens") or info.get("max_tokens") or 0)
+        if found > 0:
+            return found
     except Exception:  # noqa: BLE001 — unknown to litellm → conservative fallback below
         pass
-    return _LOCAL_DEFAULT_CONTEXT if provider in ("ollama", "custom") else _DEFAULT_CONTEXT
+    return _LOCAL_DEFAULT_CONTEXT if provider == "custom" else _DEFAULT_CONTEXT
+
+
+def _plan_cli_window(plan: str, model_id: str) -> int:
+    """A plan CLI's window is its *model's* window.
+
+    ChatGPT plan was pinned at a flat 272,000, so every Codex release after that line was written
+    trimmed plan users to a fraction of their real context — silently, because a too-small budget
+    just drops history. Reading the manifest's pin means the number moves when the pin does.
+    """
+    flag = _plan_flag(plan, model_id)
+    if not flag:  # the auto/adaptive route runs whatever the CLI's current pin is
+        from backend.providers import manifest
+        flag = str(manifest.value(plan, "codex_latest_pinned_model") or "")
+    return model_context.lookup(flag) or _PLAN_CONTEXT[plan]
+
+
+# What Ollama says each local model can serve, keyed by the tag Orrery routes to
+# ("llama4-scout:q4_K_M"). No table can answer this: the window belongs to the weights on disk and
+# the quantisation the user pulled, not to the model's name. Ollama knows, so Ollama is asked.
+_ollama_context: dict[str, int] = {}
+_OLLAMA_MIN_CTX = 2_048  # Ollama's own default — never ask it for less than it would have used
+
+
+def _ollama_window(model_id: str) -> int:
+    name = model_id.split("/", 1)[-1]
+    served = _ollama_context.get(name)
+    if served:
+        return served
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        # No loop → a worker thread, which is where /models resolves these. Safe to block briefly.
+        served = _probe_ollama_context(name)
+        if served:
+            _ollama_context[name] = served
+            return served
+    # Still unknown, and a guess is not free here: `num_ctx` allocates a KV cache out of the user's
+    # RAM, and Llama 4 Scout's 10M is an architecture ceiling no laptop serves. Stay conservative —
+    # this is the one route where understating is the safer error.
+    return _LOCAL_DEFAULT_CONTEXT
+
+
+def _context_length_from_show(payload: dict) -> int | None:
+    """Ollama reports the window under an architecture-prefixed key, e.g. `llama.context_length`."""
+    info = payload.get("model_info") or {}
+    for key, value in info.items():
+        if key == "context_length" or key.endswith(".context_length"):
+            try:
+                length = int(value)
+            except (TypeError, ValueError):
+                continue
+            if length > 0:
+                return length
+    return None
+
+
+def _probe_ollama_context(name: str) -> int | None:
+    try:
+        response = httpx.post(f"{_OLLAMA_BASE}/api/show", json={"model": name}, timeout=4)
+        response.raise_for_status()
+        return _context_length_from_show(response.json())
+    except Exception as exc:  # noqa: BLE001 — Ollama not running is normal, not an error
+        log.debug("Could not read Ollama's context length for %s: %s", name, exc)
+        return None
+
+
+def _ollama_num_ctx(model_id: str, context_window: int | None) -> int | None:
+    """The context size to hand Ollama for one request, or None to leave its default alone.
+
+    Ollama's default is 2048 tokens and it truncates above that without saying so — so a local model
+    answered from 2K of history however much Orrery had carefully assembled, and whatever window the
+    UI offered. Sending the number closes the gap between what Orrery thinks it sent and what the
+    model actually read.
+
+    It is the *conversation's* budget, not the model's maximum, because `num_ctx` allocates a KV
+    cache: asking for the ceiling would charge the user memory for context they aren't using.
+    """
+    if not context_window:
+        return None
+    return max(_OLLAMA_MIN_CTX, min(int(context_window), _ollama_window(model_id)))
 
 
 # --- live model discovery ---
@@ -274,10 +405,33 @@ async def _fetch_ollama() -> list[dict]:
         r = await c.get(f"{_OLLAMA_BASE}/api/tags")
         r.raise_for_status()
         models = r.json().get("models", [])
+        # Ask each model what context it serves while we're already here and already async. Without
+        # this the answer is only available to callers running off the event loop, and a chat
+        # created before the first /models call would be clamped to the conservative local default
+        # for good — `conversations` only ever narrows the window, never widens it.
+        await _warm_ollama_context(c, [m["name"] for m in models if m.get("name")])
     return [
         {"id": f"ollama/{m['name']}", "label": f"{m['name']} (local)", "provider": "ollama"}
         for m in models
     ]
+
+
+async def _warm_ollama_context(client: httpx.AsyncClient, names: list[str]) -> None:
+    async def one(name: str) -> None:
+        if name in _ollama_context:
+            return  # a model's window doesn't change under it; one answer is enough
+        try:
+            r = await client.post(f"{_OLLAMA_BASE}/api/show", json={"model": name})
+            r.raise_for_status()
+            length = _context_length_from_show(r.json())
+        except Exception as exc:  # noqa: BLE001 — a model that won't describe itself just stays unknown
+            log.debug("Could not read Ollama's context length for %s: %s", name, exc)
+            return
+        if length:
+            _ollama_context[name] = length
+
+    if names:
+        await asyncio.gather(*(one(n) for n in names))
 
 
 # --- curation: ~4 latest models per provider, always incl. a reasoning model ---
@@ -531,7 +685,7 @@ def _curate_passthrough(items: list[dict]) -> list[dict]:
 # OpenRouter aggregates hundreds of models; keep popular providers' chat models and cap the list so
 # the picker/catalog stays usable. litellm routes "openrouter/<id>" natively with the OpenRouter key.
 _OPENROUTER_KEEP = ("anthropic/", "openai/", "google/", "meta-llama/", "mistralai/", "deepseek/",
-                    "qwen/", "x-ai/", "z-ai/", "moonshotai/", "cohere/")
+                    "qwen/", "x-ai/", "z-ai/", "moonshotai/", "cohere/", "minimax/")
 
 
 async def _fetch_openrouter(key: str) -> list[dict]:
@@ -838,6 +992,8 @@ async def _stream_chat_once(
     system_prompt: str | None = None,
     effort: str | None = None,
     usage_out: dict | None = None,
+    *,
+    context_window: int | None = None,
 ) -> AsyncIterator[str]:
     """Yield assistant text deltas; raises MissingKeyError if the provider key is missing.
 
@@ -934,6 +1090,9 @@ async def _stream_chat_once(
             kwargs["extra_headers"] = {"anthropic-beta": "context-1m-2025-08-07"}
         if provider == "ollama":
             kwargs["api_base"] = _OLLAMA_BASE
+            num_ctx = _ollama_num_ctx(model_id, context_window)
+            if num_ctx:
+                kwargs["num_ctx"] = num_ctx  # litellm passes this into Ollama's `options`
             from backend.features import local_models
             if not await local_models.is_running():
                 raise RuntimeError(
@@ -1006,6 +1165,8 @@ async def stream_chat(
     system_prompt: str | None = None,
     effort: str | None = None,
     usage_out: dict | None = None,
+    *,
+    context_window: int | None = None,
 ) -> AsyncIterator[str]:
     """Stream one route, retrying one enabled cross-provider route on an early limit failure.
 
@@ -1016,7 +1177,9 @@ async def stream_chat(
     """
     emitted = False
     try:
-        async for delta in _stream_chat_once(model_id, messages, system_prompt, effort, usage_out):
+        async for delta in _stream_chat_once(
+            model_id, messages, system_prompt, effort, usage_out, context_window=context_window
+        ):
             emitted = True
             yield delta
         return
@@ -1042,7 +1205,9 @@ async def stream_chat(
         usage_out.clear()
         usage_out.update({"fallback_from": model_id, "fallback_to": fallback_model})
     try:
-        async for delta in _stream_chat_once(fallback_model, messages, system_prompt, effort, usage_out):
+        async for delta in _stream_chat_once(
+            fallback_model, messages, system_prompt, effort, usage_out, context_window=context_window
+        ):
             yield delta
     except MissingKeyError:
         raise
