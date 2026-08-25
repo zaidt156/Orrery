@@ -1,41 +1,41 @@
-# Automation approval pause/resume — task list
+# Orrery Work — task list
 
-**Blocked:** Task 3 needs the resume-strategy decision in `tasks/plan.md` (Open questions).
-Tasks 1, 2, 4 and 5 do not.
+- [ ] **1. Workspace roots and path confinement.** A `WorkspaceRoot` table (owner-scoped, one
+      attached folder, cascade-safe) and `resolve_in_root()`: resolve the real path, reject anything
+      that leaves the root. Symlinks and junctions resolved *before* the check, `..` traversal,
+      absolute paths outside the root, and Windows device paths all refused.
+      *Done when:* abuse tests pass for symlink escape, junction escape, `..`, absolute outside,
+      device path, and a case-differing path on Windows — all written before any tool uses it.
+      *Scope:* M — 3 files + tests.
 
-- [ ] **1. `WorkflowApproval` table + migration.** Mirror `AgentApproval`: run id (cascade), owner,
-      tool key, risk, `action_digest`, serialized action, status, `expires_at`, `decided_at`,
-      `decided_by`. A status check constraint and an owner+status index, as the agent table has.
-      *Done when:* migration runs clean on an existing database; a row survives a restart.
-      *Scope:* S — 2 files + tests.
+- [ ] **CHECKPOINT** — confinement is attacked and holds before a single tool can call it.
 
-- [ ] **2. The engine parks the run instead of failing it.** When `run_tool` returns
-      `approval_required`, write a `WorkflowApproval`, record the step as `awaiting_approval`, and
-      leave the run `awaiting_approval` rather than `failed`. Ungated runs must be untouched.
-      *Done when:* a gated node parks the run and creates exactly one approval row; the Step 176
-      regression test still passes for genuinely refused (not gated) calls.
+- [ ] **2. Read tools.** `work_read`, `work_glob`, `work_grep`, registered in the tool registry,
+      every path through `resolve_in_root`, bounded output.
+      *Done when:* each reads only inside the root and refuses outside it; output is capped.
       *Scope:* M — 2 files + tests.
 
-- [ ] **CHECKPOINT** — a gated node parks; nothing regresses for ordinary runs.
-
-- [ ] **3. Resume.** Replay completed steps' outputs, skip their execution, continue from the parked
-      node with the approval consumed single-use. Refuse to resume when any replayed output was
-      clipped — `_record_step` stores `json.dumps(...)[:20_000]` for the debug view, so it cannot
-      faithfully reconstruct a large output, and feeding a truncated value downstream is worse than
-      declining. Needs the decision in plan.md first.
-      *Done when:* a paused run resumes to completion; effectful nodes run exactly once; a run with a
-      clipped output refuses to resume and says why.
+- [ ] **3. Run a command in the root.** `work_run`: host execution, cwd pinned to the root, timeout,
+      bounded output, cancellable, approval-gated.
+      *Done when:* a command runs and returns output; cwd is the root; a timeout kills it; cancel is
+      honoured at the tool boundary.
       *Scope:* M — 2 files + tests.
 
-- [ ] **CHECKPOINT** — resume is correct or it declines; it never replays truncated data.
+- [ ] **CHECKPOINT** — the model can understand a folder and run things in it, and still cannot
+      touch a byte outside it.
 
-- [ ] **4. API.** Authenticated, owner-scoped: list pending approvals for a run, decide one, and
-      dispatch the resume. Claim the approval in a transaction before dispatching so two resumes
-      cannot race.
-      *Scope:* S/M — 2 files + tests.
+- [ ] **4. Writes, with a log.** `work_write`, `work_edit` (observed-version), `work_delete`, and a
+      `WorkspaceWrite` table recording root, path, action and digests.
+      *Done when:* an edit against a stale digest is refused; every mutation appears in the log with
+      before/after digests.
+      *Scope:* M — 3 files + tests.
 
-- [ ] **5. Automations UI.** Surface a parked run and its pending decision, and let the user answer.
-      `listToolApprovals` already exists in `ui/src/lib/api.js` with zero callers.
-      *Scope:* M — 2 files + tests.
+- [ ] **CHECKPOINT** — writes land, and there is a record of every one.
 
-- [ ] **CHECKPOINT** — a gated workflow can be approved and finished from the screen it ran on.
+- [ ] **5. Plan mode.** In Orrery Work the model returns a plan first; no tool runs until it is
+      accepted.
+      *Scope:* M.
+
+- [ ] **6. The Orrery Work screen.** Attach a folder, see the plan, watch the steps, see what
+      changed, stop it.
+      *Scope:* L.
