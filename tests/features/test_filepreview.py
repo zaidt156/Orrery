@@ -11,7 +11,7 @@ from docx import Document
 from docx.shared import Pt
 from openpyxl import Workbook
 
-from backend.features import filepreview
+from backend.features import filepreview, office_render
 
 # QtPdf needs system graphics libraries (libGL, fontconfig, ...) that a headless Linux box may not
 # have. `pdf_renderer_available()` is the same check the app uses, so a skip here means the renderer
@@ -327,7 +327,7 @@ def test_xlsx_fallback_bounds_cells_and_shows_truncation(monkeypatch):
     stream = io.BytesIO()
     workbook.save(stream)
     monkeypatch.setattr(filepreview, "_office_pdf", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(filepreview, "_MAX_OFFICE_CELLS", 4)
+    monkeypatch.setattr(office_render, "_MAX_OFFICE_CELLS", 4)
 
     content, media = filepreview.to_preview("wide.xlsx", "application/vnd.openxmlformats", stream.getvalue())
 
@@ -356,7 +356,7 @@ def test_docx_fallback_bounds_nodes_and_output(monkeypatch):
     stream = io.BytesIO()
     document.save(stream)
     monkeypatch.setattr(filepreview, "_office_pdf", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(filepreview, "_MAX_OFFICE_NODES", 3)
+    monkeypatch.setattr(office_render, "_MAX_OFFICE_NODES", 3)
     monkeypatch.setattr(filepreview, "_MAX_PREVIEW_OUTPUT_BYTES", 6_000)
 
     content, media = filepreview.to_preview("large.docx", "application/vnd.openxmlformats", stream.getvalue())

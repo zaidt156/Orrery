@@ -1,96 +1,102 @@
-# Plan — bring the published site back in line with how Orrery actually works
+# Plan — Office previews without LibreOffice
 
-**Status:** planned, not implemented. **Scope:** `docs/index.html` (landing page) and
-`docs/guide.html` (user guide), both served by GitHub Pages from `main`.
+**Status:** planned, not implemented. **Scope:** `backend/features/filepreview.py`,
+`backend/features/sandbox.py`, a new `backend/features/office_render.py`,
+`backend/api/routes_files.py`, and the Settings preview panel.
 
 ## Why
 
-The site describes a product that no longer exists in three places, and one of those breaks is mine:
-renaming the README's `## Install And Run` to `## Install` left the landing page pointing at
-`https://github.com/zaidt156/Orrery#install-and-run`, an anchor that no longer resolves.
+Three separate problems share one cause, and none of them is really about LibreOffice.
 
-The other two predate this session. The site leads with **Download** — a nav item, a hero button to
-`/releases/latest`, and three cards offering "Windows releases" and "macOS previews" — but the
-installers were deleted with the desktop shell, so the primary call to action points at packages
-that are not published. Meanwhile the guide still teaches the eight-command setup (venv, `npm
-install`, `npm run build`, `docker compose up`, `docker build`) that is now a single line, because
-Orrery builds its own bundle and provisions PostgreSQL itself on first run.
+**The parse runs in this process.** When LibreOffice is absent — the default on a fresh machine —
+DOCX/XLSX/PPTX previews are produced by python-docx, openpyxl and python-pptx running inside the
+backend, with the keychain, the database connection and the user's files in reach. That is the last
+in-process parse of untrusted documents, and PLAN.md Workstream 2's checkpoint fails on it.
 
-Two smaller claims have also gone stale and are worth correcting while the files are open, because
-both understate the project:
+**ODF does not work at all.** TODO.md says ODT/ODS/ODP are covered by "the optional LibreOffice
+converter". They are not: `to_preview` gates the converter on `ext in ("pptx","docx","xlsx","xlsm")`,
+so an `.odt` never reaches it and falls through to "Preview unavailable for this file type" whether
+LibreOffice is installed or not.
 
-- the landing page lists "Automation APIs and editor wiring" as planned, but the Workflow API now
-  exists — only canvas editing is missing;
-- it says "Central Chat approvals, outage-safe authorization, redirect SSRF, and URL-secret
-  handling remain P0 work", which DEVLOG Steps 151–152 closed. `TODO.md` no longer has a P0 section
-  at all.
+**The product implies LibreOffice is required.** `office_preview_status()` reports
+`available: false` without it, and Settings offers to install it. A user reads that as "previews are
+broken until you install a 500 MB office suite", when in fact previews work — just through a
+different renderer.
 
-## Constraints
+The sandbox image already carries `python-docx`, `openpyxl`, `python-pptx`, `odfpy`, `lxml` and
+`Pillow`. Everything needed is present; nothing new has to be installed anywhere.
 
-- Polish, not redesign: existing markup, classes, fonts and CSS stay as they are.
-- Nothing may claim a capability that does not exist. Automations canvas editing and Media Hub are
-  incomplete and must stay labelled as such.
-- Every internal link must resolve after the change.
+## Architecture decisions
 
-## Dependency order
+**Move the existing renderers, do not rewrite them.** The alternative — parsing in the container and
+emitting a structured JSON document model for the host to render — is cleaner on paper and much
+riskier here: it means rewriting all three renderers with no visual regression tests to catch a
+slip. Running the *same code* in a different place changes the privileges without changing a byte of
+output.
 
-`README.md` is the source the site links into, and it is already correct. So the site work has no
-upstream dependency and the two files are independent of each other — but the landing page sets the
-vocabulary ("Install", not "Download"), so it goes first and the guide follows it.
+**The byte-identical guard.** Because it is the same code, a test can render a fixture through the
+host path and the container path and assert the HTML is byte-for-byte identical. That is a stronger
+regression guard than any screenshot comparison, and it is what makes this refactor safe to do in
+one pass. If the outputs ever diverge, the test says so immediately.
 
-## Tasks
+**Generated HTML is already untrusted output.** Building preview HTML inside the container does not
+weaken anything: the result is served from `/artifacts/` under a CSP into a sandboxed iframe, which
+is exactly how it is treated today.
 
-### 1. Landing page: replace Download with Install
+**A sandbox failure means no preview.** Same rule as the PDF renderer (Step 183). Falling back to a
+host parse precisely when the container broke would make the boundary optional for the documents
+most likely to break a parser.
 
-Vertical slice — nav, hero, and section together, so the page is never half-renamed.
+**LibreOffice stays, demoted.** It is not removed — where it happens to be installed it still gives
+page-faithful output, and ripping it out would be a regression for those users. What changes is that
+its absence stops being reported as a fault. It becomes an optional enhancement, not a prerequisite.
 
-- Nav `Download` → `Install`, `href="#download"` → `href="#install"`; section `id` renamed to match.
-- Hero primary button `Latest release` → `Install Orrery`, pointing at `#install` rather than
-  `/releases/latest`.
-- Replace the three release cards with the actual install: the one-line command, and a short note
-  that the first run builds the workspace and starts PostgreSQL for you.
-- Fix the dead anchor: `…/Orrery#install-and-run` → `…/Orrery#install`.
+## Dependency graph
 
-**Acceptance:** no link on the page resolves to `/releases`; `#install` exists and every in-page
-`href="#…"` matches a real section id; the one-line command appears exactly as in the README.
-**Verify:** extract every `href` and assert internal anchors have matching ids and no `/releases`
-remains; diff the command string against the README.
+```
+sandbox image  (python-docx, openpyxl, python-pptx, odfpy, lxml, Pillow — all present)
+      │
+      └── office_render.py         pure renderers, no host-only imports        [Task 1]
+              │
+              ├── sandbox.render_office_html()  +  to_preview prefers it       [Task 2]
+              │
+              ├── ODF renderers via odfpy                                      [Task 3]
+              │
+              └── status / Settings: LibreOffice becomes optional              [Task 4]
+```
 
-### 2. Landing page: correct the two stale claims
+## Task list
 
-- "In progress" card: Automations is *canvas editing*, not "Automation APIs and editor wiring".
-- Security card: replace the "remain P0 work" sentence with what is now true, sourced from
-  `TODO.md` rather than written from memory.
+### Phase 1: Foundation
+- Task 1: Extract the renderers into `office_render.py` (no behaviour change)
 
-**Acceptance:** no sentence on the page contradicts `TODO.md` or `ARCHITECTURE.md`.
-**Verify:** read both against the page; confirm `TODO.md` has no P0 section.
+### Checkpoint: Foundation
+- 851 backend tests still pass; `to_preview` output unchanged
 
-### 3. Guide: rewrite §02 "Installing it" around the one-line install
+### Phase 2: Move the parse
+- Task 2: Render OOXML in the container, with the byte-identical guard
 
-- Replace the eight-command block with `git clone … && cd Orrery && pip install -e . && orrery`.
-- Say plainly what the first run does for you (builds the workspace bundle once, starts Docker and
-  PostgreSQL, opens the browser) — this is the part that makes the single command believable.
-- Keep the launch-code paragraph; it is still accurate.
-- "Prefer not to use a terminal?" — keep it honest: portable packages can be built from the repo
-  but none are published, so the command is the supported path.
+### Checkpoint: Move the parse
+- Same HTML from both paths; a sandbox failure yields a notice, not a host parse
 
-**Acceptance:** the guide's install matches the README's; no step the app now performs itself is
-still asked of the reader.
-**Verify:** compare the guide's command to the README's character for character.
+### Phase 3: Coverage and honesty
+- Task 3: ODT/ODS/ODP via `odfpy`, in the container
+- Task 4: Demote LibreOffice from prerequisite to enhancement
 
-### 4. Guide: check the rest of the walkthrough against reality
+### Checkpoint: Complete
+- A machine with no LibreOffice previews every supported Office format, in the container,
+  and Settings says nothing is missing
 
-Sections 03–12 were not part of this change but were written before it. Read them and correct only
-what is now false (for example anything implying a separate window or a manual database step).
+## Risks and mitigations
 
-**Acceptance:** no remaining reference to installing a window, or to setup steps the app performs.
-**Verify:** grep the guide for `window`, `install`, `docker`, `npm`.
+| Risk | Impact | Mitigation |
+|---|---|---|
+| Silent visual regression in the extracted renderers | High | Byte-identical host-vs-container test on real fixtures; extraction is a pure move with no edits |
+| Container start latency on every preview (~1–2s) | Medium | Keep the existing in-flight dedup and converted-PDF cache; measure before optimising |
+| `_PreviewBudget` and the `_MAX_OFFICE_*` caps are shared with host-side code | Medium | Move them into `office_render.py` and re-export from `filepreview` so existing callers are untouched |
+| A machine with no Docker loses Office previews entirely | Medium | Keep the host renderers as the documented, explicit no-image fallback — the same shape as the PDF renderer |
+| ODF fidelity is poor enough to be worse than nothing | Low | Ship ODT first, judge the output, and only then decide on ODS/ODP |
 
-## Checkpoint
+## Open questions
 
-After tasks 1–2, confirm the landing page renders and links resolve before touching the guide.
-After 3–4, re-read both pages end to end as a new user would.
-
-## Out of scope
-
-Redesign, new sections, a published package on PyPI, and anything about the workspace-folder agent.
+- None blocking. LibreOffice's fate was decided: keep it working where present, stop requiring it.

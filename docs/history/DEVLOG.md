@@ -4060,3 +4060,44 @@ the fixture and watching the test fail, then restoring it and watching it pass.
 Verified: 851 tests pass with the sandbox image present and 851 with it absent - the CI condition,
 reproduced locally by pointing `ORRERY_DOCKER` at a binary that is not Docker. `ruff check .` is
 clean.
+
+## Step 186 - The Office renderers move out of the backend process (August 25, 2026)
+
+Groundwork, with no behaviour change: the DOCX, XLSX and PPTX HTML renderers now live in
+`backend/features/office_render.py` instead of inside `filepreview`. Nothing about the output
+changed. The point is that the module has no host-only imports, so the same file can be mounted into
+the offline container and run there - which is the next step, and the reason for this one.
+
+The user asked for Office previews that work without LibreOffice. That turns out to be three
+problems wearing one coat: the renderers that run when LibreOffice is absent parse untrusted
+documents inside the backend process; ODT/ODS/ODP do not preview at all, whatever TODO.md claimed
+about the converter covering them; and the product reports a missing LibreOffice as a fault when
+previews in fact work without it. The sandbox image already carries python-docx, openpyxl,
+python-pptx, odfpy, lxml and Pillow, so nothing new has to be installed anywhere. `tasks/plan.md`
+has the slice order.
+
+Two things are worth recording about the extraction itself.
+
+The dependency closure was computed rather than guessed - walking the syntax tree from the three
+renderers to every module-level name they reach, transitively. That produced thirty-six definitions,
+including shared HTML helpers (`_page`, `_finish_html`, `_notice_html`) that CSV, Markdown and source
+previews also use. Those move too and are re-exported, so no caller outside changes.
+
+And the move was verified by comparing against itself. Because it is the same code, the pre-refactor
+module can be loaded straight out of git and asked to render the same fixtures: DOCX, XLSX and PPTX
+all come back byte-for-byte identical. That is a stronger guarantee than reading the diff, and it is
+what makes moving nearly four hundred lines safe without a single visual regression test.
+
+Two harness traps caught while building that check, both worth remembering. `git show` through
+`subprocess.run(text=True)` decodes with the system codepage, which on Windows mangled a `·` in the
+old source and produced a difference that did not exist. And LibreOffice is installed on this
+machine, so every fixture short-circuited into the PDF path and tested none of the moved code until
+`_office_pdf` was stubbed out. A comparison that runs the wrong path proves nothing, quietly.
+
+Three tests needed repointing. They shrink a cap - `_MAX_OFFICE_NODES`, `_MAX_OFFICE_CELLS` - to
+force truncation, and the cap now lives in the new module; patching the re-exported name on
+`filepreview` would not reach the renderer that reads it. The same importer trap as Step 182, in the
+other direction. A fourth test was left alone: `_source_html` stayed behind, so it genuinely does
+read the re-exported binding.
+
+Verified: 851 tests pass, `ruff check .` is clean, and the byte-identical comparison above.
