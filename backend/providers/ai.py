@@ -145,7 +145,13 @@ _1M = 1_000_000
 
 # Anthropic models with long-context support: 1M on the API via the context-1m beta header, and on
 # the Claude CLI plan via the "[1m]" model suffix. Prefix-matched on the bare model name.
-_ANTHROPIC_1M_PREFIXES = ("claude-sonnet-4", "claude-sonnet-5", "claude-opus-4-8", "claude-fable-5")
+# Every current Anthropic model except Haiku carries a 1M window. Opus 5 was missing here, so a
+# plan user picking Opus was silently capped at the 200K standard tier.
+_ANTHROPIC_1M_PREFIXES = (
+    "claude-sonnet-4", "claude-sonnet-5",
+    "claude-opus-4-6", "claude-opus-4-7", "claude-opus-4-8", "claude-opus-5",
+    "claude-fable-5", "claude-mythos-5",
+)
 
 
 def supports_1m_context(model_id: str) -> bool:

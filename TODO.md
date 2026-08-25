@@ -1,6 +1,6 @@
 # Orrery TODO
 
-Last reconciled with executable code: **24 August 2026**.
+Last reconciled with executable code: **25 August 2026**.
 
 This file contains unfinished work only. Product direction and ordering live in [`PLAN.md`](PLAN.md),
 implemented behavior lives in [`ARCHITECTURE.md`](ARCHITECTURE.md), and completed work lives in the

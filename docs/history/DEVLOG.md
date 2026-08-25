@@ -4280,3 +4280,35 @@ external optional one is the same trade OOXML makes.
 
 Verified: 5 new tests, 876 backend tests, 54 UI tests, `ruff check .` clean, and a real ODT still
 previews end to end through the guard. CI run #27 was green for the slice this reviewed.
+
+## Step 192 - Plan users were stuck on the previous Opus (August 25, 2026)
+
+The user reported that the provider model lists were still on old models. Step 175 had reviewed the
+catalogues and concluded they were fine, and for API-key users that was true: those are fetched live
+and curated per tier, so a new flagship appears on its own.
+
+The subscription path is not fetched live. It reads a curated list from `model_manifest.json`, and
+that list had `claude_plan/opus` pinned to `claude-opus-4-8`. Opus 5 was not offered at all. Step 175
+looked at the curators and never looked at the manifest, which is exactly where a hand-maintained
+list goes stale.
+
+Two things were wrong beyond the pin. `_ANTHROPIC_1M_PREFIXES` did not include `claude-opus-5`, so
+even after the pin was corrected a plan user picking Opus would have been silently capped at the
+200K standard tier instead of its real 1M window; Opus 4.6 and 4.7 were missing from that list too.
+And the Haiku label said only "Haiku" while every other entry named its version, which is the small
+inconsistency that lets this drift go unnoticed — a test now asserts every label names the version
+it pins, so the next mismatch fails rather than sits there.
+
+The ChatGPT and Gemini entries are deliberately untouched. `gpt-5.6` sol/terra/luna postdates what I
+can verify, the Codex CLI exposes no model-listing command, and inventing OpenAI model IDs from a
+stale prior would make the list worse rather than better. That gap needs the user or a live source.
+
+One mistake caught before it shipped. Both CLIs on this machine are newer than the manifest's
+`recommended_cli_version`, so I bumped the field to match — and the tests immediately showed models
+disappearing. That field is not "the newest CLI available"; it is the *minimum* version that supports
+the newest pinned models, and Orrery hides those pins below it. Raising it would have hidden GPT-5.6
+from every user on a capable-but-older Codex. Reverted. The installed version is evidence of what
+exists, not of when a pin became available.
+
+Verified: 3 new tests, all failing first; 879 tests pass; `ruff check .` is clean. A plan user now
+sees Fable 5, Opus 5, Sonnet 5 and Haiku 4.5, with the three 1M models reporting 1,000,000 tokens.

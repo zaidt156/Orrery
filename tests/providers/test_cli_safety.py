@@ -12,7 +12,7 @@ def test_claude_plan_args_disable_tools_and_session_persistence():
     # tools are disabled (passed as an empty value right after the flag)
     assert "--tools" in args and args[args.index("--tools") + 1] == ""
     # the manifest flag for the opus variant is forwarded as the model
-    assert "--model" in args and "claude-opus-4-8" in args
+    assert "--model" in args and "claude-opus-5" in args
 
 
 def test_claude_plan_args_omits_effort_when_unsupported():

@@ -388,7 +388,7 @@ async def test_claude_route_passes_supported_reasoning_effort(monkeypatch):
 
     assert out == ["reply"]
     assert captured["args"][captured["args"].index("--effort") + 1] == "xhigh"
-    assert captured["args"][captured["args"].index("--model") + 1] == "claude-opus-4-8"
+    assert captured["args"][captured["args"].index("--model") + 1] == "claude-opus-5"
 
 
 @pytest.mark.anyio
