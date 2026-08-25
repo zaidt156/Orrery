@@ -37,7 +37,7 @@ test("missing LibreOffice status explains the safe HTML fallback", () => {
       state: "fallback",
       title: "Basic Office previews are active",
       message: "LibreOffice is not installed; Office files use the HTML fallback.",
-      detail: "Install LibreOffice on this computer for previews that preserve slide, document, and spreadsheet layout.",
+      detail: "Install LibreOffice, or build the sandbox image, for previews that preserve slide, document, and spreadsheet layout.",
     },
   );
 });
@@ -86,4 +86,33 @@ test("preview iframes deny capabilities by default and only opt in for interacti
   assert.equal(previewFrameSandbox(false), "");
   assert.equal(previewFrameSandbox(true), "allow-scripts allow-forms allow-modals");
   assert.doesNotMatch(previewFrameSandbox(true), /allow-same-origin|allow-popups/);
+});
+
+test("the sandbox engine reads as working previews, not a fallback", () => {
+  const described = describeOfficePreviewStatus({
+    available: true,
+    engine: "sandbox",
+    officePreview: "html",
+    message: "Office previews render in the offline sandbox, including OpenDocument.",
+  });
+
+  assert.equal(described.state, "sandboxed");
+  assert.match(described.title, /ready|working|active/i);
+  assert.doesNotMatch(described.title, /basic/i);
+});
+
+test("LibreOffice is offered as an upgrade when the sandbox already renders", () => {
+  const action = officePreviewInstallAction(
+    { available: true, engine: "sandbox", canInstall: true }, true);
+
+  assert.ok(action, "an upgrade should still be offered");
+  assert.doesNotMatch(action.label, /install & enable/i);
+});
+
+test("only the host engine reads as degraded", () => {
+  const described = describeOfficePreviewStatus({
+    available: false, engine: "host", officePreview: "html",
+  });
+
+  assert.equal(described.state, "fallback");
 });

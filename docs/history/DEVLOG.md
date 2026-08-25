@@ -4175,3 +4175,42 @@ Verified: 7 new tests, and real documents end to end — an ODT with a heading, 
 list and a table; an ODS with a named sheet; an ODP with two slides — all built by odfpy inside the
 container and then previewed through `to_preview`, each rendering its actual content rather than a
 notice. 867 tests pass, `ruff check .` is clean, and CI run #26 was green for the previous step.
+
+## Step 189 - A missing LibreOffice stops being reported as a fault (August 25, 2026)
+
+The last piece of making Office previews work without LibreOffice was not code that renders
+anything. It was the product telling the truth about what it can already do.
+
+`office_preview_status()` returned `available: false` whenever LibreOffice was absent, and Settings
+rendered that as "Basic Office previews are active" with a prompt to install a 500 MB office suite.
+On a machine with the sandbox image that was simply wrong: every supported format previews, and for
+OpenDocument the container is the only thing that can render at all. The user was being told to fix
+something that worked.
+
+There are three states now instead of two, because there are genuinely three. LibreOffice plus the
+PDF renderer gives page-faithful layout and is still the best result. The sandbox alone gives working
+previews for every format including ODF, and reports `engine: "sandbox"` with `available: true`.
+Only a machine with neither is degraded — and even that state is described precisely: OOXML still
+renders on the host, OpenDocument cannot render at all.
+
+The install button changed meaning rather than disappearing. Where the sandbox already renders it
+reads "Add page-faithful layout" instead of "Install & enable", because it is an upgrade and not a
+repair. Where nothing renders it still says install.
+
+Two existing tests asserted the old status dictionaries literally, and one UI test asserted the old
+copy. Those are intended behaviour changes, so the expectations moved with them; the second Python
+one was rewritten to assert the properties that matter rather than a dictionary, so the next honest
+wording change does not break it.
+
+One thing I broke and repaired. Checking whether `npm ci` would fail on a lockfile mismatch, I ran
+it with `--dry-run` — which still removes `node_modules` first. This project junctions that directory
+out to `%LOCALAPPDATA%` because OneDrive corrupts it, so the junction was replaced by an empty
+folder and `vite` vanished. The packages survived at the junction target but the `.bin` shims did
+not, so the repair was a real `npm ci` followed by the project's own `relink-deps` script. Worth
+recording twice over: `--dry-run` is not read-only for `npm ci`, and this repo has a required
+post-install step that a stray npm command silently undoes.
+
+Verified: 871 backend tests, 54 UI tests, `ruff check .` clean, and the production bundle builds.
+That completes the slice: on a machine with Docker and no LibreOffice, every supported Office format
+previews, the parse happens inside the container, and nothing in the interface claims something is
+missing.

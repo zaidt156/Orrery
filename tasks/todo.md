@@ -30,7 +30,7 @@
       file type"; TODO.md's claim that the converter covers ODF is corrected.
       *Scope:* M — 3 files + tests.
 
-- [ ] **4. Demote LibreOffice from prerequisite to enhancement.** `office_preview_status()` stops
+- [x] **4. Demote LibreOffice from prerequisite to enhancement.** `office_preview_status()` stops
       reporting `available: false` when only LibreOffice is missing — the container is a renderer.
       Settings stops implying previews are broken; the install action becomes optional polish for
       page-faithful output. `routes_files.py` renderer labels reflect the container path.
@@ -38,7 +38,7 @@
       working and offers the install as an upgrade, not a fix.
       *Scope:* S/M — 3 files + tests.
 
-- [ ] **CHECKPOINT** — fresh machine, no LibreOffice: every supported Office format previews, the
+- [x] **CHECKPOINT** — fresh machine, no LibreOffice: every supported Office format previews, the
       parse happens in the container, and nothing in the UI claims something is missing.
 
 - [ ] **5. Reconcile the documents.** ARCHITECTURE.md §11 and the Office-preview section, TODO.md's

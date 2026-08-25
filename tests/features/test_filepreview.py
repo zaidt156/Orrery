@@ -377,23 +377,25 @@ def test_office_preview_status_reports_pdf_when_libreoffice_is_available(monkeyp
         "officePreview": "pdf",
         "pdfRendererAvailable": True,
         "canInstall": False,
-        "message": "Faithful Office previews are available.",
+        "message": "Page-faithful Office previews are available.",
     }
 
 
-def test_office_preview_status_reports_html_fallback_when_unavailable(monkeypatch):
+def test_office_preview_status_is_degraded_only_without_both_renderers(monkeypatch):
+    """With neither LibreOffice nor a sandbox image, OOXML still previews on the host and ODF
+    cannot preview at all. That is the one genuinely degraded state, and it says so."""
     monkeypatch.setattr(filepreview, "_find_soffice", lambda: None)
     monkeypatch.setattr(filepreview, "_installer_command", lambda: None)
     monkeypatch.setattr(filepreview, "pdf_renderer_available", lambda: True)
+    # the module-level autouse fixture already pins sandbox.image_ready to False
 
-    assert filepreview.office_preview_status() == {
-        "available": False,
-        "engine": "libreoffice",
-        "officePreview": "html",
-        "pdfRendererAvailable": True,
-        "canInstall": False,
-        "message": "LibreOffice is not installed; Office files use the HTML fallback.",
-    }
+    status = filepreview.office_preview_status()
+
+    assert status["available"] is False
+    assert status["engine"] == "host"
+    assert status["officePreview"] == "html"
+    assert status["canInstall"] is False
+    assert "OpenDocument" in status["message"]
 
 
 def test_office_preview_status_enables_install_when_package_manager_exists(monkeypatch):
@@ -1087,3 +1089,63 @@ def test_opendocument_has_no_host_fallback(monkeypatch):
 
     body, _ = filepreview.to_preview("notes.odt", "application/octet-stream", b"x")
     assert b"unavailable" in body.lower()
+
+
+# --- a missing LibreOffice is not a fault -------------------------------------------------------
+#
+# The status route reported `available: false` whenever LibreOffice was absent, and Settings read
+# that as "previews are broken until you install a 500 MB office suite". Previews work: the
+# container renders every supported format, and for OpenDocument it is the only thing that can.
+
+def _no_libreoffice(monkeypatch):
+    monkeypatch.setattr(filepreview, "_find_soffice", lambda: None)
+    monkeypatch.setattr(filepreview, "_installer_command", lambda: ["winget.exe", "install"])
+
+
+def test_the_container_alone_counts_as_working_office_previews(monkeypatch):
+    from backend.features import sandbox
+
+    _no_libreoffice(monkeypatch)
+    monkeypatch.setattr(sandbox, "image_ready", lambda *a, **k: True)
+
+    status = filepreview.office_preview_status()
+
+    assert status["available"] is True, "the container renders every supported format"
+    assert status["engine"] == "sandbox"
+    assert "libreoffice" not in status["message"].lower() or "optional" in status["message"].lower()
+
+
+def test_libreoffice_is_still_offered_as_an_upgrade(monkeypatch):
+    """Not a fix — an upgrade. Page-faithful layout is a real gain where it is installed."""
+    from backend.features import sandbox
+
+    _no_libreoffice(monkeypatch)
+    monkeypatch.setattr(sandbox, "image_ready", lambda *a, **k: True)
+
+    status = filepreview.office_preview_status()
+
+    assert status["canInstall"] is True
+    assert status["officePreview"] == "html"
+
+
+def test_libreoffice_present_still_reports_page_faithful(monkeypatch):
+    monkeypatch.setattr(filepreview, "_find_soffice", lambda: "soffice.exe")
+    monkeypatch.setattr(filepreview, "pdf_renderer_available", lambda: True)
+
+    status = filepreview.office_preview_status()
+
+    assert status["available"] is True
+    assert status["engine"] == "libreoffice"
+    assert status["officePreview"] == "pdf"
+
+
+def test_no_container_and_no_libreoffice_is_the_only_degraded_state(monkeypatch):
+    from backend.features import sandbox
+
+    _no_libreoffice(monkeypatch)
+    monkeypatch.setattr(sandbox, "image_ready", lambda *a, **k: False)
+
+    status = filepreview.office_preview_status()
+
+    assert status["available"] is False
+    assert status["engine"] == "host"

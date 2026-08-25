@@ -111,9 +111,20 @@ def _installer_command() -> list[str] | None:
 
 
 def office_preview_status() -> dict:
-    """Return a safe live probe result; never expose the executable path."""
+    """Return a safe live probe result; never expose the executable path.
+
+    Three honest states, not two. LibreOffice converts OOXML to PDF and gives page-faithful layout,
+    which is the best result — but its absence stopped being a fault when the container learned to
+    render. The worker handles every supported format, and for OpenDocument it is the only thing
+    that can, so a machine with Docker and no LibreOffice has working Office previews and should be
+    told so. Only a machine with neither is degraded, and even then OOXML still renders on the host.
+    """
+    from backend.features import sandbox
+
     office_available = _find_soffice() is not None
     renderer_available = pdf_renderer_available()
+    sandbox_available = bool(sandbox.image_ready())
+
     if office_available and renderer_available:
         return {
             "available": True,
@@ -121,7 +132,19 @@ def office_preview_status() -> dict:
             "officePreview": "pdf",
             "pdfRendererAvailable": True,
             "canInstall": False,
-            "message": "Faithful Office previews are available.",
+            "message": "Page-faithful Office previews are available.",
+        }
+    if sandbox_available:
+        return {
+            "available": True,
+            "engine": "sandbox",
+            "officePreview": "html",
+            "pdfRendererAvailable": renderer_available,
+            "canInstall": not office_available and _installer_command() is not None,
+            "message": (
+                "Office previews render in the offline sandbox, including OpenDocument. "
+                "LibreOffice is optional and adds page-faithful layout."
+            ),
         }
     if office_available:
         return {
@@ -134,11 +157,14 @@ def office_preview_status() -> dict:
         }
     return {
         "available": False,
-        "engine": "libreoffice",
+        "engine": "host",
         "officePreview": "html",
         "pdfRendererAvailable": renderer_available,
         "canInstall": renderer_available and _installer_command() is not None,
-        "message": "LibreOffice is not installed; Office files use the HTML fallback.",
+        "message": (
+            "Without the sandbox image or LibreOffice, Word, Excel and PowerPoint files use the "
+            "basic HTML preview and OpenDocument files cannot be previewed."
+        ),
     }
 
 
