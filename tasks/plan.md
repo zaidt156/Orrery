@@ -1,102 +1,106 @@
-# Plan — Office previews without LibreOffice
+# Plan — durable approval pause and resume for Automations
 
-**Status:** planned, not implemented. **Scope:** `backend/features/filepreview.py`,
-`backend/features/sandbox.py`, a new `backend/features/office_render.py`,
-`backend/api/routes_files.py`, and the Settings preview panel.
+**Status:** planned, not implemented. **Blocked on one product decision** (see Open questions).
+**Scope:** `backend/core/models.py`, `backend/automation/engine.py`, `backend/features/workflows.py`,
+`backend/api/routes_workflows.py`, `ui/src/views/Automations.jsx`.
 
 ## Why
 
-Three separate problems share one cause, and none of them is really about LibreOffice.
+Step 176 fixed the dangerous half of this: a gated Automation node used to be recorded as a
+*successful* step, and the run finished `done` while the refusal travelled downstream as data. It
+now fails the run visibly and records the refusal on the step.
 
-**The parse runs in this process.** When LibreOffice is absent — the default on a fresh machine —
-DOCX/XLSX/PPTX previews are produced by python-docx, openpyxl and python-pptx running inside the
-backend, with the keychain, the database connection and the user's files in reach. That is the last
-in-process parse of untrusted documents, and PLAN.md Workstream 2's checkpoint fails on it.
+What it did not fix is that the run is simply over. `run_tool` raised an approval request, nobody can
+see it, and it expires undecided after ten minutes. The user's only recourse is to start the workflow
+again from the beginning — and it will stop in the same place, because nothing was ever approved.
 
-**ODF does not work at all.** TODO.md says ODT/ODS/ODP are covered by "the optional LibreOffice
-converter". They are not: `to_preview` gates the converter on `ext in ("pptx","docx","xlsx","xlsm")`,
-so an `.odt` never reaches it and falls through to "Preview unavailable for this file type" whether
-LibreOffice is installed or not.
+## The pattern already exists
 
-**The product implies LibreOffice is required.** `office_preview_status()` reports
-`available: false` without it, and Settings offers to install it. A user reads that as "previews are
-broken until you install a 500 MB office suite", when in fact previews work — just through a
-different renderer.
+Agents solved this. `AgentApproval` is a durable table — run id, owner, tool key, risk, an
+`action_digest`, the serialized action, status, `expires_at`, `decided_at`, `decided_by` — and an
+agent run suspends, records the pending decision, and resumes from its own durable step log once the
+user answers. Automations should mirror that rather than invent a second mechanism. Chat's
+`approvals._STORE` is explicitly in-memory and process-lifetime, which is fine for a chat turn
+someone is watching and wrong for a headless workflow.
 
-The sandbox image already carries `python-docx`, `openpyxl`, `python-pptx`, `odfpy`, `lxml` and
-`Pillow`. Everything needed is present; nothing new has to be installed anywhere.
+## The problem that decides the design
 
-## Architecture decisions
+A resumed workflow must not re-run the nodes that already succeeded — they may have sent an email or
+written to a database. So resume has to replay their outputs from `workflow_run_steps`.
 
-**Move the existing renderers, do not rewrite them.** The alternative — parsing in the container and
-emitting a structured JSON document model for the host to render — is cleaner on paper and much
-riskier here: it means rewriting all three renderers with no visual regression tests to catch a
-slip. Running the *same code* in a different place changes the privileges without changing a byte of
-output.
+**Those stored outputs are lossy.** `_record_step` writes `_clip(output_obj)`, which is
+`json.dumps(...)[:20_000]`. The column exists for the run-debug view, and 20,000 characters is
+generous for a human reading it and arbitrary for a machine resuming from it. A node that returned a
+long database result or a fetched document would come back **silently truncated**, and the
+downstream `{{node.key}}` substitution would use the truncated value without any indication.
 
-**The byte-identical guard.** Because it is the same code, a test can render a fixture through the
-host path and the container path and assert the HTML is byte-for-byte identical. That is a stronger
-regression guard than any screenshot comparison, and it is what makes this refactor safe to do in
-one pass. If the outputs ever diverge, the test says so immediately.
+Resuming from a display artifact is the trap here. Three ways out, and this is the decision that
+gates the work:
 
-**Generated HTML is already untrusted output.** Building preview HTML inside the container does not
-weaken anything: the result is served from `/artifacts/` under a CSP into a sandboxed iframe, which
-is exactly how it is treated today.
+1. **Store a separate, unclipped resume payload.** A new column or table holding the exact output,
+   subject to its own size ceiling, deleted with the run. Correct, and costs storage for data that is
+   usually only read on resume.
+2. **Re-run pure nodes, replay only effectful ones.** Nodes would have to declare purity. `delay`,
+   `if_branch`, `llm_prompt` and `search_docs` are safe to re-run; `http_request`, `db_query`,
+   `run_python`, `run_shell`, `mcp_tool` are not. More machinery, and a wrong purity label is a
+   silent duplicate side effect.
+3. **Refuse to resume when any completed output was clipped.** Cheapest and honest: record whether
+   clipping happened, and if it did, tell the user the run cannot be resumed and must be restarted.
+   Most runs would resume fine; the ones that cannot would say so instead of quietly corrupting.
 
-**A sandbox failure means no preview.** Same rule as the PDF renderer (Step 183). Falling back to a
-host parse precisely when the container broke would make the boundary optional for the documents
-most likely to break a parser.
-
-**LibreOffice stays, demoted.** It is not removed — where it happens to be installed it still gives
-page-faithful output, and ripping it out would be a regression for those users. What changes is that
-its absence stops being reported as a fault. It becomes an optional enhancement, not a prerequisite.
+My recommendation is **3 for the first slice, 1 later if it proves annoying**. It is the only option
+that cannot silently produce wrong data, it is small, and it converts an unknown into a visible
+limitation. Option 2 is the one to avoid: purity labels that are wrong fail silently and in the worst
+possible direction.
 
 ## Dependency graph
 
 ```
-sandbox image  (python-docx, openpyxl, python-pptx, odfpy, lxml, Pillow — all present)
+WorkflowApproval table + migration                              [Task 1]
       │
-      └── office_render.py         pure renderers, no host-only imports        [Task 1]
-              │
-              ├── sandbox.render_office_html()  +  to_preview prefers it       [Task 2]
-              │
-              ├── ODF renderers via odfpy                                      [Task 3]
-              │
-              └── status / Settings: LibreOffice becomes optional              [Task 4]
+      ├── engine: pause instead of fail, record the request     [Task 2]
+      │        │
+      │        └── resume: replay completed steps, continue     [Task 3]
+      │
+      ├── API: list pending, decide, resume                     [Task 4]
+      │
+      └── Automations UI: show and answer                       [Task 5]
 ```
 
 ## Task list
 
-### Phase 1: Foundation
-- Task 1: Extract the renderers into `office_render.py` (no behaviour change)
+### Phase 1: durable state
+- Task 1: `WorkflowApproval`, mirroring `AgentApproval`, with a migration
+- Task 2: the engine records a pending approval and leaves the run `awaiting_approval`
 
-### Checkpoint: Foundation
-- 851 backend tests still pass; `to_preview` output unchanged
+### Checkpoint
+- A gated node parks the run; the row exists; nothing regresses for ungated runs
 
-### Phase 2: Move the parse
-- Task 2: Render OOXML in the container, with the byte-identical guard
+### Phase 2: resume
+- Task 3: resume replays completed steps and continues, refusing when any output was clipped
 
-### Checkpoint: Move the parse
-- Same HTML from both paths; a sandbox failure yields a notice, not a host parse
+### Checkpoint
+- A paused run resumes to completion without re-running effectful nodes
 
-### Phase 3: Coverage and honesty
-- Task 3: ODT/ODS/ODP via `odfpy`, in the container
-- Task 4: Demote LibreOffice from prerequisite to enhancement
-
-### Checkpoint: Complete
-- A machine with no LibreOffice previews every supported Office format, in the container,
-  and Settings says nothing is missing
+### Phase 3: reach it
+- Task 4: authenticated list/decide/resume routes, owner-scoped
+- Task 5: the Automations screen shows a pending decision and can answer it
 
 ## Risks and mitigations
 
 | Risk | Impact | Mitigation |
 |---|---|---|
-| Silent visual regression in the extracted renderers | High | Byte-identical host-vs-container test on real fixtures; extraction is a pure move with no edits |
-| Container start latency on every preview (~1–2s) | Medium | Keep the existing in-flight dedup and converted-PDF cache; measure before optimising |
-| `_PreviewBudget` and the `_MAX_OFFICE_*` caps are shared with host-side code | Medium | Move them into `office_render.py` and re-export from `filepreview` so existing callers are untouched |
-| A machine with no Docker loses Office previews entirely | Medium | Keep the host renderers as the documented, explicit no-image fallback — the same shape as the PDF renderer |
-| ODF fidelity is poor enough to be worse than nothing | Low | Ship ODT first, judge the output, and only then decide on ODS/ODP |
+| Resume replays truncated node output as if it were complete | **High** | The decision above; option 3 refuses rather than corrupts |
+| A paused run holds a worker slot | Medium | Resume is a fresh queued job; the paused run holds nothing |
+| An approval outlives the workflow it belongs to | Medium | `ondelete="CASCADE"` on the run, and an expiry sweep like the agent one |
+| Resume re-runs an effectful node after a restart | **High** | Only steps recorded `done` are replayed; a node interrupted mid-flight is not |
+| Two resumes race | Medium | Claim the approval in a transaction before dispatching, as `decide_approval` does |
 
 ## Open questions
 
-- None blocking. LibreOffice's fate was decided: keep it working where present, stop requiring it.
+- **Which resume strategy?** The three options above. My recommendation is 3.
+- **How long should a workflow approval live?** Agents use `expires_at`. A headless workflow may be
+  triggered while nobody is watching, so ten minutes is clearly too short; a day is plausible.
+- **Should a scheduled run request approval at all,** or should gated nodes be refused outright on
+  scheduled triggers and permitted only on manual ones? Asking someone to approve an action at 3am
+  is a different product than asking them while they watch it run.
