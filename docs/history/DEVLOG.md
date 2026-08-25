@@ -4343,3 +4343,34 @@ Summaries render their title and items rather than `Summary: [object Object]`.
 
 Verified: 7 new tests, all failing first, including one asserting a malformed step with no stage
 never produces the literal string again. 61 UI tests pass and the bundle builds.
+
+## Step 194 - "Create 10 slides" produced a PDF (August 25, 2026)
+
+The user reported file generation as broken and pointed at a specific conversation. Reading it was
+worth more than any amount of reasoning about it: three attempts at "Can you create 10 slides on
+HCI", one that produced a correct `.pptx`, one that failed outright, and one that produced a
+**PDF**.
+
+The PDF is the real bug and it is a duplicate-logic bug. `filegen.requested_formats` gets this
+right, and always did. But the docspec route in the chat router had its own second copy of the
+format table, and its PowerPoint rule was `\b(powerpoint|pptx?|presentation|slide|deck)\b` —
+`slide`, singular. "slides" matched nothing in that table, nothing else matched either, and the
+function's last line is `return ["pdf"]`. So the request fell through every rule to the default and
+the user got a PDF. filegen's equivalent rule is `slides?`; the two tables had drifted by one
+character.
+
+There is one table now. The router narrows `filegen.requested_formats` to what the deterministic
+renderer can actually build — `docgen.render_spec` handles pptx, xlsx, docx, csv, tex, pdf, html,
+md, json and txt, but not the png/mp4/zip formats filegen also knows, which belong to the sandbox.
+A test asserts the router and filegen give the same answer for the same request, so they cannot
+drift apart again by a character or anything else.
+
+The second failure in that conversation was different and only half a bug. It read "I could not
+create a real downloadable file for this request... Builder detail: ChatGPT plan (Codex CLI) is not
+connected." Nothing there is false, but the headline is wrong: file generation was fine, the
+selected model was simply not connected, and a user reading that goes looking in the wrong place.
+When the cause is an unreachable route the message now leads with it and says what to do about it.
+A genuine renderer failure still reads as one, and there is a test for each.
+
+Verified: 8 new tests, all failing first; 886 tests pass; `ruff check .` is clean. "Can you create
+10 slides on HCI" now resolves to `['pptx']` through both paths.

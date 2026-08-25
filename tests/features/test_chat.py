@@ -1061,3 +1061,113 @@ async def test_app_route_validation_failure_never_uses_docspec(monkeypatch):
     assert any("No app files were saved" in event.get("delta", "") for event in events)
     assert state.handled and state.outcome == "app_failed"
     assert outcomes == ["app_failed"]
+
+
+# --- the requested file format was detected twice, and the two answers disagreed ----------------
+#
+# Reported: "create 10 slides on HCI" produced a PDF. `filegen.requested_formats` gets that right,
+# but the docspec route in the chat router had its OWN pattern table whose pptx rule was
+# `\bslide\b` — singular. "slides" matched nothing, and the fallback was PDF.
+
+def test_a_plural_slides_request_produces_a_deck_not_a_pdf():
+    from backend.features.chat import router
+
+    assert router._detect_formats("Can you create 10 slides on HCI") == ["pptx"]
+
+
+def test_the_router_and_filegen_agree_on_the_requested_format():
+    """Two tables that must match are one table too many; this pins them together."""
+    from backend.features import filegen
+    from backend.features.chat import router
+
+    for request in (
+        "Can you create 10 slides on HCI",
+        "make me a presentation about design",
+        "build a spreadsheet of the results",
+        "write a word document summarising this",
+        "export the data as csv",
+        "produce a pdf of the findings",
+    ):
+        wanted = [f for f in filegen.requested_formats(request) if f in router.DOCSPEC_FORMATS]
+        assert router._detect_formats(request) == wanted, request
+
+
+def test_a_request_naming_no_format_still_falls_back_to_pdf():
+    from backend.features.chat import router
+
+    assert router._detect_formats("summarise the HCI literature") == ["pdf"]
+
+
+def test_a_cv_request_still_produces_both_pdf_and_word():
+    from backend.features.chat import router
+
+    assert router._detect_formats("build my CV") == ["pdf", "docx"]
+
+
+def test_the_docspec_route_never_asks_for_a_format_it_cannot_render():
+    """filegen knows about png/mp4/zip; the deterministic renderer does not."""
+    from backend.features.chat import router
+
+    for request in ("make a png chart", "record an mp4 walkthrough", "zip up the results"):
+        for fmt in router._detect_formats(request):
+            assert fmt in router.DOCSPEC_FORMATS, f"{request} -> {fmt}"
+
+
+class FakeTrace:
+    """Minimal ReasoningTrace stand-in: the failure paths only call these three."""
+
+    def step(self, stage, detail="", **kwargs):
+        return {"trace": {"stage": stage, "detail": detail}}
+
+    def error(self, stage, detail="", **kwargs):
+        return {"trace": {"stage": stage, "detail": detail, "status": "error"}}
+
+    def summary(self, title="How this was produced"):
+        return {"reasoning_summary": {"title": title, "items": []}}
+
+
+@pytest.mark.anyio
+async def test_an_unconnected_model_is_reported_as_such_not_as_a_file_failure(monkeypatch):
+    """The reported session showed "I could not create a real downloadable file ... Builder detail:
+    ChatGPT plan (Codex CLI) is not connected." The headline sent the user hunting through file
+    generation when the model was simply not connected."""
+    import uuid as _uuid
+
+    from backend.features.chat import router
+
+    async def fake_persist(cid, text, model):
+        fake_persist.text = text
+        return "m1"
+
+    monkeypatch.setattr(router.persistence, "_persist_assistant", fake_persist)
+
+    events = [
+        ev async for ev in router._deliver_file_failure(
+            _uuid.uuid4(), "chatgpt_plan/gpt-5.6", FakeTrace(),
+            "ChatGPT plan (Codex CLI) is not connected.",
+        )
+    ]
+
+    assert events, "the failure path should still stream something"
+    assert "is not connected" in fake_persist.text
+    assert "could not create a real downloadable file" not in fake_persist.text
+    assert "Settings" in fake_persist.text
+
+
+@pytest.mark.anyio
+async def test_a_genuine_render_failure_still_says_so(monkeypatch):
+    import uuid as _uuid
+
+    from backend.features.chat import router
+
+    async def fake_persist(cid, text, model):
+        fake_persist.text = text
+        return "m1"
+
+    monkeypatch.setattr(router.persistence, "_persist_assistant", fake_persist)
+
+    [ev async for ev in router._deliver_file_failure(
+        _uuid.uuid4(), "openai/gpt", FakeTrace(), "pptx: renderer raised ValueError")]
+
+    assert "could not create a real downloadable file" in fake_persist.text
+    assert "Builder detail" in fake_persist.text

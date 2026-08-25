@@ -61,14 +61,16 @@ _log = logging.getLogger("orrery.chat")
 
 
 
-_FILE_FORMAT_PATTERNS = [
-    ("pptx", re.compile(r"\b(powerpoint|pptx?|presentation|slide|deck)\b", re.IGNORECASE)),
-    ("xlsx", re.compile(r"\b(excel|xlsx?|spreadsheet|workbook|sheet)\b", re.IGNORECASE)),
-    ("docx", re.compile(r"\b(word|docx?|document)\b", re.IGNORECASE)),
-    ("csv", re.compile(r"\bcsv\b", re.IGNORECASE)),
-    ("tex", re.compile(r"\b(tex|latex|latex\s+source|latex\s+document|latex\s+template)\b|\.tex\b", re.IGNORECASE)),
-    ("pdf", re.compile(r"\b(pdf|report)\b", re.IGNORECASE)),
-]
+# What the deterministic renderer can actually build (see docgen.render_spec). filegen's table also
+# knows png/mp4/zip and friends, but those are the sandbox's job, so the docspec route must never
+# ask for one.
+DOCSPEC_FORMATS = ("pptx", "xlsx", "docx", "csv", "tex", "pdf", "html", "md", "json", "txt")
+
+# A second, thinner copy of the format table used to live here. Its pptx rule was `\bslide\b` -
+# singular - so "create 10 slides on HCI" matched nothing, fell through to the PDF default, and the
+# user got a PDF when they asked for a deck. filegen's table already had `slides?` and was right.
+# One table now; the test suite pins the two answers together so they cannot drift apart again.
+_REPORT_MEANS_PDF = re.compile(r"\breport\b", re.IGNORECASE)
 
 _CV_REQUEST = re.compile(r"\b(cv|resume|curriculum\s+vitae)\b", re.IGNORECASE)
 
@@ -84,12 +86,15 @@ _DOCSPEC_FEATURE_RULES = (
 
 
 def _detect_formats(text: str) -> list[str]:
-    found = [fmt for fmt, pattern in _FILE_FORMAT_PATTERNS if pattern.search(text or "")]
+    """Which downloadable formats this request asks for, narrowed to what the renderer can build."""
+    from backend.features import filegen
+
+    found = [fmt for fmt in filegen.requested_formats(text or "") if fmt in DOCSPEC_FORMATS]
     if found:
         return found
     if _CV_REQUEST.search(text or ""):
         return ["pdf", "docx"]
-    return ["pdf"]
+    return ["pdf"]  # a bare "report"/"summary" ask has no format word; a PDF is the safe default
 
 
 def _docspec_request(request: str, formats: list[str]) -> str:
@@ -241,12 +246,22 @@ async def _deliver_file_failure(
     trace: ReasoningTrace,
     detail: str | None,
 ) -> AsyncIterator[dict]:
-    message = (
-        "I could not create a real downloadable file for this request. "
-        "No approved artifact was saved, so I am not showing a fake export as if it were generated."
-    )
-    if detail:
-        message += f" Builder detail: {detail}"
+    # Lead with the actual cause. "I could not create a file" is the right headline for a renderer
+    # that failed, and the wrong one when the selected model was never reachable - the user reads it
+    # as file generation being broken and goes looking in the wrong place.
+    unreachable = detail and re.search(r"\bis not connected\b|\bno api key\b", detail, re.IGNORECASE)
+    if unreachable:
+        message = (
+            f"{detail.rstrip('.')}. Connect it in Settings, or pick a model that is connected, and "
+            "ask again — nothing was generated, so there is no partial file to clean up."
+        )
+    else:
+        message = (
+            "I could not create a real downloadable file for this request. "
+            "No approved artifact was saved, so I am not showing a fake export as if it were generated."
+        )
+        if detail:
+            message += f" Builder detail: {detail}"
     message_id = await persistence._persist_assistant(cid, message, model)
     yield trace.error("File generation failed", detail or "No approved artifact was produced.")
     yield stream_events.delta(message)
