@@ -20,6 +20,26 @@ from backend.features import filepreview
 # machine rasterize a PDF at all", which is true whenever the sandbox image exists. These tests are
 # about the packaged Qt runtime, so gating them on the combined answer made them depend on whether
 # Docker happened to be running.
+@pytest.fixture(autouse=True)
+def _sandbox_image_absent(monkeypatch):
+    """Pin the sandbox probe for every preview test, for two reasons.
+
+    `pdf_renderer_available()` now answers "can this machine rasterize a PDF at all", so it asks
+    `sandbox.image_ready()` - which shells out to `docker image inspect` through `backend.core.proc`.
+    Six tests in this file install a spy on `proc.run` to assert the LibreOffice installer command,
+    and that probe landed in the spy's recording as the first call. It only showed up in CI: locally
+    the probe returns True and caches for 30s, while a machine without the image caches the miss for
+    5s and re-probes throughout a longer run.
+
+    Pinning it False also removes the machine dependency itself. Whether these tests exercise the
+    host renderer or the container one should be a property of the test, not of whether the
+    developer happens to have built the sandbox image. Tests that want the sandbox path say so.
+    """
+    from backend.features import sandbox
+
+    monkeypatch.setattr(sandbox, "image_ready", lambda *args, **kwargs: False)
+
+
 requires_pdf_renderer = pytest.mark.skipif(
     not filepreview._host_pdf_renderer_available(),
     reason="the QtPdf preview renderer is not importable in this runtime",
@@ -467,6 +487,11 @@ def test_install_libreoffice_runs_fixed_command_then_reprobes(monkeypatch):
 
     status = filepreview.install_office_preview(True)
 
+    # Exactly one subprocess. This is not fussiness: `pdf_renderer_available()` grew a
+    # `docker image inspect` probe, which landed in this spy ahead of the installer and broke CI
+    # while passing locally, because the probe's result is cached for different durations depending
+    # on whether the machine has the sandbox image.
+    assert len(calls) == 1, f"install shelled out to something else too: {[c[0][:2] for c in calls]}"
     assert calls[0][0] == command
     assert calls[0][1]["check"] is False
     assert status["available"] is True

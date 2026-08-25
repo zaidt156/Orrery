@@ -4028,3 +4028,35 @@ archive failing loudly. Both failed first.
 Verified against a real container with the document that used to break it: a fifteen-page PDF now
 returns fifteen genuine PNGs, to_preview embeds fifteen pages, and max_pages=5 still reports "page
 limit". 851 tests pass with a database, all 51 UI tests pass, ruff check is clean.
+
+## Step 185 - A test that passed here and failed on CI, and why (August 25, 2026)
+
+The push went red on the Linux job. One test:
+`test_install_libreoffice_runs_fixed_command_then_reprobes` asserted that the first subprocess the
+installer runs is the winget command, and got `docker image inspect orrery-sandbox:latest` instead.
+
+The cause is Step 183. `pdf_renderer_available()` was changed to answer "can this machine rasterize a
+PDF at all", which means asking `sandbox.image_ready()` - and that shells out to Docker through
+`backend.core.proc`. Six tests in the preview file install a spy on `proc.run` to check the installer
+command. The probe landed in the spy.
+
+What makes this worth writing down is why it passed locally and failed in CI, because the difference
+is not obvious. The readiness cache keeps a positive answer for thirty seconds and a negative one for
+five. On a machine with the sandbox image built, one probe covers a short test file and the spy never
+sees it. On a machine without the image - every CI runner - the miss expires every five seconds, so
+in a forty-second suite the probe fires repeatedly, and one of those firings lands inside the spied
+window. The test was reading the machine, not the code, and the machine differed.
+
+Two changes. An autouse fixture pins `sandbox.image_ready` to False for the whole preview file, so no
+preview test shells out to Docker and none of them depend on whether this developer built the image;
+tests that want the container path say so explicitly, and three already did. And the assertion is now
+`len(calls) == 1` before it checks the command, which states the actual invariant - the installer runs
+one subprocess - rather than relying on ordering to expose a stray one.
+
+The second change is the one that matters. The original assertion could only fail if the extra call
+arrived first; `len(calls) == 1` fails whenever an extra call arrives at all. Verified by disabling
+the fixture and watching the test fail, then restoring it and watching it pass.
+
+Verified: 851 tests pass with the sandbox image present and 851 with it absent - the CI condition,
+reproduced locally by pointing `ORRERY_DOCKER` at a binary that is not Docker. `ruff check .` is
+clean.
