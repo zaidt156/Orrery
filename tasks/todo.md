@@ -1,6 +1,6 @@
 # Orrery Work — task list
 
-- [ ] **1. Workspace roots and path confinement.** A `WorkspaceRoot` table (owner-scoped, one
+- [x] **1. Workspace roots and path confinement.** A `WorkspaceRoot` table (owner-scoped, one
       attached folder, cascade-safe) and `resolve_in_root()`: resolve the real path, reject anything
       that leaves the root. Symlinks and junctions resolved *before* the check, `..` traversal,
       absolute paths outside the root, and Windows device paths all refused.
@@ -8,9 +8,9 @@
       device path, and a case-differing path on Windows — all written before any tool uses it.
       *Scope:* M — 3 files + tests.
 
-- [ ] **CHECKPOINT** — confinement is attacked and holds before a single tool can call it.
+- [x] **CHECKPOINT** — confinement is attacked and holds before a single tool can call it.
 
-- [ ] **2. Read tools.** `work_read`, `work_glob`, `work_grep`, registered in the tool registry,
+- [x] **2. Read tools.** `work_read`, `work_glob`, `work_grep`, registered in the tool registry,
       every path through `resolve_in_root`, bounded output.
       *Done when:* each reads only inside the root and refuses outside it; output is capped.
       *Scope:* M — 2 files + tests.

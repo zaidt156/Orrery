@@ -54,7 +54,18 @@ It is what answers "what did it change" without asking the model.
 | A long command hangs the turn | Medium | Timeout and a cancel that is honoured at the tool boundary |
 | Symlink/junction escape on Windows | High | Resolve before checking, reject links whose target leaves the root; Windows-specific tests |
 
+## Answered
+
+**Should a root persist across restarts?** Yes, owner-scoped. Attaching a folder is a deliberate
+act, and making the user redo it every launch is how people end up attaching something broader than
+they mean, just to stop being asked. Several roots are remembered; exactly one is active per owner,
+so "the attached folder" always has a single answer.
+
+**Which folders may be attached at all?** Not the whole disk, not a home directory, not a system
+path. This is not convenience validation: attach `C:\` and confinement still holds perfectly —
+every path resolves inside the root, every check passes — and the guarantee is emptied rather than
+weakened. `workspace.check_attachable` runs once, when the folder is chosen.
+
 ## Open questions
 
-- Should a root persist across restarts, or be re-attached each session? Leaning persist, owner-scoped.
 - Should `work_run` require approval every time, once per root, or once per distinct command?

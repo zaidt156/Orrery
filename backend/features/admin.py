@@ -31,6 +31,10 @@ FEATURES: dict[str, tuple[str, bool]] = {
     "agents":       ("Agents", True),
     "mcp":          ("MCP servers", True),
     "capability_agent": ("Model-guided tool planner", False),
+    # Orrery Work runs commands on the host and writes straight to the attached folder
+    # (ADR-007). That is a real reduction in the boundary, so it is opt-in rather than on
+    # by default — an install nobody has configured should not ship it enabled.
+    "orrery_work": ("Orrery Work (attach a folder, read and change it)", False),
     "crabbox":      ("Crabbox remote executor", False),
 }
 

@@ -820,3 +820,34 @@ class TeamUser(Base):
     key_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)  # sha256 hex of the key
     disabled: Mapped[bool] = mapped_column(default=False)  # revoked: locked out next launch
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class WorkspaceRoot(Base):
+    """One folder attached to Orrery Work — the boundary every workspace tool resolves against.
+
+    Roots persist across restarts: attaching a folder is a deliberate act and making the user repeat
+    it every launch would push them toward attaching something broader than they mean. Several may
+    be remembered, but exactly one is active per owner at a time, so "the attached folder" is always
+    a single unambiguous answer (ADR-007).
+
+    `path` is stored already resolved and already vetted by `workspace.check_attachable`, so nothing
+    downstream has to re-decide whether the whole disk is a reasonable root.
+    """
+    __tablename__ = "workspace_roots"
+
+    id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    path: Mapped[str] = mapped_column(Text)
+    label: Mapped[str] = mapped_column(String(200), default="")
+    # team mode: which TeamUser attached this folder (null in single-user mode). A root is private
+    # to its owner — one member's project folder is not another's to read.
+    owner_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    active: Mapped[bool] = mapped_column(default=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    last_used_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    __table_args__ = (
+        UniqueConstraint("owner_id", "path", name="uq_workspace_root_owner_path"),
+        Index("ix_workspace_roots_owner_active", "owner_id", "active"),
+    )

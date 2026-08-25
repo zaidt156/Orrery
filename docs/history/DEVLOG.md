@@ -4473,3 +4473,56 @@ why a missing family is invisible rather than merely absent.
 
 Verified by measurement, not by assertion: all 27 routes now report exactly the windows on the
 user's list. 884 backend tests and 67 UI tests pass, ruff is clean, and the UI builds.
+
+## Step 197 - Orrery Work can read a folder, and cannot read anything else (August 26, 2026)
+
+With path confinement built and attacked, the next two slices went in: which folder is attached, and
+the three tools that look at it.
+
+The identity half is deliberately separate from the boundary half. `workspace_roots.py` knows which
+folder, whose, and which one is current; `workspace.py` knows what may be reached once a root is
+known and has no database in it at all. That split is not tidiness — it keeps the security-critical
+code testable without Postgres, which is why the confinement suite runs on any machine while the
+roots suite needs `docker compose up -d`.
+
+Two decisions got made rather than deferred. **Roots persist across restarts**, owner-scoped:
+attaching a folder is deliberate, and making someone redo it every launch is how they end up
+attaching something broader than they meant just to stop being asked. Several are remembered,
+exactly one is active, so "the attached folder" always has one answer. And **a root belonging to
+someone else raises the same error as one that does not exist** — telling those apart would let a
+team member enumerate which folders their colleagues have attached.
+
+The other decision is the one worth writing down properly. ADR-007 rests the entire security model
+on a single sentence: the attached folder is the boundary. That sentence is worth exactly as much as
+the folder is specific. Attach the whole disk and confinement still holds *perfectly* — every path
+resolves inside the root, every check passes, nothing is bypassed — and the guarantee has been
+emptied rather than broken. So `check_attachable` refuses a drive root, a home directory, and system
+paths, once, at the only moment it can matter: when the folder is chosen. Its refusals say what to
+do instead, because a rejection the user cannot act on just reads as the app being broken.
+
+The read tools — `work_read`, `work_glob`, `work_grep` — are registered rather than called, so
+scope, the ADR-004 deny hook, the approval gate and ADR-005 evidence apply to Orrery Work exactly as
+they do to everything else. Orrery Work adds capability, not a second execution path. The root comes
+from `workspace_roots`, never from the tool's arguments: a tool that accepted a folder as an argument
+would let anything reaching the registry name its own boundary, which is not a boundary.
+
+"Read-only" turned out not to mean "harmless", twice. A search that walks `node_modules` hangs the
+turn, so heavy directories are skipped by default — and *named in the result*, because a model handed
+a silently filtered list concludes the files do not exist, which is worse than being told the list
+was cut short. A pattern that names one of those directories opts back in; it is a default, not a
+wall.
+
+The second one was mine, found reviewing what I had just written. Both `read_file` and `grep` capped
+their **output** after calling `read_bytes()` — which caps what the model sees and not what the
+process pays. An attached folder with a multi-gigabyte log in it would have been a crash, not a slow
+read. Bounds have to hold on the way in: `read_file` now reads only what it will return plus one
+byte (that byte is how "exactly full" is told from "there is more"), and `grep` skips oversized files
+and says which ones, for the same reason it says which directories it skipped.
+
+Orrery Work ships **off by default**. ADR-007 is a genuine reduction in the boundary this project
+has spent a whole workstream strengthening, and an install nobody has configured should not have it
+enabled.
+
+Verified: 1012 tests pass, including the 9 root tests against a real PostgreSQL and 48 covering
+confinement, attachment and the read layer. Next: `work_run`, where the folder stops being the only
+thing that matters.
