@@ -16,8 +16,12 @@ from backend.features import filepreview
 # QtPdf needs system graphics libraries (libGL, fontconfig, ...) that a headless Linux box may not
 # have. `pdf_renderer_available()` is the same check the app uses, so a skip here means the renderer
 # genuinely is not usable in this runtime - not that the test is broken.
+# The host QtPdf probe specifically, not `pdf_renderer_available()` - that now answers "can this
+# machine rasterize a PDF at all", which is true whenever the sandbox image exists. These tests are
+# about the packaged Qt runtime, so gating them on the combined answer made them depend on whether
+# Docker happened to be running.
 requires_pdf_renderer = pytest.mark.skipif(
-    not filepreview.pdf_renderer_available(),
+    not filepreview._host_pdf_renderer_available(),
     reason="the QtPdf preview renderer is not importable in this runtime",
 )
 from backend.features import files as file_library
@@ -823,3 +827,123 @@ def test_pptx_fallback_positions_shapes_and_inlines_pictures(monkeypatch):
     assert 'class="shape"' in page
     assert "left:" in page and "top:" in page  # shapes keep their slide position
     assert '<img src="data:image/png;base64,' in page
+
+
+# --- PDF pages are rasterized in the container, not in this process -----------------------------
+#
+# Rendering ran in-process with QtPdf, so Orrery parsed an untrusted, attacker-supplied PDF holding
+# the application's own privileges — the exact thing Workstream 2 exists to remove. The container
+# already carries pypdfium2 for OCR. The host renderer survives only for a machine with no sandbox
+# image, and a sandbox FAILURE must never quietly hand the document back to the host.
+
+def _host_renderer_must_not_run(monkeypatch):
+    def _forbidden(_data):
+        raise AssertionError("the host QtPdf renderer parsed an untrusted PDF")
+
+    monkeypatch.setattr(filepreview, "_render_pdf_pngs_with_host", _forbidden)
+
+
+def test_pdf_pages_are_rendered_in_the_sandbox_when_the_image_is_ready(monkeypatch):
+    from backend.features import sandbox
+
+    _host_renderer_must_not_run(monkeypatch)
+    monkeypatch.setattr(sandbox, "image_ready", lambda: True)
+    monkeypatch.setattr(sandbox, "render_pdf_pages",
+                        lambda data, **kw: ([b"png-one", b"png-two"], 2, None))
+
+    rendered = filepreview._render_pdf_pngs_uncached(b"%PDF-sandbox-preferred")
+
+    assert rendered is not None
+    assert rendered.pages == (b"png-one", b"png-two")
+    assert rendered.total_pages == 2
+    assert rendered.complete is True
+
+
+def test_a_truncated_sandbox_render_reports_why(monkeypatch):
+    from backend.features import sandbox
+
+    _host_renderer_must_not_run(monkeypatch)
+    monkeypatch.setattr(sandbox, "image_ready", lambda: True)
+    monkeypatch.setattr(sandbox, "render_pdf_pages",
+                        lambda data, **kw: ([b"only"], 40, "page limit"))
+
+    rendered = filepreview._render_pdf_pngs_uncached(b"%PDF-truncated")
+
+    assert rendered.total_pages == 40
+    assert rendered.complete is False
+    assert rendered.reason == "page limit"
+
+
+def test_a_failing_sandbox_never_hands_the_pdf_to_the_host(monkeypatch):
+    """Failing closed is the point: a broken container must not become a host parse."""
+    from backend.features import sandbox
+
+    _host_renderer_must_not_run(monkeypatch)
+    monkeypatch.setattr(sandbox, "image_ready", lambda: True)
+
+    def _explode(data, **kw):
+        raise sandbox.SandboxError("the container died")
+
+    monkeypatch.setattr(sandbox, "render_pdf_pages", _explode)
+
+    rendered = filepreview._render_pdf_pngs_uncached(b"%PDF-sandbox-broken")
+
+    assert rendered is None, "a sandbox failure means no preview, not a host preview"
+
+
+def test_the_host_renderer_is_used_only_when_there_is_no_sandbox_image(monkeypatch):
+    """The documented, temporary fallback: a machine with no Docker still previews PDFs."""
+    from backend.features import sandbox
+
+    called = {}
+
+    def _host(data):
+        called["data"] = data
+        return filepreview._PdfRender((b"host-png",), 1, True, None)
+
+    monkeypatch.setattr(sandbox, "image_ready", lambda: False)
+    monkeypatch.setattr(filepreview, "_render_pdf_pngs_with_host", _host)
+
+    rendered = filepreview._render_pdf_pngs_uncached(b"%PDF-no-image")
+
+    assert rendered.pages == (b"host-png",)
+    assert called["data"] == b"%PDF-no-image"
+
+
+def test_a_sandbox_render_with_no_pages_and_no_reason_is_not_a_preview(monkeypatch):
+    """Zero pages with nothing to explain it means the document did not render at all."""
+    from backend.features import sandbox
+
+    _host_renderer_must_not_run(monkeypatch)
+    monkeypatch.setattr(sandbox, "image_ready", lambda: True)
+    monkeypatch.setattr(sandbox, "render_pdf_pages", lambda data, **kw: ([], 0, None))
+
+    assert filepreview._render_pdf_pngs_uncached(b"%PDF-empty") is None
+
+
+def test_pdf_rendering_counts_as_available_when_the_sandbox_image_is(monkeypatch):
+    """The worker is a renderer too. Reporting 'unavailable' on a Docker-only machine is wrong."""
+    from backend.features import sandbox
+
+    monkeypatch.setattr(sandbox, "image_ready", lambda: True)
+    monkeypatch.setattr(filepreview, "_host_pdf_renderer_available", lambda: False)
+
+    assert filepreview.pdf_renderer_available() is True
+
+
+def test_pdf_rendering_falls_back_to_the_host_check_with_no_image(monkeypatch):
+    from backend.features import sandbox
+
+    monkeypatch.setattr(sandbox, "image_ready", lambda: False)
+    monkeypatch.setattr(filepreview, "_host_pdf_renderer_available", lambda: True)
+
+    assert filepreview.pdf_renderer_available() is True
+
+
+def test_pdf_rendering_is_unavailable_with_neither(monkeypatch):
+    from backend.features import sandbox
+
+    monkeypatch.setattr(sandbox, "image_ready", lambda: False)
+    monkeypatch.setattr(filepreview, "_host_pdf_renderer_available", lambda: False)
+
+    assert filepreview.pdf_renderer_available() is False

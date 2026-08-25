@@ -3947,3 +3947,54 @@ Verified: 836 pass with a database (`ORRERY_REQUIRE_DB=1`), 756 pass with none, 
 clean. Yesterday's database-marked test for the refused Automation node - written but never executed
 - passes against real PostgreSQL, so that fix is now proven end to end rather than by unit test
 alone.
+
+## Step 183 - Untrusted PDFs are rasterized in the container now (August 25, 2026)
+
+A PDF arriving as a chat attachment or a collection document is attacker-controlled input, and PDF
+parsers are one of the oldest ways into a process. Orrery rendered preview pages with QtPdf in the
+backend process, which handed that parser the application's own privileges: the keychain, the
+database connection, the user's files. Workstream 2 exists to end exactly this, and its checkpoint -
+untrusted documents never requiring an ambient host parser for the supported path - was failing on
+it.
+
+The container already had what was needed. pypdfium2 has been in the sandbox image since PDF OCR
+landed, so the renderer moved rather than being invented: a small program writes page-001.png onward
+into /work/out plus a manifest, and the caller sorts by filename, because /work/out has no order and
+page order is the entire point of a paginated preview.
+
+The budget is applied inside the container rather than to what comes back. Two reasons: a page too
+large to keep is never rendered at all, and the whole document is done in one container start rather
+than one per resolution attempt. The same width ladder the host renderer used steps down until each
+page fits the remaining bytes, so previews look as they did.
+
+The manifest is not decoration. Without it a truncated render is indistinguishable from a complete
+one, and reporting that a forty-page document was fully previewed because one page came back is the
+wrong failure. Its absence is an error, not an empty result.
+
+The decision that matters is what happens when the sandbox fails: nothing happens. No preview.
+Falling back to the host parser at that moment would make the boundary optional for precisely the
+documents most likely to break a parser, which is to say for the attack. The host renderer survives
+for one case only - a machine with no sandbox image at all - and that fallback is explicit and
+temporary.
+
+One consequence had to be followed through. pdf_renderer_available() reported whether QtPdf could be
+imported, and the Office-preview status route uses it. Now that the worker is the renderer, a
+machine with Docker and no packaged Qt is fully capable, and reporting otherwise would have sent a
+user to reinstall Orrery to fix something that already worked. It answers "can this machine
+rasterize a PDF at all" now; the host probe kept its own name, which is what the four QtPdf-specific
+tests gate on. Pointing their skip marker at the combined answer made them depend on whether Docker
+happened to be running, and one duly failed in the full suite - a reminder that a test gate reading
+ambient machine state is a test that reports the machine, not the code.
+
+What remains on the host now says so in ARCHITECTURE.md and TODO.md rather than being implied: the
+LibreOffice conversion behind faithful Office previews, and the python-docx/openpyxl/python-pptx
+HTML renderers used when that conversion is unavailable. That is the rest of this item, not a
+finished job.
+
+Verified: 8 new tests, all failing first - page order, the limits reaching the container, the
+truncation reason, a failed container, a missing manifest, sandbox preference, failing closed, and
+host use only without an image. Beyond those, a real container run: a three-page PDF generated in
+the sandbox came back as three genuine PNGs, max_pages=1 reported "page limit", a 100-byte budget
+reported "byte limit", the same PDF through to_preview produced two embedded PNG pages, and with the
+renderer forced to fail it produced a notice and no host parse. 849 tests pass with a database, 769
+without, ruff check is clean.

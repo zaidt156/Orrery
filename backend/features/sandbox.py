@@ -9,6 +9,7 @@ from /work/out plus bounded stdout/stderr. Nothing can reach the user's normal h
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import stat
@@ -16,6 +17,7 @@ import subprocess
 import tempfile
 import time
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -41,6 +43,58 @@ _LAYOUT = {
     "workspace": "/work/workspace",
     "output": "/work/out",
 }
+
+_PDF_PAGE_RENDERER = r"""
+import io
+import json
+from pathlib import Path
+
+import pypdfium2 as pdfium
+
+config = json.loads(Path("/work/input/render.json").read_text(encoding="utf-8"))
+max_pages = config["max_pages"]
+widths = config["widths"]
+max_height = config["max_height"]
+remaining = config["max_total_bytes"]
+
+out = Path("/work/out")
+source = pdfium.PdfDocument("/work/input/document.pdf")
+total_pages = len(source)
+reason = "page limit" if total_pages > max_pages else None
+written = 0
+
+for index in range(min(total_pages, max_pages)):
+    page = source[index]
+    page_width, page_height = page.get_size()
+    if page_width <= 0 or page_height <= 0:
+        reason = "page rendering failed"
+        break
+    encoded = None
+    # Step down the resolution ladder until a page fits what is left of the budget.
+    for width in widths:
+        target = width
+        height = max(1, round(target * page_height / page_width))
+        if height > max_height:
+            target = max(1, round(target * max_height / height))
+        image = page.render(scale=target / page_width).to_pil()
+        buffer = io.BytesIO()
+        image.save(buffer, format="PNG")
+        candidate = buffer.getvalue()
+        if len(candidate) <= remaining:
+            encoded = candidate
+            break
+    if encoded is None:
+        reason = "byte limit"
+        break
+    (out / ("page-%03d.png" % (index + 1))).write_bytes(encoded)
+    remaining -= len(encoded)
+    written += 1
+
+(out / "manifest.json").write_text(
+    json.dumps({"total_pages": total_pages, "reason": reason, "written": written}),
+    encoding="utf-8",
+)
+"""
 
 _PDF_EXTRACTOR = r"""
 from pathlib import Path
@@ -280,6 +334,62 @@ def extract_pdf_text(data: bytes) -> str:
     if output is None:
         return ""
     return output.data.decode("utf-8", "replace").strip()
+
+
+def render_pdf_pages(
+    data: bytes,
+    *,
+    max_pages: int,
+    widths: Sequence[int] = (1000, 850, 700, 560, 440, 320, 240),
+    max_total_bytes: int = 5_000_000,
+    max_height: int = 1800,
+) -> tuple[list[bytes], int, str | None]:
+    """Rasterize an untrusted PDF's first pages to PNG inside the locked container.
+
+    Returns (pages in order, the document's true page count, why it stopped early or None).
+
+    The budget is applied INSIDE the container rather than to what comes back, for two reasons: a
+    page that will not fit is never written, and the whole document is rendered in one container
+    start instead of one per resolution attempt. `widths` is tried in order per page until a render
+    fits the remaining byte budget, which is the same ladder the host renderer used.
+    """
+    config = {
+        "max_pages": int(max_pages),
+        "widths": [int(width) for width in widths],
+        "max_total_bytes": int(max_total_bytes),
+        "max_height": int(max_height),
+    }
+    result = _run_entry(
+        _PDF_PAGE_RENDERER,
+        "render_pdf.py",
+        ["python", "/runner/render_pdf.py"],
+        input_files={
+            "document.pdf": data,
+            "render.json": json.dumps(config).encode("utf-8"),
+        },
+    )
+    if not result.ok:
+        raise SandboxError(result.stderr or "The PDF preview sandbox failed.")
+    manifest_file = next((item for item in result.files if item.name == "manifest.json"), None)
+    if manifest_file is None:
+        # Without it a truncated render is indistinguishable from a complete one, and claiming a
+        # 40-page document was fully previewed because 1 page came back is the wrong failure.
+        raise SandboxError("The PDF preview sandbox returned no manifest.")
+    try:
+        manifest = json.loads(manifest_file.data.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError) as exc:
+        raise SandboxError("The PDF preview sandbox returned an unreadable manifest.") from exc
+
+    # /work/out has no defined order, and page order is the entire point of a paginated preview.
+    pages = [
+        item.data
+        for item in sorted(
+            (f for f in result.files if f.name.startswith("page-") and f.name.endswith(".png")),
+            key=lambda f: f.name,
+        )
+    ]
+    reason = manifest.get("reason") or None
+    return pages, int(manifest.get("total_pages") or 0), reason
 
 
 def extract_office_text(name: str, data: bytes) -> str:

@@ -34,7 +34,7 @@ flowchart LR
 
     api --> models["Local or cloud model routes"]
     api --> sources["User databases + import sources"]
-    api --> docker["Docker sandbox<br/>generated code + PDF extraction/OCR"]
+    api --> docker["Docker sandbox<br/>generated code, Office/PDF text + OCR,<br/>PDF page rendering"]
 
     classDef core fill:#e8f0fe,stroke:#4f6f9f,color:#172033;
     classDef store fill:#edf7ed,stroke:#5f8a65,color:#172033;
@@ -450,9 +450,13 @@ flowchart LR
 
 Each collection records its embedding model so older and newer collections can be searched in the
 correct vector space. Re-uploading the same source replaces its chunks transactionally. PDFs prefer
-the versioned offline sandbox and run OCR only on pages without usable embedded text. Office
-ingestion and Office/PDF preview still use host-side parsers/renderers in some paths; moving all
-untrusted document work behind the bounded worker remains planned work.
+the versioned offline sandbox and run OCR only on pages without usable embedded text. Untrusted
+document work is moving behind the bounded worker one path at a time: Office ingestion is
+worker-first, and PDF page rendering for previews now runs in the container via pypdfium2, where a
+sandbox failure yields no preview rather than a host parse and the in-process QtPdf renderer
+survives only where no sandbox image exists. Still on the host: the LibreOffice conversion behind
+faithful Office previews, and the python-docx/openpyxl/python-pptx HTML renderers used when that
+conversion is unavailable.
 
 Code anchors: `backend/features/rag.py`, `backend/features/chat/retrieval.py`, `backend/core/models.py`, `backend/core/queue.py`.
 

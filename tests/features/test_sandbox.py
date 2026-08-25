@@ -233,3 +233,103 @@ def test_office_extraction_reports_a_failed_run_rather_than_returning_empty_text
 
     with pytest.raises(sandbox.SandboxError):
         sandbox.extract_office_text("notes.xlsx", b"PK\x03\x04fake")
+
+
+# --- rendering an untrusted PDF inside the container ---------------------------------------------
+#
+# PDF page rasterization ran in-process with QtPdf: Orrery parsed an untrusted, attacker-supplied
+# document with the application's own privileges. The container already carries pypdfium2 for OCR,
+# so the parse belongs there. These cover the wiring; a real container run is a CI fixture.
+
+def _renderer_result(pages: dict[str, bytes], manifest: dict) -> sandbox.SandboxResult:
+    import json as _json
+
+    files = [sandbox.SandboxFile(name=name, data=data) for name, data in pages.items()]
+    files.append(sandbox.SandboxFile(
+        name="manifest.json", data=_json.dumps(manifest).encode("utf-8")))
+    return sandbox.SandboxResult(ok=True, stdout="", stderr="", exit_code=0, timed_out=False,
+                                 files=files)
+
+
+def test_render_pdf_pages_returns_pages_in_order(monkeypatch):
+    """Page order is the whole point of a paginated preview, and /work/out is not ordered."""
+    captured = {}
+
+    def fake_run_entry(content, name, argv, *, input_files=None):
+        captured["input_files"] = input_files
+        captured["argv"] = argv
+        return _renderer_result(
+            # deliberately out of order: the caller must sort, not trust the listing
+            {"page-002.png": b"second", "page-001.png": b"first", "page-003.png": b"third"},
+            {"total_pages": 3, "reason": None, "written": 3},
+        )
+
+    monkeypatch.setattr(sandbox, "_run_entry", fake_run_entry)
+
+    pages, total, reason = sandbox.render_pdf_pages(b"%PDF-1.4 fake", max_pages=24)
+
+    assert pages == [b"first", b"second", b"third"]
+    assert total == 3
+    assert reason is None
+    assert "document.pdf" in captured["input_files"], "the PDF must go in as an input file"
+    assert captured["input_files"]["document.pdf"] == b"%PDF-1.4 fake"
+
+
+def test_render_pdf_pages_passes_its_limits_into_the_container(monkeypatch):
+    """The budget has to be enforced where the rendering happens, not after it comes back."""
+    import json as _json
+
+    captured = {}
+
+    def fake_run_entry(content, name, argv, *, input_files=None):
+        captured["config"] = _json.loads(input_files["render.json"].decode("utf-8"))
+        return _renderer_result({}, {"total_pages": 0, "reason": None, "written": 0})
+
+    monkeypatch.setattr(sandbox, "_run_entry", fake_run_entry)
+
+    sandbox.render_pdf_pages(b"%PDF", max_pages=7, widths=(900, 400), max_total_bytes=1234,
+                             max_height=1500)
+
+    assert captured["config"]["max_pages"] == 7
+    assert captured["config"]["widths"] == [900, 400]
+    assert captured["config"]["max_total_bytes"] == 1234
+    assert captured["config"]["max_height"] == 1500
+
+
+def test_render_pdf_pages_reports_why_it_stopped_early(monkeypatch):
+    """A truncated preview must say so; silently short output reads as a complete document."""
+    def fake_run_entry(content, name, argv, *, input_files=None):
+        return _renderer_result({"page-001.png": b"only"},
+                                {"total_pages": 40, "reason": "page limit", "written": 1})
+
+    monkeypatch.setattr(sandbox, "_run_entry", fake_run_entry)
+
+    pages, total, reason = sandbox.render_pdf_pages(b"%PDF", max_pages=1)
+
+    assert pages == [b"only"]
+    assert total == 40
+    assert reason == "page limit"
+
+
+def test_render_pdf_pages_raises_when_the_container_fails(monkeypatch):
+    """A failed sandbox must not look like a PDF with no pages."""
+    def fake_run_entry(content, name, argv, *, input_files=None):
+        return sandbox.SandboxResult(ok=False, stdout="", stderr="pdfium exploded",
+                                     exit_code=1, timed_out=False, files=[])
+
+    monkeypatch.setattr(sandbox, "_run_entry", fake_run_entry)
+
+    with pytest.raises(sandbox.SandboxError):
+        sandbox.render_pdf_pages(b"%PDF", max_pages=4)
+
+
+def test_render_pdf_pages_raises_when_the_manifest_is_missing(monkeypatch):
+    """Without the manifest we cannot tell a truncated render from a complete one."""
+    def fake_run_entry(content, name, argv, *, input_files=None):
+        return sandbox.SandboxResult(ok=True, stdout="", stderr="", exit_code=0, timed_out=False,
+                                     files=[sandbox.SandboxFile(name="page-001.png", data=b"x")])
+
+    monkeypatch.setattr(sandbox, "_run_entry", fake_run_entry)
+
+    with pytest.raises(sandbox.SandboxError):
+        sandbox.render_pdf_pages(b"%PDF", max_pages=4)

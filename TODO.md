@@ -9,8 +9,12 @@ do not keep a second checklist of completed tasks here.
 
 ## P1 — bounded documents and deterministic verification
 
-- [ ] Move DOCX/XLSX/PPTX ingestion and Office/PDF preview parsing into the offline bounded document
-      worker; document and time-box any compatibility fallback that remains on the host.
+- [ ] Finish moving Office preview parsing into the offline bounded document worker. Done so far:
+      DOCX/XLSX/PPTX ingestion, and PDF page rendering for previews (pypdfium2 in the container,
+      failing closed rather than falling back to a host parse). Still on the host: the LibreOffice
+      conversion, and the python-docx/openpyxl/python-pptx HTML renderers behind it.
+- [ ] Time-box the two remaining host fallbacks above, and decide whether LibreOffice belongs in
+      the sandbox image or whether container-side HTML renderers replace it entirely.
 - [ ] Extend faithful previews to ODT/ODS/ODP/RTF (today only the optional LibreOffice converter
       covers them; the Python renderers cover OOXML, CSV/TSV, and Markdown).
 - [ ] Add real-container CI fixtures for embedded, scanned, mixed, encrypted, malformed, oversized,

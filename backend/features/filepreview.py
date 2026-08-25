@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import logging
 import html
 import io
 import platform
@@ -25,6 +26,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from backend.core import proc
+
+log = logging.getLogger("orrery.filepreview")
 
 _MAX_CACHED_OFFICE_PDF_BYTES = 8_000_000
 _MAX_PDF_PREVIEW_PAGES = 24
@@ -522,6 +525,18 @@ class _PdfRender:
 
 
 def pdf_renderer_available() -> bool:
+    """Whether PDF pages can be rasterized at all - in the bounded worker, or failing that, here.
+
+    Asked by the Office-preview status route. Since the worker became the preferred renderer, a
+    machine with Docker but no packaged Qt is fully capable, and reporting otherwise would send a
+    user to reinstall Orrery to fix something that already works.
+    """
+    from backend.features import sandbox
+
+    return bool(sandbox.image_ready()) or _host_pdf_renderer_available()
+
+
+def _host_pdf_renderer_available() -> bool:
     """Return whether the local QtPdf renderer can be imported in this runtime."""
     try:
         from PySide6.QtCore import QBuffer, QByteArray, QIODevice, QSize  # noqa: F401
@@ -533,7 +548,44 @@ def pdf_renderer_available() -> bool:
 
 
 def _render_pdf_pngs_uncached(data: bytes) -> _PdfRender | None:
-    """Rasterize PDF pages with QtPdf when it is available.
+    """Rasterize an untrusted PDF's pages, preferring the offline bounded worker.
+
+    A PDF from a chat attachment or a document collection is attacker-controlled input, and PDF
+    parsers are a classic way in. Rendering it in this process gave that parser the application's
+    own privileges: the keychain, the database, the user's files. The sandbox container already
+    carries pypdfium2 for OCR, so the parse belongs there - no network, read-only root, non-root
+    user, dropped capabilities, and hard memory/PID/time caps.
+
+    A sandbox FAILURE is not a reason to parse on the host. That would make the boundary optional
+    for exactly the documents most likely to break a parser, so a failed render means no preview.
+    The host renderer survives only for a machine with no sandbox image at all; that fallback is
+    explicit and temporary (PLAN.md Workstream 2).
+    """
+    from backend.features import sandbox
+
+    if sandbox.image_ready():
+        try:
+            pages, total_pages, reason = sandbox.render_pdf_pages(
+                data,
+                max_pages=_MAX_PDF_PREVIEW_PAGES,
+                widths=_PDF_RENDER_WIDTHS,
+                max_total_bytes=_MAX_PDF_PREVIEW_PNG_BYTES,
+            )
+        except sandbox.SandboxError:
+            log.warning("PDF preview refused: the bounded worker could not render the document")
+            return None
+        if not pages:
+            # A budget that stopped the render is still worth reporting; nothing at all is not.
+            if reason in {"byte limit", "page limit"}:
+                return _PdfRender((), total_pages, False, reason)
+            return None
+        complete = len(pages) == total_pages and reason is None
+        return _PdfRender(tuple(pages), total_pages, complete, reason)
+    return _render_pdf_pngs_with_host(data)
+
+
+def _render_pdf_pngs_with_host(data: bytes) -> _PdfRender | None:
+    """Rasterize PDF pages with QtPdf, in this process, when no sandbox image exists.
 
     The packaged Qt WebEngine PDF viewer can show a blank document even when the PDF is valid.
     QtPdf is already part of Orrery's Windows desktop runtime, so rendering pages here avoids that
