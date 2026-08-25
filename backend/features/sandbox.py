@@ -9,11 +9,13 @@ from /work/out plus bounded stdout/stderr. Nothing can reach the user's normal h
 
 from __future__ import annotations
 
+import io
 import json
 import os
 import shutil
 import stat
 import subprocess
+import tarfile
 import tempfile
 import time
 import uuid
@@ -47,6 +49,7 @@ _LAYOUT = {
 _PDF_PAGE_RENDERER = r"""
 import io
 import json
+import tarfile
 from pathlib import Path
 
 import pypdfium2 as pdfium
@@ -62,6 +65,7 @@ source = pdfium.PdfDocument("/work/input/document.pdf")
 total_pages = len(source)
 reason = "page limit" if total_pages > max_pages else None
 written = 0
+rendered = []
 
 for index in range(min(total_pages, max_pages)):
     page = source[index]
@@ -86,9 +90,17 @@ for index in range(min(total_pages, max_pages)):
     if encoded is None:
         reason = "byte limit"
         break
-    (out / ("page-%03d.png" % (index + 1))).write_bytes(encoded)
+    rendered.append(("page-%03d.png" % (index + 1), encoded))
     remaining -= len(encoded)
     written += 1
+
+# One archive, not one file per page: the sandbox caps output at a fixed number of files for every
+# caller, and a dozen-page document would otherwise be refused outright rather than previewed.
+with tarfile.open(out / "pages.tar", "w") as archive:
+    for entry_name, payload in rendered:
+        info = tarfile.TarInfo(name=entry_name)
+        info.size = len(payload)
+        archive.addfile(info, io.BytesIO(payload))
 
 (out / "manifest.json").write_text(
     json.dumps({"total_pages": total_pages, "reason": reason, "written": written}),
@@ -380,14 +392,21 @@ def render_pdf_pages(
     except (UnicodeDecodeError, ValueError) as exc:
         raise SandboxError("The PDF preview sandbox returned an unreadable manifest.") from exc
 
-    # /work/out has no defined order, and page order is the entire point of a paginated preview.
-    pages = [
-        item.data
-        for item in sorted(
-            (f for f in result.files if f.name.startswith("page-") and f.name.endswith(".png")),
-            key=lambda f: f.name,
-        )
-    ]
+    archive_file = next((item for item in result.files if item.name == "pages.tar"), None)
+    pages: list[bytes] = []
+    if archive_file is not None:
+        try:
+            with tarfile.open(fileobj=io.BytesIO(archive_file.data), mode="r:") as archive:
+                # Sorted by name: a tar preserves write order, but page order is the entire point of
+                # a paginated preview and is too important to inherit from an implementation detail.
+                for member in sorted(archive.getmembers(), key=lambda m: m.name):
+                    if not member.isfile():
+                        continue
+                    extracted = archive.extractfile(member)
+                    if extracted is not None:
+                        pages.append(extracted.read())
+        except (tarfile.TarError, OSError) as exc:
+            raise SandboxError("The PDF preview sandbox returned an unreadable archive.") from exc
     reason = manifest.get("reason") or None
     return pages, int(manifest.get("total_pages") or 0), reason
 

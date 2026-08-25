@@ -242,11 +242,26 @@ def test_office_extraction_reports_a_failed_run_rather_than_returning_empty_text
 # so the parse belongs there. These cover the wiring; a real container run is a CI fixture.
 
 def _renderer_result(pages: dict[str, bytes], manifest: dict) -> sandbox.SandboxResult:
-    import json as _json
+    """Build what the container actually returns: ONE tar of pages, plus the manifest.
 
-    files = [sandbox.SandboxFile(name=name, data=data) for name, data in pages.items()]
-    files.append(sandbox.SandboxFile(
-        name="manifest.json", data=_json.dumps(manifest).encode("utf-8")))
+    One archive rather than one file per page is not a detail. The sandbox caps output at 12 files
+    for every caller, so writing page-001.png onward meant a 12-page PDF hit
+    "Sandbox output contains too many files" and previewed as nothing at all.
+    """
+    import io as _io
+    import json as _json
+    import tarfile as _tarfile
+
+    buffer = _io.BytesIO()
+    with _tarfile.open(fileobj=buffer, mode="w") as archive:
+        for name, data in pages.items():
+            info = _tarfile.TarInfo(name=name)
+            info.size = len(data)
+            archive.addfile(info, _io.BytesIO(data))
+    files = [
+        sandbox.SandboxFile(name="pages.tar", data=buffer.getvalue()),
+        sandbox.SandboxFile(name="manifest.json", data=_json.dumps(manifest).encode("utf-8")),
+    ]
     return sandbox.SandboxResult(ok=True, stdout="", stderr="", exit_code=0, timed_out=False,
                                  files=files)
 
@@ -327,7 +342,47 @@ def test_render_pdf_pages_raises_when_the_manifest_is_missing(monkeypatch):
     """Without the manifest we cannot tell a truncated render from a complete one."""
     def fake_run_entry(content, name, argv, *, input_files=None):
         return sandbox.SandboxResult(ok=True, stdout="", stderr="", exit_code=0, timed_out=False,
-                                     files=[sandbox.SandboxFile(name="page-001.png", data=b"x")])
+                                     files=[sandbox.SandboxFile(name="pages.tar", data=b"x")])
+
+    monkeypatch.setattr(sandbox, "_run_entry", fake_run_entry)
+
+    with pytest.raises(sandbox.SandboxError):
+        sandbox.render_pdf_pages(b"%PDF", max_pages=4)
+
+
+def test_render_pdf_pages_survives_more_pages_than_the_output_file_cap(monkeypatch):
+    """Regression: pages came back as separate files and tripped the 12-file sandbox limit.
+
+    A 15-page PDF did not degrade - it raised "Sandbox output contains too many files" and previewed
+    as nothing. Every page now travels inside one archive, so the cap is irrelevant to page count.
+    """
+    many = {f"page-{n:03d}.png": f"page{n}".encode() for n in range(1, 21)}
+
+    def fake_run_entry(content, name, argv, *, input_files=None):
+        return _renderer_result(many, {"total_pages": 20, "reason": None, "written": 20})
+
+    monkeypatch.setattr(sandbox, "_run_entry", fake_run_entry)
+
+    pages, total, reason = sandbox.render_pdf_pages(b"%PDF", max_pages=24)
+
+    assert len(pages) == 20, "every rendered page must survive the trip back"
+    assert pages[0] == b"page1" and pages[-1] == b"page20"
+    assert total == 20 and reason is None
+
+
+def test_render_pdf_pages_raises_when_the_archive_is_unreadable(monkeypatch):
+    """A corrupt archive is a failed render, not an empty document."""
+    import json as _json
+
+    def fake_run_entry(content, name, argv, *, input_files=None):
+        return sandbox.SandboxResult(
+            ok=True, stdout="", stderr="", exit_code=0, timed_out=False,
+            files=[
+                sandbox.SandboxFile(name="pages.tar", data=b"not a tar at all"),
+                sandbox.SandboxFile(
+                    name="manifest.json",
+                    data=_json.dumps({"total_pages": 2, "reason": None, "written": 2}).encode()),
+            ])
 
     monkeypatch.setattr(sandbox, "_run_entry", fake_run_entry)
 

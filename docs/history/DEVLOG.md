@@ -3998,3 +3998,33 @@ the sandbox came back as three genuine PNGs, max_pages=1 reported "page limit", 
 reported "byte limit", the same PDF through to_preview produced two embedded PNG pages, and with the
 renderer forced to fail it produced a notice and no host parse. 849 tests pass with a database, 769
 without, ruff check is clean.
+
+## Step 184 - The PDF renderer could not preview a twelve-page document (August 25, 2026)
+
+A review pass over the previous eight commits, before anyone else reads them, found a defect in the
+newest one. Worth recording because of how it hid.
+
+The container renderer wrote one PNG per page into /work/out. The sandbox caps output at twelve
+files for every caller - a guard that exists so model-written code cannot flood the host - and the
+manifest is one of those twelve. So a PDF of twelve pages or more did not degrade gracefully: it
+raised "Sandbox output contains too many files" and previewed as nothing at all. Not a truncated
+preview. No preview.
+
+Every test passed, because the unit tests mock the container boundary and therefore cannot see a
+limit that lives inside it. The live check I ran when building the feature used a three-page
+document, which is exactly the shape that hides this: small enough to work, and reassuring enough to
+stop looking. A real-container check is only as good as the input chosen for it, and choosing a
+comfortable input is the easiest way to confirm what you already believe.
+
+Pages travel in a single tar now, so the file cap has nothing to do with page count. The archive is
+read back sorted by member name rather than in write order - a tar does preserve order, but page
+order is the entire point of a paginated preview and is too important to inherit from an
+implementation detail. A corrupt archive raises rather than yielding an empty document, for the same
+reason the manifest does.
+
+Two regression tests cover it directly: twenty pages surviving the round trip, and an unreadable
+archive failing loudly. Both failed first.
+
+Verified against a real container with the document that used to break it: a fifteen-page PDF now
+returns fifteen genuine PNGs, to_preview embeds fifteen pages, and max_pages=5 still reports "page
+limit". 851 tests pass with a database, all 51 UI tests pass, ruff check is clean.
