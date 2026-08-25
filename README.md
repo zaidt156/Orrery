@@ -23,10 +23,27 @@ service; credentials stay in your OS keychain.
 
 ### Prerequisites
 
-1. Python 3.12 or newer.
-2. Node.js 20 or newer — Orrery builds its workspace bundle itself, once, on first run.
-3. Docker Desktop — Orrery starts it and provisions PostgreSQL itself, on first run.
-4. Optional: Ollama for local models, plus provider API keys or official provider CLIs.
+1. [Git](https://git-scm.com/downloads) — used to download Orrery and to update it later.
+2. [Python 3.12 or newer](https://www.python.org/downloads/). On Windows, tick
+   **"Add python.exe to PATH"** in the installer; without it the commands below are not found.
+3. [Node.js 20 or newer](https://nodejs.org/) — Orrery builds its workspace bundle itself, once, on
+   first run.
+4. [Docker Desktop](https://www.docker.com/products/docker-desktop/) — Orrery starts it and
+   provisions PostgreSQL itself, on first run.
+5. Optional: Ollama for local models, plus provider API keys or official provider CLIs.
+
+Install each from the links above, accepting the defaults, then restart your computer if any
+installer asks you to.
+
+### Never used a terminal?
+
+A terminal is a window where you type commands. You need one to run the line below.
+
+- **Windows** — press `Win`, type `PowerShell`, press Enter.
+- **macOS** — press `Cmd + Space`, type `Terminal`, press Enter.
+- **Linux** — press `Ctrl + Alt + T`.
+
+Copy the command, paste it into that window (right-click pastes on Windows), and press Enter.
 
 ### Install and run
 
@@ -34,7 +51,10 @@ service; credentials stay in your OS keychain.
 git clone https://github.com/zaidt156/Orrery.git && cd Orrery && pip install -e . && orrery
 ```
 
-That is the whole thing. The first run does the setup that used to be a list of commands:
+That is the whole thing — one line, pasted once. It downloads Orrery into a folder named `Orrery`
+inside whatever folder your terminal was in, installs it, and starts it.
+
+The first run does the setup that used to be a list of commands:
 
 - builds the workspace bundle with npm (about a minute, once — later starts skip it)
 - starts Docker Desktop if it is installed but not running, brings up PostgreSQL with pgvector,
@@ -44,6 +64,15 @@ That is the whole thing. The first run does the setup that used to be a list of 
 No `.env` is required: it is for overriding local development settings, and the connection string
 lives in the keychain rather than on disk. Use a virtual environment if you prefer
 (`python -m venv .venv` and activate it before `pip install -e .`).
+
+**If a command is "not found":** on Windows try `py -m pip install -e .` instead of `pip install -e .`,
+and close and reopen the terminal after installing anything — a new terminal is what picks up a newly
+installed program.
+
+**If you would rather not install Git:** use the green **Code** button on
+[the repository page](https://github.com/zaidt156/Orrery), choose **Download ZIP**, unzip it, then
+open a terminal in the unzipped folder and run `pip install -e . && orrery`. Updating later means
+downloading a fresh ZIP, which is why Git is the easier path.
 
 Two optional extras, neither needed to start:
 

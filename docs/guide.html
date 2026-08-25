@@ -98,13 +98,40 @@ footer{border-top:1px solid var(--line);padding:30px 0;color:var(--quiet);font-s
 <section id="install"><h2><span class="n">02</span>Installing it</h2>
 <p>Orrery runs on your own computer and opens in the browser you already use. There is no separate
 window to install and nothing that talks to a server of ours.</p>
-<p>You need three things first: <b>Python 3.12</b>, <b>Node.js 20</b>, and <b>Docker Desktop</b>.
-Then paste this one line into a terminal:</p>
+<p>You need four free programs first. Install each one, accept the defaults, and restart your
+computer if an installer asks you to:</p>
+<ul>
+<li><a href="https://git-scm.com/downloads"><b>Git</b></a> &mdash; how Orrery is downloaded, and how
+you update it later.</li>
+<li><a href="https://www.python.org/downloads/"><b>Python 3.12</b></a> &mdash; on Windows, tick
+<b>Add python.exe to PATH</b> in the installer. Without that tick the commands below will not be
+found.</li>
+<li><a href="https://nodejs.org/"><b>Node.js 20</b></a> &mdash; Orrery uses it once, to build its
+own workspace.</li>
+<li><a href="https://www.docker.com/products/docker-desktop/"><b>Docker Desktop</b></a> &mdash;
+Orrery starts it and sets up its database for you.</li>
+</ul>
+<p><b>A terminal</b> is the window where you type commands. To open one: on <b>Windows</b> press
+<code>Win</code>, type <em>PowerShell</em> and press Enter; on <b>macOS</b> press
+<code>Cmd + Space</code>, type <em>Terminal</em> and press Enter; on <b>Linux</b> press
+<code>Ctrl + Alt + T</code>.</p>
+<p>Copy the line below, paste it into that window (on Windows, right-click pastes), and press
+Enter:</p>
 <pre><code>git clone https://github.com/zaidt156/Orrery.git &amp;&amp; cd Orrery &amp;&amp; pip install -e . &amp;&amp; orrery</code></pre>
 <p>That is the whole installation. The first run takes a minute longer than later ones, because
 Orrery does the setup for you: it builds its workspace once, starts Docker Desktop if it is
 installed but not running, brings up its database, and remembers the connection in your computer's
 keychain.</p>
+<p>It downloads Orrery into a folder called <code>Orrery</code>, inside whichever folder the
+terminal was already in.</p>
+<p><b>If something says "not found".</b> Close the terminal and open a new one &mdash; a fresh
+terminal is what notices a newly installed program. On Windows, if <code>pip</code> is still not
+found, use <code>py -m pip install -e .</code> instead.</p>
+<p><b>If you would rather not install Git.</b> Open
+<a href="https://github.com/zaidt156/Orrery">the Orrery page on GitHub</a>, click the green
+<b>Code</b> button, choose <b>Download ZIP</b>, and unzip it. Then open a terminal in that unzipped
+folder and run <code>pip install -e . &amp;&amp; orrery</code>. Updating later means downloading a
+fresh ZIP, which is the reason Git is the easier route.</p>
 <p>After that, one word starts it any time:</p>
 <pre><code>orrery</code></pre>
 <p>Your browser opens on its own. If it does not, the terminal prints a link you can paste. That link

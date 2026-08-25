@@ -4374,3 +4374,35 @@ A genuine renderer failure still reads as one, and there is a test for each.
 
 Verified: 8 new tests, all failing first; 886 tests pass; `ruff check .` is clean. "Can you create
 10 slides on HCI" now resolves to `['pptx']` through both paths.
+
+## Step 195 - The install instructions left out the program you install with (August 25, 2026)
+
+The user asked how someone without much technical background installs and runs Orrery. Reading the
+three places that answer that question, the gap was immediate and slightly embarrassing: every one
+of them lists the prerequisites as Python, Node.js and Docker Desktop, and every one of them then
+gives a command that begins `git clone`. Git is not mentioned anywhere. A newcomer follows the
+instructions exactly, installs all three named programs, pastes the line, and is told
+`git: command not found`.
+
+Two smaller versions of the same problem sat next to it. The guide said "paste this one line into a
+terminal" without saying what a terminal is or how to open one, which is a reasonable thing to
+assume of a developer and not of the audience that page is written for. And Python on Windows
+installs without being on PATH unless you tick a box that is easy to miss, which produces the same
+"not found" a few seconds later.
+
+All three surfaces now name Git as the first prerequisite and link every download. The guide and the
+landing page say how to open a terminal on Windows, macOS and Linux, and the Windows PATH tick is
+called out where the installer is linked rather than buried in troubleshooting. Two failure modes
+that will otherwise generate the same question repeatedly are answered in place: reopen the terminal
+after installing anything, and `py -m pip` when `pip` is missing on Windows.
+
+There is also a way through for someone who does not want to install Git at all — the green Code
+button, Download ZIP, unzip, and `pip install -e . && orrery` in that folder. It is offered with its
+honest downside stated, that updating means downloading a fresh ZIP, which is the actual reason Git
+is the better route rather than a reason to hide the alternative.
+
+None of this changes a line of code. It changes whether the first five minutes work for someone who
+is not a developer, which is the difference between software that runs and software people can run.
+
+Verified: both pages' block tags balance, both name Git and carry the no-Git path, and the 886-test
+suite is unaffected.
