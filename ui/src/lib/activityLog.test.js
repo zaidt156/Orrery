@@ -103,3 +103,77 @@ test("elapsed labels are relative to the start of the turn", () => {
   assert.equal(elapsedLabel(1000, 1000), "0.0s");
   assert.equal(elapsedLabel(500, 1000), "0.0s");   // never negative
 });
+
+// --- the panel showed "[object Object]" for everything the model actually did -------------------
+//
+// `reasoning_step`, `reasoning_event` and `reasoning_summary` are all OBJECTS on the wire. The log
+// ran String() over them, so every tool call, every retrieval, every step rendered as
+// "[object Object]" — the panel listed that something happened and never what.
+
+test("a tool step shows its stage and detail, not [object Object]", () => {
+  const log = applyActivityEvent([], {
+    reasoning_step: {
+      id: "s1",
+      stage: "Running Python",
+      detail: "Executing the model's code in the secure sandbox",
+      kind: "tool",
+      status: "running",
+      phase: "execute",
+      level: "info",
+    },
+  }, 1000);
+
+  assert.equal(log.length, 1);
+  assert.doesNotMatch(log[0].text, /\[object Object\]/);
+  assert.match(log[0].text, /Running Python/);
+  assert.match(log[0].text, /secure sandbox/);
+});
+
+test("a step with no detail shows just its stage", () => {
+  const log = applyActivityEvent([], {
+    reasoning_step: { stage: "Thinking about the request", detail: "", kind: "work" },
+  }, 1000);
+
+  assert.equal(log[0].text, "Thinking about the request");
+});
+
+test("a tool step is marked as a tool so the panel can distinguish it", () => {
+  const log = applyActivityEvent([], {
+    reasoning_step: { stage: "Searching the web", detail: "orrery", kind: "tool" },
+  }, 1000);
+
+  assert.equal(log[0].kind, "tool");
+});
+
+test("a failed step reads as an error", () => {
+  const log = applyActivityEvent([], {
+    reasoning_step: { stage: "Code run had issues", detail: "exit 1", kind: "result", level: "error" },
+  }, 1000);
+
+  assert.equal(log[0].tone, "error");
+});
+
+test("the legacy reasoning_event payload is also rendered", () => {
+  const log = applyActivityEvent([], {
+    reasoning_event: { stage: "Refreshing dashboard", detail: "sales overview" },
+  }, 1000);
+
+  assert.doesNotMatch(log[0].text, /\[object Object\]/);
+  assert.match(log[0].text, /Refreshing dashboard/);
+});
+
+test("a summary lists its items instead of stringifying the object", () => {
+  const log = applyActivityEvent([], {
+    reasoning_summary: { title: "How this was produced", items: ["Searched the web", "Wrote a file"] },
+  }, 1000);
+
+  assert.doesNotMatch(log[0].text, /\[object Object\]/);
+  assert.match(log[0].text, /How this was produced/);
+  assert.match(log[0].text, /Searched the web/);
+});
+
+test("a malformed step never renders as [object Object]", () => {
+  const log = applyActivityEvent([], { reasoning_step: { detail: "no stage given" } }, 1000);
+
+  if (log.length) assert.doesNotMatch(log[0].text, /\[object Object\]/);
+});

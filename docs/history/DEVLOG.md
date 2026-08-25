@@ -4312,3 +4312,34 @@ exists, not of when a pin became available.
 
 Verified: 3 new tests, all failing first; 879 tests pass; `ruff check .` is clean. A plan user now
 sees Fable 5, Opus 5, Sonnet 5 and Haiku 4.5, with the three 1M models reporting 1,000,000 tokens.
+
+## Step 193 - The Activity panel said "[object Object]" for everything (August 25, 2026)
+
+The user reported seeing "Objects objects" in the Activity panel instead of what was actually being
+done. It reproduced immediately, and the cause is a one-word bug with a wide blast radius.
+
+`reasoning_step`, `reasoning_event` and `reasoning_summary` all arrive as objects. A step carries
+`{id, stage, detail, kind, status, phase, level, metadata}`. The activity log ran `String()` over
+them:
+
+    if (ev.reasoning_step) return entry("step", String(ev.reasoning_step), now);
+
+`String({...})` is `"[object Object]"`. So every tool call, every retrieval, every sandbox run and
+every summary rendered as that literal string. The panel truthfully recorded that thirty things
+happened and never once said what — which is worse than useless for a feature whose entire promise,
+written at the top of the file, is that it shows what the model was actually given and did.
+
+Step 169 introduced the panel and Step 174 wired the events; neither had a test that asserted the
+rendered text of a step, only that entries appeared. Counting entries is not reading them.
+
+Steps now render `stage · detail`, or just the stage when there is no detail. Two things came along
+with the fix because they are what the user was asking for. The entry takes the backend's own kind —
+tool, file, script, validation, result, safety, route, context — so a tool call is labelled `TOOL`
+rather than the generic `STEP`, and the row carries that kind so the panel can colour a tool call
+distinctly from narration. And the level/status maps to a tone, so a failed step reads red instead
+of looking like ordinary progress.
+
+Summaries render their title and items rather than `Summary: [object Object]`.
+
+Verified: 7 new tests, all failing first, including one asserting a malformed step with no stage
+never produces the literal string again. 61 UI tests pass and the bundle builds.

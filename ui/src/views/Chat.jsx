@@ -1117,7 +1117,8 @@ export default function Chat({ features = null }) {
               <div className="activity-empty">Nothing yet. Send a message and this fills in live.</div>
             )}
             {activity.map((e, i) => (
-              <div className={`activity-row${e.tone ? ` ${e.tone}` : ""}`} key={`${e.at}-${i}`}>
+              <div className={`activity-row${e.tone ? ` ${e.tone}` : ""}`} data-kind={e.kind}
+                   key={`${e.at}-${i}`}>
                 <span className="activity-at">{elapsedLabel(e.at, activityStartRef.current)}</span>
                 <span className="activity-kind">{e.kind}</span>
                 <span className="activity-text">{e.text}</span>

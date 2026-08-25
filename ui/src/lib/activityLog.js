@@ -30,11 +30,52 @@ export function applyActivityEvent(log, ev, now = Date.now()) {
   return cap([...log, line]);
 }
 
+// `reasoning_step`, `reasoning_event` and `reasoning_summary` arrive as OBJECTS, not strings. Each
+// used to be passed through String(), so every tool call and every retrieval rendered as
+// "[object Object]" — the panel said something happened and never what. These read the fields.
+
+/** The visible line for a work-trace step: its stage, and its detail when there is one. */
+function stepText(step) {
+  if (typeof step === "string") return step;
+  if (!step || typeof step !== "object") return "";
+  const stage = String(step.stage || "").trim();
+  const detail = String(step.detail || "").trim();
+  if (stage && detail) return `${stage} · ${detail}`;
+  return stage || detail;
+}
+
+// The panel styles entries by kind, so a tool call should not look like ordinary narration. Kinds
+// come from the backend's trace vocabulary (work|tool|file|script|validation|result|safety|route|
+// context); anything unrecognised falls back to a plain step.
+const STEP_KINDS = new Set(["tool", "file", "script", "validation", "result", "safety", "route", "context"]);
+
+function stepTone(step) {
+  const level = String(step?.level || "").toLowerCase();
+  const status = String(step?.status || "").toLowerCase();
+  if (level === "error" || status === "error") return TONE.error;
+  if (level === "warning" || status === "warning") return TONE.warn;
+  if (level === "success" || status === "done") return TONE.ok;
+  return undefined;
+}
+
+function describeStep(step, now) {
+  const text = stepText(step);
+  if (!text) return null;
+  const kind = String(step?.kind || "").toLowerCase();
+  return entry(STEP_KINDS.has(kind) ? kind : "step", text, now, stepTone(step));
+}
+
 function describe(ev, now) {
   if (ev.status) return entry("status", String(ev.status), now);
-  if (ev.reasoning_step) return entry("step", String(ev.reasoning_step), now);
-  if (ev.reasoning_event) return entry("step", String(ev.reasoning_event), now);
-  if (ev.reasoning_summary) return entry("step", `Summary: ${ev.reasoning_summary}`, now);
+  if (ev.reasoning_step) return describeStep(ev.reasoning_step, now);
+  if (ev.reasoning_event) return describeStep(ev.reasoning_event, now);
+  if (ev.reasoning_summary) {
+    const summary = ev.reasoning_summary;
+    if (typeof summary === "string") return entry("step", `Summary: ${summary}`, now);
+    const title = String(summary?.title || "How this was produced").trim();
+    const items = Array.isArray(summary?.items) ? summary.items.filter(Boolean).map(String) : [];
+    return entry("step", items.length ? `${title}: ${items.join(" · ")}` : title, now);
+  }
 
   if (ev.sources) {
     const n = Array.isArray(ev.sources) ? ev.sources.length : 0;

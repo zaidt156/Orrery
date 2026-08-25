@@ -2029,6 +2029,14 @@ button:focus-visible, .toggle:focus-visible, .node:focus-visible, .convo:focus-v
 .activity-row.ok .activity-kind{color:var(--green)}
 .activity-row.warn .activity-kind{color:var(--amber)}
 .activity-row.error .activity-kind{color:var(--red)}
+/* A tool call is the line a user scans for, so it reads differently from narration even when the
+   step carried no tone. Tone still wins: a failed tool stays red. */
+.activity-row[data-kind="tool"] .activity-kind{color:var(--blue)}
+.activity-row[data-kind="file"] .activity-kind{color:var(--green)}
+.activity-row.ok .activity-kind,.activity-row.warn .activity-kind,.activity-row.error .activity-kind{color:inherit}
+.activity-row.ok .activity-kind{color:var(--green)}
+.activity-row.warn .activity-kind{color:var(--amber)}
+.activity-row.error .activity-kind{color:var(--red)}
 .activity-row.error .activity-text{color:var(--red)}
 .activity-toggle{cursor:pointer; display:inline-flex; align-items:center; gap:5px; border:none;
   font:inherit; font-size:11px}
