@@ -4243,3 +4243,40 @@ and no LibreOffice is told its previews work — because they do.
 
 Verified: 871 backend tests, 54 UI tests, `ruff check .` clean, the bundle builds, and every
 cross-reference in PLAN.md, TODO.md and ARCHITECTURE.md resolves.
+
+## Step 191 - OpenDocument skipped the archive guard (August 25, 2026)
+
+A review pass over the five commits of the previous slice, before anyone else reads them. It found a
+gap I opened myself.
+
+OpenDocument files were added to the render dispatch but not to `_office_archive_issue`. That guard
+runs before any Office file is previewed and refuses oversized input, archives with too many
+entries, packages that expand past a ceiling, oversized members, encrypted packages and macro
+carriers. ODF is the same zip-container shape as OOXML, so all of it applies — and none of it ran.
+
+The container bounded the damage, which is the point of the previous step: a zip bomb would have
+detonated inside a 640 MB, no-network, PID-capped box rather than in the backend process. But a
+hostile file should not reach the container either, and the oversized-input ceiling never applied at
+all, so a fifty-megabyte ODT would have been shipped in whole. The guard covers all seven extensions
+now.
+
+ODF hides its macros somewhere else. There is no `vbaProject.bin`; OpenDocument keeps them under
+`Basic/`, so the macro check looks for that too. The message dropped its reference to "the host
+converter" while it was being edited, because for ODF there often is not one.
+
+Two of my own tests were wrong in ways worth recording. The macro test was named `macro.odt` and
+asserted `"macro" in body` — the inert fallback echoes the filename, so it passed without the guard
+running at all. It is `deck.odt` now and asserts the guard's actual sentence. And the oversized test
+asserted the archive guard's wording when the size ceiling in `to_preview` fires first with different
+words; the behaviour was right and the assertion was checking the wrong sentence.
+
+The last finding was not a defect but an unintended change. Adding ODF to that branch also put it on
+the LibreOffice conversion path, because the archive guard and the `_office_pdf` call live in the
+same block. That is the better outcome — LibreOffice reads OpenDocument natively, so where it exists
+ODF now gets page-faithful pages like OOXML — but it happened by accident and quietly contradicted
+ADR-006, written hours earlier, which said ODF had "no host path at all". The behaviour is pinned by
+two tests now, and the ADR says what is actually true: ODF needs no *in-process* parser, and an
+external optional one is the same trade OOXML makes.
+
+Verified: 5 new tests, 876 backend tests, 54 UI tests, `ruff check .` clean, and a real ODT still
+previews end to end through the guard. CI run #27 was green for the slice this reviewed.

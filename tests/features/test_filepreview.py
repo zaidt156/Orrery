@@ -1069,7 +1069,9 @@ def test_opendocument_is_rendered_in_the_container(monkeypatch):
     monkeypatch.setattr(sandbox, "image_ready", lambda *a, **k: True)
     monkeypatch.setattr(sandbox, "render_office_html", lambda name, data: b"<html>odt</html>")
 
-    body, mime = filepreview.to_preview("notes.odt", "application/octet-stream", b"PK\x03\x04odf")
+    # a real ODF zip: the archive guard runs for OpenDocument too, so junk bytes never reach dispatch
+    body, mime = filepreview.to_preview(
+        "notes.odt", "application/octet-stream", _odf_zip({"content.xml": b"<x/>"}))
 
     assert body == b"<html>odt</html>"
     assert mime == "text/html; charset=utf-8"
@@ -1149,3 +1151,107 @@ def test_no_container_and_no_libreoffice_is_the_only_degraded_state(monkeypatch)
 
     assert status["available"] is False
     assert status["engine"] == "host"
+
+
+# --- OpenDocument is a zip archive too ----------------------------------------------------------
+#
+# Regression: ODF was added to the render dispatch but not to the archive guard, so an .odt skipped
+# the size, entry-count, expansion and member-size checks that every other zip-based Office format
+# passes. The container bounds the damage, but a hostile file should not reach it at all.
+
+def _odf_zip(entries: dict[str, bytes]) -> bytes:
+    stream = io.BytesIO()
+    with zipfile.ZipFile(stream, "w") as package:
+        package.writestr("mimetype", b"application/vnd.oasis.opendocument.text")
+        for entry_name, payload in entries.items():
+            package.writestr(entry_name, payload)
+    return stream.getvalue()
+
+
+def test_an_oversized_odt_is_refused_before_a_container_starts(monkeypatch):
+    from backend.features import sandbox
+
+    def _never(*_args, **_kwargs):
+        raise AssertionError("a container was started for a file the guard should have refused")
+
+    monkeypatch.setattr(sandbox, "image_ready", lambda *a, **k: True)
+    monkeypatch.setattr(sandbox, "render_office_html", _never)
+    monkeypatch.setattr(filepreview, "_MAX_PREVIEW_INPUT_BYTES", 500)
+
+    body, _ = filepreview.to_preview(
+        "big.odt", "application/octet-stream", _odf_zip({"content.xml": b"x" * 4000}))
+
+    # No container was started — the stub above would have raised. The size ceiling in `to_preview`
+    # fires ahead of the archive guard and words it as an input limit rather than a preview limit.
+    assert b"safe input limit" in body
+
+
+def test_an_odt_that_expands_too_far_is_refused(monkeypatch):
+    from backend.features import sandbox
+
+    def _never(*_args, **_kwargs):
+        raise AssertionError("a zip bomb reached the container")
+
+    monkeypatch.setattr(sandbox, "image_ready", lambda *a, **k: True)
+    monkeypatch.setattr(sandbox, "render_office_html", _never)
+    monkeypatch.setattr(filepreview, "_MAX_OFFICE_UNCOMPRESSED_BYTES", 1_000)
+
+    body, _ = filepreview.to_preview(
+        "bomb.ods", "application/octet-stream", _odf_zip({"content.xml": b"0" * 50_000}))
+
+    assert b"expanded beyond" in body
+
+
+def test_an_odf_package_carrying_basic_macros_is_refused(monkeypatch):
+    """OpenDocument keeps macros under Basic/, not vbaProject.bin."""
+    from backend.features import sandbox
+
+    def _never(*_args, **_kwargs):
+        raise AssertionError("a macro-bearing ODF reached the container")
+
+    monkeypatch.setattr(sandbox, "image_ready", lambda *a, **k: True)
+    monkeypatch.setattr(sandbox, "render_office_html", _never)
+
+    # deliberately not named "macro.odt": the inert fallback echoes the filename, so that name
+    # would let this pass without the guard running at all.
+    body, _ = filepreview.to_preview(
+        "deck.odt", "application/octet-stream",
+        _odf_zip({"content.xml": b"<x/>", "Basic/Standard/Module1.xml": b"<x/>"}))
+
+    assert b"macros are not" in body.lower(), body[:400]
+
+
+def test_libreoffice_converts_opendocument_when_it_is_installed(monkeypatch):
+    """Adding ODF to the archive-guard branch also put it on the LibreOffice conversion path.
+
+    That is the right outcome and worth pinning rather than leaving incidental: LibreOffice reads
+    OpenDocument natively, so where it exists ODF gets page-faithful pages like OOXML does. The
+    claim ODF makes is that it needs no *in-process* parser, not that it refuses an external one.
+    """
+    from backend.features import sandbox
+
+    def _container_not_needed(*_args, **_kwargs):
+        raise AssertionError("the container ran even though LibreOffice could convert this")
+
+    monkeypatch.setattr(sandbox, "image_ready", lambda *a, **k: True)
+    monkeypatch.setattr(sandbox, "render_office_html", _container_not_needed)
+    monkeypatch.setattr(filepreview, "_office_pdf", lambda *a, **k: b"%PDF-fake")
+    monkeypatch.setattr(filepreview, "_rendered_pdf_html", lambda name, data: b"<html>pages</html>")
+
+    body, _ = filepreview.to_preview(
+        "notes.odt", "application/octet-stream", _odf_zip({"content.xml": b"<x/>"}))
+
+    assert body == b"<html>pages</html>"
+
+
+def test_opendocument_falls_to_the_container_when_libreoffice_cannot_convert(monkeypatch):
+    from backend.features import sandbox
+
+    monkeypatch.setattr(sandbox, "image_ready", lambda *a, **k: True)
+    monkeypatch.setattr(filepreview, "_office_pdf", lambda *a, **k: None)
+    monkeypatch.setattr(sandbox, "render_office_html", lambda name, data: b"<html>odt</html>")
+
+    body, _ = filepreview.to_preview(
+        "notes.odt", "application/octet-stream", _odf_zip({"content.xml": b"<x/>"}))
+
+    assert body == b"<html>odt</html>"

@@ -410,9 +410,11 @@ def _office_archive_issue(data: bytes, name: str = "") -> str | None:
                 member.endswith("vbaproject.bin")
                 or "/vba/" in f"/{member}/"
                 or "macrosheet" in member
+                # OpenDocument keeps macros under Basic/, with no vbaProject.bin to look for.
+                or member.startswith("basic/")
                 for member in normalized_names
             ):
-                return "Office packages containing macros are not sent to the host converter."
+                return "Office packages containing macros are not previewed."
 
             content_types = next(
                 (entry for entry in entries if entry.filename.replace("\\", "/").lstrip("/").lower() == "[content_types].xml"),
@@ -793,7 +795,11 @@ def to_preview(
         )
     if ext == "pdf":
         return _pdf_html(name, data), "text/html; charset=utf-8"
-    if ext in ("pptx", "docx", "xlsx", "xlsm"):
+    # Every zip-based Office format passes the archive guard, OpenDocument included: it is the same
+    # container shape, so the entry-count, expansion, member-size and oversized-input checks apply
+    # exactly as they do to OOXML. The worker bounds the damage of a hostile file, but there is no
+    # reason to spend a container on one.
+    if ext in ("pptx", "docx", "xlsx", "xlsm", "odt", "ods", "odp"):
         archive_issue = _office_archive_issue(data, name)
         if archive_issue:
             return (

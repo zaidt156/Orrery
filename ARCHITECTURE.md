@@ -372,9 +372,10 @@ suite installed. Wherever the sandbox image exists that rendering happens **insi
 container**, not in this process: `office_render.py` is mounted read-only into the worker and run
 there, so an attacker-supplied document is parsed with no network, a read-only root, a non-root user
 and dropped capabilities. A sandbox failure produces a notice, never a host parse. The in-process
-renderers survive only where no image exists, and OpenDocument has no host path at all — `odfpy`
-ships in the image and deliberately not on the host, so ODT/ODS/ODP are a capability the worker
-provides rather than one it merely protects.
+renderers survive only where no image exists, and OpenDocument has no in-process parser at all —
+`odfpy` ships in the image and deliberately not on the host, so ODT/ODS/ODP are a capability the
+worker provides rather than one it merely protects. LibreOffice, where installed, converts ODF to
+PDF like any other format.
 
 Format by format: PDFs rasterize to page images (pypdfium2 in the container, QtPdf on a host without
 one); Word previews keep run
