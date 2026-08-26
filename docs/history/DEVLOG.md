@@ -4684,3 +4684,52 @@ ability to recover the first time the input is wrong.
 Verified with the bug reproduced first — the failing test asserted 1,048,576 and got 131,072 — then
 three more covering the deliberate small window (which must not be widened), the genuine narrowing
 (which must still happen), and the switch-away-and-back round trip. 1055 tests pass.
+
+## Step 201 - Writes land, and every one of them is on the record (August 26, 2026)
+
+Slice 4, the irreversible one. `work_write`, `work_edit`, `work_delete`, a `work_changes` to read
+the log back, and the `workspace_writes` table behind them.
+
+**The ordering is the whole design.** The row is opened *before* the bytes move and completed after.
+Given the two ways this can go wrong, they are not symmetric: a mutation with no row is invisible
+forever, because nothing knows to look for it, while a row with no mutation is self-evident — it
+still says `started`, and `digest_before` proves the file was never touched. Only one of those is
+recoverable, so the design picks it. ADR-005 already records tool dispatch this way for the same
+reason, which is a good sign the shape is right rather than invented for this slice.
+
+**`work_edit` states what it saw.** It takes the digest of the content the caller actually read and
+refuses if the file has changed since. That is not concurrency theatre — it removes the case where
+a model reads a file, thinks while a build or another edit rewrites it, and writes back something
+derived from a version that no longer exists. The refusal says to read it again, because a refusal
+the caller cannot act on just looks like breakage.
+
+**A write is atomic.** Content goes to a temporary file *beside the target* and is moved into place.
+Beside, specifically: `os.replace` is only atomic within a filesystem, so a temp directory elsewhere
+would silently degrade to copy-then-delete. Losing the new content is recoverable; losing the old
+content as well is not.
+
+**Deleting one file, never a directory.** Removing a tree is a far larger action than one log row
+can honestly describe. It is still available — through `work_run`, where the user approves a visible
+command rather than a path. And `work_delete` is marked `destructive`, which the approval gate
+already refuses to remember: security.md §4 names deletes as the canonical always-ask case, so the
+correct risk label is the whole implementation. There was no second rule to write.
+
+The security review (running the hardening skill over the finished slice) turned up two things.
+Symlink escapes on the write path were already refused — `resolve_in_root` did its job, and the
+abuse cases are now written down rather than assumed. But the log was recording the path the caller
+*typed*: `src/../src/main.py` and `src/main.py` would have produced two rows describing one file,
+neither obviously canonical. An audit record has to describe what happened, not echo back the
+request, so it stores the resolved root-relative path — in the row opened before the write as well
+as the one completed after, or the two halves would name different files. And a failure reason now
+goes through the central scrubber on the way in: an error string is arbitrary text from wherever it
+came from, and §9 is explicit that a log must not become the place a secret persists.
+
+One test in this slice earns its keep more than the rest. The tool tests use a fake write log so
+they can run without a database — and a fake can drift from the real signature with nothing
+noticing, which would leave the feature writing files and recording nothing at all. So there is a
+single end-to-end test that drives the registry against real PostgreSQL and reads the row back.
+After two vacuous tests in this workstream already, a fake that nobody checks against the real thing
+is a trap worth spending a test on.
+
+Verified: 1098 tests pass, including the durable-log tests against a real database. Next: plan mode,
+where the model designs the task before any of this runs.

@@ -24,13 +24,13 @@
 - [x] **CHECKPOINT** — the model can understand a folder and run things in it, and still cannot
       touch a byte outside it.
 
-- [ ] **4. Writes, with a log.** `work_write`, `work_edit` (observed-version), `work_delete`, and a
+- [x] **4. Writes, with a log.** `work_write`, `work_edit` (observed-version), `work_delete`, and a
       `WorkspaceWrite` table recording root, path, action and digests.
       *Done when:* an edit against a stale digest is refused; every mutation appears in the log with
       before/after digests.
       *Scope:* M — 3 files + tests.
 
-- [ ] **CHECKPOINT** — writes land, and there is a record of every one.
+- [x] **CHECKPOINT** — writes land, and there is a record of every one.
 
 - [ ] **5. Plan mode.** In Orrery Work the model returns a plan first; no tool runs until it is
       accepted.

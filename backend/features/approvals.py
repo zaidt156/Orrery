@@ -63,8 +63,8 @@ def _remember_key(tool_key: str, args: dict) -> str:
     # live with, since a build is dozens of them. The folder is the unit the user actually reasoned
     # about when they attached it, which is why `work_run` requires a root_id rather than accepting
     # "whatever is current": an approval must not survive the user switching folders.
-    if tool_key == "work_run":
-        return f"work:{args.get('root_id')}"
+    if tool_key.startswith("work_"):
+        return f"{tool_key}:{args.get('root_id')}"
     return tool_key
 
 
@@ -79,6 +79,10 @@ def _summary_for(tool_key: str, label: str, args: dict) -> str:
         # The command itself, because "Run a command in the attached folder" tells the user nothing
         # they need in order to decide.
         return f"Run in the attached folder: {str(args.get('command') or '')[:200]}"
+    if tool_key in ("work_write", "work_edit", "work_delete"):
+        # The file, for the same reason: the path is the whole decision.
+        verb = {"work_write": "Write", "work_edit": "Edit", "work_delete": "Delete"}[tool_key]
+        return f"{verb} in the attached folder: {str(args.get('path') or '')[:200]}"
     return f"Run {label or tool_key}"
 
 

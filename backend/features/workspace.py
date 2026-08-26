@@ -218,6 +218,17 @@ def grep(root: Path | str, expression: str, *, glob: str = "**/*",
             "skipped_files": skipped_files, "truncated": truncated}
 
 
+def relative_in_root(root: Path | str, resolved: Path) -> str:
+    """A resolved path written the way the model and the write log should see it.
+
+    Root-relative and forward-slashed. Everything user-facing uses this rather than the absolute
+    path — an absolute path tells the model where on the disk the folder lives — and the audit log
+    uses it so a record describes the file that changed rather than echoing back the string that
+    was typed. `src/../src/main.py` and `src/main.py` are the same file and must read the same.
+    """
+    return _relative(resolved, root)
+
+
 def _relative(path: Path, root: Path | str) -> str:
     return path.relative_to(_resolved_root(root)).as_posix()
 

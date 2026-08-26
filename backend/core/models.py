@@ -851,3 +851,41 @@ class WorkspaceRoot(Base):
         UniqueConstraint("owner_id", "path", name="uq_workspace_root_owner_path"),
         Index("ix_workspace_roots_owner_active", "owner_id", "active"),
     )
+
+
+class WorkspaceWrite(Base):
+    """One recorded change to a file in an attached folder (ADR-007).
+
+    This table is the compensating control for giving up diff-then-apply: a wrong edit is already on
+    disk, so what Orrery owes the user is a truthful account of what changed, independent of the
+    model's own description of what it did.
+
+    The row is opened BEFORE the bytes move and completed afterwards, which is why `status` exists.
+    That ordering is the whole guarantee: a mutation with no row is invisible forever, while a row
+    with no mutation is self-evident — it still says `started`, and `digest_before` proves the file
+    was never touched. ADR-005's tool lifecycle records dispatch the same way, for the same reason.
+
+    Rows are deleted with their root: a log describing a folder the user has told Orrery to forget
+    is a record they did not ask it to keep, pointing at paths it can no longer resolve.
+    """
+    __tablename__ = "workspace_writes"
+
+    id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    root_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("workspace_roots.id", ondelete="CASCADE"), index=True
+    )
+    path: Mapped[str] = mapped_column(Text)                 # relative to the root, forward slashes
+    action: Mapped[str] = mapped_column(String(16))         # created | modified | deleted
+    status: Mapped[str] = mapped_column(String(16), default="started")  # started | done | failed
+    # sha256 of the file's bytes either side of the change; null where there is no such side
+    # (nothing existed before a create; nothing remains after a delete or a failure).
+    digest_before: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    digest_after: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    bytes_after: Mapped[int] = mapped_column(Integer, default=0)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    completed_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        Index("ix_workspace_writes_root_created", "root_id", "created_at"),
+    )
