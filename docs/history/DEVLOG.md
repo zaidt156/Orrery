@@ -4651,3 +4651,36 @@ thing that must survive a cancel is the cleanup.
 
 Verified: 1051 tests pass locally, the ubuntu job passes in a container with a real pgvector
 database, and the UI job passes on node 20.
+
+## Step 200 - The context fix reached new chats and left the existing ones behind (August 26, 2026)
+
+Asked whether the context problem was actually fixed for chats, the honest answer was: half of it.
+Step 196 corrected what each model reports, so new conversations were right. Every conversation that
+already existed was still trimming to the old, wrong number, and would have gone on doing so forever.
+
+The reason is one line that reads as obviously correct:
+
+    conv.context_window = min(int(conv.context_window), ai.model_context_window(conv.model))
+
+A clamp is right in one direction and lossy in the other. It stops a chat asking for more than its
+model has — good — by *overwriting* the request. So when a maximum turns out to have been
+**understated**, the information needed to recover has already been destroyed. A chat created while
+Gemini 3.7 Flash reported 131,072 keeps 131,072 after the model is known to hold 1,048,576, because
+nothing anywhere still remembers that a megabyte was asked for.
+
+The same line had a second victim nobody had reported. Switch a chat to Haiku to try one reply, and
+its window is clamped to 200K. Switch back to Opus, and it stays at 200K — permanently, silently,
+for the rest of that conversation's life.
+
+The fix is not a smarter clamp. It is to stop persisting one: store what the user asked for, and cap
+it **on the way out**, where the cap is a view rather than a mutation. Both failures then heal by
+themselves — the first the moment the model's real window is known, the second the moment the model
+is switched back.
+
+This is worth remembering as a shape rather than an incident: *a lossy write applied on every update
+is a one-way ratchet.* It looks harmless while the input is correct, and it quietly destroys the
+ability to recover the first time the input is wrong.
+
+Verified with the bug reproduced first — the failing test asserted 1,048,576 and got 131,072 — then
+three more covering the deliberate small window (which must not be widened), the genuine narrowing
+(which must still happen), and the switch-away-and-back round trip. 1055 tests pass.

@@ -332,7 +332,7 @@ async def _prepare_turn(
             return None
         model, system_prompt, effort = conv.model, conv.system_prompt, conv.effort
         project_id = conv.project_id
-        context_window = _effective_context_window(conv.context_window)
+        context_window = _effective_context_window(conv.context_window, conv.model)
 
         rows = await persistence.load_skeletons(s, cid)  # light rows; text is hydrated per-need below
         seed = versioning.sibling_turn_seed(rows, sibling_of) if sibling_of else None
@@ -1267,7 +1267,7 @@ async def regenerate(conv_id: str) -> AsyncIterator[dict]:
             return
         model, system_prompt, effort = conv.model, conv.system_prompt, conv.effort
         project_id = conv.project_id
-        context_window = _effective_context_window(conv.context_window)
+        context_window = _effective_context_window(conv.context_window, conv.model)
         model = ai.plan_long_context_model(model, context_window)  # match the live turn's 1M behavior
 
         rows = await persistence.load_skeletons(s, cid)  # light rows; text is hydrated per-need below

@@ -153,8 +153,29 @@ def _limit_messages(
     return [message for group in reversed(selected) for message in group]
 
 
-def _effective_context_window(context_window: int | None) -> int:
-    return context_window or DEFAULT_CONTEXT_WINDOW
+def _effective_context_window(context_window: int | None, model: str | None = None) -> int:
+    """The window this chat can actually use: what was asked for, capped by what the model has.
+
+    The cap is applied HERE, on the way out, and deliberately not written back to the row. It used
+    to be persisted with `min(stored, maximum)`, which is right in one direction and lossy in the
+    other — the stored number could only ever shrink. Two real failures came out of that:
+
+    - When a maximum turned out to have been *understated* (Gemini 3.7 Flash reported as 131,072
+      instead of 1,048,576; every local model reported as 32,768), correcting it fixed new chats and
+      left every existing one trimming to a fraction of its model. The information needed to recover
+      had already been overwritten.
+    - Switching a chat to a smaller model and back left it permanently capped at the smaller one's
+      window, because the larger request was gone.
+
+    Clamping at the point of use keeps the user's actual request intact, so both of those heal by
+    themselves the moment the model's real window is known.
+    """
+    window = context_window or DEFAULT_CONTEXT_WINDOW
+    if not model:
+        return window
+    from backend.providers import ai
+
+    return min(window, ai.model_context_window(model))
 
 
 def _message_artifacts(raw: str | None) -> list[dict]:

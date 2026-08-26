@@ -17,7 +17,6 @@ from backend.features.chat import persistence, versioning
 from backend.features.chat_context import (
     DEFAULT_CONTEXT_WINDOW, _effective_context_window, _message_artifacts,
 )
-from backend.providers import ai
 
 
 def _owned_by(row, owner_id: str | None) -> bool:
@@ -91,7 +90,9 @@ async def create_conversation(
             model=model,
             system_prompt=system_prompt or None,
             effort=effort or None,
-            context_window=min(int(context_window), ai.model_context_window(model)) if context_window else context_window,
+            # Stored as requested. Capping here would be lossy: a maximum that was understated
+            # once could never be recovered from (see _effective_context_window).
+            context_window=int(context_window) if context_window else context_window,
             owner_id=owner,
         )
         s.add(conv)
@@ -100,7 +101,7 @@ async def create_conversation(
         return {"id": str(conv.id), "project_id": str(conv.project_id) if conv.project_id else None,
                 "title": conv.title, "model": conv.model,
                 "system_prompt": conv.system_prompt, "effort": conv.effort,
-                "context_window": _effective_context_window(conv.context_window), "messages": []}
+                "context_window": _effective_context_window(conv.context_window, conv.model), "messages": []}
 
 
 async def get_conversation(conv_id: str) -> dict | None:
@@ -129,7 +130,7 @@ async def get_conversation(conv_id: str) -> dict | None:
             "id": str(conv.id), "title": conv.title, "model": conv.model,
             "project_id": str(conv.project_id) if conv.project_id else None,
             "system_prompt": conv.system_prompt, "effort": conv.effort,
-            "context_window": _effective_context_window(conv.context_window),
+            "context_window": _effective_context_window(conv.context_window, conv.model),
             "messages": [
                 {
                     "id": str(m.id),
@@ -247,8 +248,8 @@ async def update_conversation(
             conv.effort = (effort or None)
         if context_window is not _UNSET:
             conv.context_window = context_window
-        if conv.context_window:  # clamp to the (possibly new) model's real maximum
-            conv.context_window = min(int(conv.context_window), ai.model_context_window(conv.model))
+        # No clamp written back: switching to a smaller model must not destroy the larger request,
+        # or switching away and back would silently cost the user their window for good.
         if project_id is not _UNSET:
             if project_id:
                 project = await s.get(Project, uuid.UUID(project_id))
@@ -262,7 +263,7 @@ async def update_conversation(
         return {"id": str(conv.id), "project_id": str(conv.project_id) if conv.project_id else None,
                 "title": conv.title, "model": conv.model,
                 "system_prompt": conv.system_prompt, "effort": conv.effort,
-                "context_window": _effective_context_window(conv.context_window)}
+                "context_window": _effective_context_window(conv.context_window, conv.model)}
 
 
 async def delete_conversation(conv_id: str) -> bool:
