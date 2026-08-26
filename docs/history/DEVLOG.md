@@ -4574,3 +4574,80 @@ because `rm -rf node_modules` is exactly what people mean, and a guard that catc
 guard people turn off.
 
 Verified: 1047 tests pass, in random order and with a live PostgreSQL. Next: writes, with the log.
+
+## Step 199 - CI went red, and two of the three reasons were tests that were lying (August 26, 2026)
+
+The user reported the pipeline failing. There is no `gh` on this machine and reading the stored
+GitHub credential is (correctly) blocked, so the logs were not available — which turned out to be
+useful, because it forced reproducing the matrix instead of reading a stack trace off it.
+
+All three jobs were rebuilt locally in containers against the pushed commit:
+
+- **backend (ubuntu + pgvector, ORRERY_REQUIRE_DB=1)** — 1041 passed, lint clean. Not the failure.
+- **ui (node 20)** — `npm ci`, 67 tests, production build. Not the failure. Worth checking rather
+  than assuming: the local machine runs node 24, and node's test-file discovery has changed between
+  majors.
+- **crossplatform (macos-latest, windows-latest)** — the failure.
+
+A first attempt at the ubuntu job reported **532 lint errors**, which would have been an alarming
+thing to start fixing. It was an artifact: the repo had been copied rather than cloned, so there was
+no `.git`, so ruff stopped honouring `.gitignore` and started linting `.venv` and `release/`. Cloning
+properly gave "All checks passed". Reproducing an environment badly produces failures that are not
+the failure.
+
+**The real one: macOS.** pytest's `tmp_path` on macOS resolves under `/private/var/folders/…`, and
+`check_attachable` refuses anything under `/private` or `/var` as an operating-system path. So
+`test_a_normal_project_folder_is_fine` failed — but the test was only the messenger. In production,
+on any Mac, an ordinary scratch folder was refused. A rule written to stop someone attaching the
+operating system was instead stopping them attaching their own working directory.
+
+The exemption added is narrow — the platform's own temp directory only — and it has to resolve
+**both** sides, because macOS reports that directory as `/var/…` and resolves it to `/private/var/…`;
+comparing one resolved path against one unresolved one silently never matches, which is the same
+class of bug being fixed. `/private/var/db` and `/etc` are still refused.
+
+There is no Mac here, but the failure did not need one. Setting `TMPDIR` to
+`/private/var/folders/qx/8k7d/T` inside a Linux container puts pytest's `tmp_path` in the macOS
+shape and drives the real code, and the result is not an argument, it is the CI log:
+
+    ########## BEFORE (7b9be30) ##########
+    FAILED test_workspace_attach.py::test_a_normal_project_folder_is_fine
+    FAILED test_workspace_attach.py::test_the_home_directory_itself_is_refused
+    E   UnattachableRoot: That folder belongs to the operating system.
+    2 failed, 69 passed
+
+    ########## AFTER ##########
+    74 passed
+
+An environment can usually be reproduced by its *behaviour* rather than its logo, and that is worth
+more than reasoning carefully about a platform you cannot run.
+
+**Two more, found by auditing rather than by CI.**
+
+The process-tree kill test was **vacuous**. It nested double quotes inside a shell string, so the
+command was a syntax error, exit code 2, no grandchild was ever spawned — and "the marker does not
+exist" passed for entirely the wrong reason, on every platform, including the ubuntu run above where
+it sat in the slowest-five list looking like real work. This is the second time in this project a
+test of mine has passed for the wrong reason, and the pattern is the same both times: a negative
+assertion with no positive one beside it. The scripts are files now, and the test asserts the
+grandchild **started** as well as that it died, so it cannot pass again without exercising the thing
+it claims to test.
+
+And `shutil.which("bash")` can return `C:\Windows\System32\bash.exe`, which is not a shell — it is
+the entry point into a WSL distribution with its own filesystem. A command sent through it lands
+somewhere the attached folder does not exist (it would be `/mnt/c/…`), so Orrery would resolve a
+working directory, promise it in the result, and run the command somewhere else. That is worse than
+having no bash at all, because it looks like it worked. It is refused now, falling back to
+PowerShell. The shell also stopped being a **login** shell: a login shell sources profiles, a profile
+is free to change directory, and that would quietly break the one thing the module guarantees.
+
+A third assertion was hollow in the same way, found by re-reading the cancel path rather than by
+any failure: the cancellation test asserted only that `CancelledError` came back, which would have
+been true whether or not the process died — it would surface identically while the command carried
+on writing to the user's folder. It now gives the command something to do after the cancel that must
+not happen. The cancel path itself changed too: the kill is handed to a plain daemon thread instead
+of being awaited, because awaiting anything while a task is being cancelled is fragile, and the one
+thing that must survive a cancel is the cleanup.
+
+Verified: 1051 tests pass locally, the ubuntu job passes in a container with a real pgvector
+database, and the UI job passes on node 20.

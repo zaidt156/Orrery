@@ -19,6 +19,7 @@ check written later is exactly how the hole gets made.
 from __future__ import annotations
 
 import re
+import tempfile
 from pathlib import Path, PurePath
 
 # Bypass normal path semantics entirely: Win32 device namespace, and UNC network shares. Refused on
@@ -314,8 +315,29 @@ def _is_home_itself(resolved: Path) -> bool:
 
 
 def _is_system_directory(resolved: Path) -> bool:
+    if _is_in_temp_directory(resolved):
+        return False
     text = resolved.as_posix()
     if any(text == root or text.startswith(f"{root}/") for root in _POSIX_SYSTEM_ROOTS):
         return True
     parts = [p.lower() for p in resolved.parts]
     return any(name in parts for name in _WINDOWS_SYSTEM_NAMES)
+
+
+def _is_in_temp_directory(resolved: Path) -> bool:
+    """Scratch space is the user's, even when it sits inside a system path.
+
+    macOS puts the per-user temp directory under `/private/var/folders/…`, which is inside two
+    directories that are otherwise entirely the operating system's. Without this exemption an
+    ordinary scratch folder on any Mac is refused — a rule meant to stop someone attaching the OS
+    instead stopped them attaching their own working directory.
+    """
+    try:
+        # Both sides resolved: on macOS the temp directory is reported as /var/... and resolves to
+        # /private/var/..., so comparing one resolved path against one unresolved one silently
+        # never matches — which is the whole failure this exemption exists to prevent.
+        temp_root = Path(tempfile.gettempdir()).resolve(strict=False)
+        here = resolved.resolve(strict=False)
+    except (OSError, RuntimeError):
+        return False
+    return here == temp_root or here.is_relative_to(temp_root)

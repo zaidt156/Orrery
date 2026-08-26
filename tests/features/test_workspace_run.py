@@ -11,6 +11,7 @@ ride along in its environment.
 """
 import os
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -84,32 +85,73 @@ async def test_a_command_that_never_ends_is_killed_and_says_so(root):
 
 async def test_a_timeout_kills_the_children_too_not_just_the_shell(root, tmp_path):
     """Killing the shell and leaving its children is how a "stopped" command keeps writing to the
-    user's folder minutes later. The grandchild here outlives its parent unless the whole tree goes."""
-    marker = tmp_path / "still-running.txt"
-    child = (
-        "import subprocess,sys,time;"
-        f"subprocess.Popen([sys.executable,'-c',\"import time;time.sleep(8);open(r'{marker}','w').write('x')\"]);"
-        "time.sleep(30)"
-    )
-    await workspace_run.run_command(root, f'python -c "{child}"', timeout=2)
+    user's folder minutes later. The grandchild here outlives its parent unless the whole tree goes.
 
+    The scripts are written to FILES rather than passed with `-c`. The first version of this test
+    nested double quotes inside a shell string, the command failed to parse, no grandchild was ever
+    spawned — and "the marker does not exist" passed for entirely the wrong reason. A test that can
+    pass without the thing under test ever running is worse than no test, so this one asserts the
+    grandchild *started* as well as that it died.
+    """
     import asyncio
+
+    started = tmp_path / "grandchild-started.txt"
+    survived = tmp_path / "grandchild-survived.txt"
+    (root / "child.py").write_text(
+        "\n".join([
+            "import time",
+            f"open({str(started)!r}, 'w').write('x')",
+            "time.sleep(8)",
+            f"open({str(survived)!r}, 'w').write('x')",
+        ]),
+        encoding="utf-8",
+    )
+    (root / "spawner.py").write_text(
+        "\n".join([
+            "import subprocess, sys, time",
+            "subprocess.Popen([sys.executable, 'child.py'])",
+            "time.sleep(30)",
+        ]),
+        encoding="utf-8",
+    )
+
+    out = await workspace_run.run_command(root, "python spawner.py", timeout=3)
+
+    assert out["timed_out"] is True
+    assert started.exists(), (
+        "the grandchild never ran, so this test proves nothing about killing it "
+        f"(exit={out['exit_code']}, stderr={out['stderr'][:300]!r})"
+    )
     await asyncio.sleep(9)
+    assert not survived.exists(), "a grandchild survived the timeout and kept working"
 
-    assert not marker.exists(), "a grandchild survived the timeout and kept working"
 
-
-async def test_cancelling_the_turn_kills_the_command(root):
+async def test_cancelling_the_turn_kills_the_command(root, tmp_path):
+    """Asserting only that CancelledError comes back proves nothing about the command: the exception
+    would surface identically while the process carried on writing to the user's folder. So this
+    checks the process is actually gone, by giving it something to do afterwards that must not happen.
+    """
     import asyncio
 
-    task = asyncio.create_task(
-        workspace_run.run_command(root, "python -c \"import time;time.sleep(30)\"", timeout=60)
+    survived = tmp_path / "survived-cancel.txt"
+    (root / "slow.py").write_text(
+        "\n".join([
+            "import time",
+            "time.sleep(6)",
+            f"open({str(survived)!r}, 'w').write('x')",
+        ]),
+        encoding="utf-8",
     )
-    await asyncio.sleep(1.0)
+
+    task = asyncio.create_task(workspace_run.run_command(root, "python slow.py", timeout=60))
+    await asyncio.sleep(1.5)   # long enough that the process is genuinely running
     task.cancel()
 
     with pytest.raises(asyncio.CancelledError):
         await task
+
+    await asyncio.sleep(7)
+    assert not survived.exists(), "the command outlived its cancellation and kept working"
 
 
 # --- it stays inside its budget ------------------------------------------------------------------
@@ -238,3 +280,30 @@ async def _run_in(_loop):
     import tempfile
     with tempfile.TemporaryDirectory() as folder:
         return await workspace_run.run_command(folder, "python -c \"print('ran')\"")
+
+
+# --- picking a shell -------------------------------------------------------------------------------
+
+@pytest.mark.skipif(sys.platform != "win32", reason="the WSL launcher is a Windows-only trap")
+def test_the_wsl_launcher_is_never_used_as_the_shell(monkeypatch):
+    r"""C:\Windows\System32\bash.exe is not a shell, it is the door into a Linux distribution with
+    its own filesystem. A command sent through it runs somewhere else entirely — the attached folder
+    is not at that path — so Orrery would resolve a working directory, promise it, and land the
+    command somewhere different. Worse than having no bash, because it looks like it worked."""
+    system_bash = str(Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32" / "bash.exe")
+    monkeypatch.setattr(workspace_run.proc, "find_executable", lambda _n: system_bash)
+    monkeypatch.setattr(workspace_run.shutil, "which", lambda n: system_bash if n == "bash" else None)
+
+    name, argv = workspace_run._shell_for("echo hi")
+
+    assert name != "bash"
+    assert "System32" not in argv[0]
+
+
+def test_the_shell_is_not_a_login_shell():
+    """A login shell sources profiles, and a profile may change directory — which would move the
+    command out of the attached folder, breaking the one thing this module guarantees."""
+    _name, argv = workspace_run._shell_for("echo hi")
+
+    assert "-lc" not in argv
+    assert "--login" not in argv

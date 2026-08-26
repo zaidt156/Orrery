@@ -8,6 +8,7 @@ So this is not a convenience validation. It is the assumption ADR-007 rests on, 
 the only moment it can be: when the folder is chosen.
 """
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -70,3 +71,27 @@ def test_the_refusal_says_what_to_do_instead(tmp_path):
     with pytest.raises(workspace.UnattachableRoot) as exc:
         workspace.check_attachable(tmp_path / "missing")
     assert "folder" in str(exc.value).lower()
+
+
+def test_a_scratch_folder_in_the_systems_temp_directory_is_attachable(tmp_path):
+    """macOS puts the per-user temp directory under /private/var/folders/… — inside two paths that
+    are otherwise system-owned. A scratch folder there belongs to the user, not the OS, and refusing
+    it made `check_attachable` reject an ordinary working folder on every Mac (and every macOS CI
+    run, which is how this was found)."""
+    import tempfile
+
+    scratch = Path(tempfile.mkdtemp(dir=tmp_path))
+    assert workspace.check_attachable(scratch) == scratch.resolve()
+
+
+def test_the_macos_shaped_temp_path_is_not_read_as_a_system_directory(monkeypatch):
+    """Pinned on every platform, not just macOS, so the intent survives a machine that cannot
+    reproduce the shape."""
+    import tempfile
+
+    monkeypatch.setattr(tempfile, "gettempdir", lambda: "/private/var/folders/xy/T")
+
+    assert not workspace._is_system_directory(Path("/private/var/folders/xy/T/pytest-0/project"))
+    # …and the exemption stays narrow: the rest of /var is still the operating system's.
+    assert workspace._is_system_directory(Path("/private/var/db/something"))
+    assert workspace._is_system_directory(Path("/etc/ssh"))

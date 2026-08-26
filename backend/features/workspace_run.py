@@ -31,6 +31,7 @@ import re
 import shutil
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -81,7 +82,11 @@ async def run_command(root: Path | str, command: str, *, timeout: int = DEFAULT_
         # The turn was stopped. Cancellation is honoured HERE, at the tool boundary, rather than
         # only in the UI — otherwise "stop" leaves a process still changing the user's files. The
         # worker thread is still blocked in communicate(); killing the tree is what releases it.
-        await asyncio.to_thread(_terminate_tree, process)
+        #
+        # Handed to a plain daemon thread rather than awaited: awaiting anything while a task is
+        # being cancelled is fragile — a second cancel, or a loop already shutting down, and the
+        # cleanup never runs. The kill has to happen whatever the loop does next.
+        threading.Thread(target=_terminate_tree, args=(process,), daemon=True).start()
         raise
 
     out_text, out_cut = _bounded(stdout, MAX_STDOUT_CHARS)
@@ -141,16 +146,43 @@ def _shell_for(command: str) -> tuple[str, list[str]]:
     in bash, PowerShell and cmd. bash is preferred where it exists because that is what people write
     and what the user asked for; Windows without it falls back to PowerShell, which is the shell that
     machine actually has.
+
+    `-c`, not `-lc`. A login shell sources profiles, and a profile is free to change the working
+    directory — which would quietly move the command out of the attached folder, breaking the one
+    thing this module actually guarantees. The parent's environment is inherited either way, so the
+    user's toolchain is still visible, and Windows now behaves the same way as the POSIX branch.
     """
     if sys.platform != "win32":
         return "sh", ["/bin/sh", "-c", command]
-    bash = proc.find_executable("bash") or shutil.which("bash")
+    bash = _windows_bash()
     if bash:
-        return "bash", [bash, "-lc", command]
+        return "bash", [bash, "-c", command]
     powershell = shutil.which("powershell") or shutil.which("pwsh")
     if powershell:
         return "powershell", [powershell, "-NoProfile", "-NonInteractive", "-Command", command]
     return "cmd", [os.environ.get("COMSPEC", "cmd.exe"), "/c", command]
+
+
+def _windows_bash() -> str | None:
+    """Git Bash, if it is there — but never the WSL launcher.
+
+    `C:\\Windows\\System32\\bash.exe` is not a shell, it is the entry point into a Linux distribution
+    with its own filesystem. A command sent through it runs somewhere else entirely: the attached
+    folder does not exist at that path (it would be `/mnt/c/...`), so the working directory Orrery
+    just resolved and promised is simply not where the command lands. That is worse than having no
+    bash at all, because it looks like it worked.
+    """
+    found = proc.find_executable("bash") or shutil.which("bash")
+    if not found:
+        return None
+    try:
+        system_root = Path(os.environ.get("SystemRoot", r"C:\Windows")).resolve(strict=False)
+        resolved = Path(found).resolve(strict=False)
+    except (OSError, RuntimeError):
+        return None
+    if resolved.is_relative_to(system_root):
+        return None  # the WSL launcher, or something else pretending to be a shell
+    return found
 
 
 def _child_environment() -> dict[str, str]:
