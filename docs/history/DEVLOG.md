@@ -4733,3 +4733,44 @@ is a trap worth spending a test on.
 
 Verified: 1098 tests pass, including the durable-log tests against a real database. Next: plan mode,
 where the model designs the task before any of this runs.
+
+## Step 202 - "Did the latest models get fixed?" — the windows had, the models had not (August 26, 2026)
+
+Asked directly whether the new-model work had landed, the honest answer needed measuring rather than
+recalling. Step 196 fixed what every model *reports*. Whether a user could actually pick one was a
+separate claim, and it had never been tested.
+
+So each curator was fed the real August-2026 catalogue and asked what it would offer:
+
+    openai      offered: gpt-5.6, o4-mini, gpt-5.6-luna, gpt-5.6-terra
+                not offered: gpt-5.5, gpt-5.5-pro, gpt-5.4, gpt-5.4-pro, gpt-5.4-mini, gpt-5.4-nano
+    xai         offered: grok-4.20-reasoning, grok-4.20-multi-agent, grok-4.6, grok-4.5
+                not offered: grok-4.3
+    dashscope   offered: qwen3.8-max, glm-5.3, qwen3.7-plus, glm-5
+                not offered: qwen3.8-27b, glm-5.2, qwen3.7-max, ...
+
+Two separate defects, and the second one is the answer to the question.
+
+**Curation had quietly become a permission.** It exists to decide which models get switched *on*
+automatically when a key is first added — `provider_models` says exactly that in its docstring. But
+it also ran inside `_discover_available`, which feeds the **Settings** list: the screen whose entire
+job is letting the user choose what to enable. Capping that at four per provider did not curate
+anything; it made five of OpenAI's nine current models unreachable, with no setting anywhere that
+could bring them back. The chat menu was never the problem — it lists only what the user activated,
+which is a different filter and the correct one. Curation now applies where it was meant to and
+nowhere else.
+
+**And the version ranking was wrong in a way that only shows up sometimes.** `_ver` scored the minor
+number as hundredths, so "4.20" read as 4.20 while "4.6" read as 4.06. Grok 4.20 therefore outranked
+Grok 4.6 — the current flagship — and two variants of the older release took the slots that pushed
+Grok 4.3 out completely. It went wrong only when two ids had different numbers of minor digits,
+which is precisely the case nobody thinks to check. Versions are read as decimals now, so 4.20 is
+4.2 and sorts below 4.3, and the orderings that were already right are pinned so they stay right.
+
+Measured again afterwards, on the same catalogue: every model selectable, and the four auto-enabled
+per provider are the sensible four — Grok 4.6 first, Grok 4.3 present, GLM-5.2 back.
+
+The lesson repeats one from earlier this week: "I fixed X" and "X now works for the user" are
+different claims, and only one of them can be checked by rereading the diff.
+
+Verified: 1102 backend tests and 67 UI tests pass.

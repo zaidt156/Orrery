@@ -437,13 +437,23 @@ async def _warm_ollama_context(client: httpx.AsyncClient, names: list[str]) -> N
 # --- curation: ~4 latest models per provider, always incl. a reasoning model ---
 
 def _ver(s: str) -> float:
-    """A rough version score from the digits in a model id (4-8 → 4.08, 5.5 → 5.05)."""
+    """A version score from the digits in a model id, read as a decimal (4-8 → 4.8, 5.6 → 5.6).
+
+    Read as a DECIMAL, which is how vendors actually number these: Grok 4.6 is newer than Grok 4.20,
+    Gemini 3.7 is newer than Gemini 3.1. The previous version scored the minor as hundredths, so
+    "4.20" became 4.20 and "4.6" became 4.06 — and two variants of the older Grok 4.20 outranked the
+    current flagship and pushed Grok 4.3 out of the list entirely. It only went wrong when two ids
+    had different numbers of minor digits, which is exactly when nobody is looking.
+    """
     nums = re.findall(r"\d+", s)
     if not nums:
         return 0.0
-    major = int(nums[0])
-    minor = int(nums[1]) if len(nums) > 1 else 0
-    return major + minor / 100.0
+    if len(nums) == 1:
+        return float(nums[0])
+    try:
+        return float(f"{nums[0]}.{nums[1]}")
+    except ValueError:  # absurdly long digit runs
+        return float(nums[0])
 
 
 def _curate_openai(items: list[dict]) -> list[dict]:
@@ -806,7 +816,15 @@ def _cli_plan_models() -> list[dict]:
 
 
 async def _discover_available() -> list[dict]:
-    """Every model the user could turn on, key-gated and curated to ~4 latest per provider."""
+    """Every model the user could turn on. Key-gated, and deliberately NOT curated.
+
+    Curation decides what gets switched *on* automatically when a key is first added
+    (`provider_models`). It used to run here as well, and that quietly made it a permission: the
+    Settings list is where a user chooses what to enable, so capping it at four per provider left
+    five of OpenAI's nine current models — and Grok 4.3, and GLM-5.2 — unreachable, with no setting
+    anywhere that could bring them back. The chat menu stays short because it lists only what the
+    user activated, which is a different filter and the right one.
+    """
     out: list[dict] = await asyncio.to_thread(_cli_plan_models)
     work: list[tuple[str, object]] = []
     for p in _KEYED:
@@ -819,8 +837,7 @@ async def _discover_available() -> list[dict]:
     results = {name: models for (name, _), models in zip(work, values, strict=True)}
 
     for p in _KEYED:
-        _fetch, curate = _DISCOVERY[p]
-        out += curate(results.get(p, []))
+        out += results.get(p, [])
     out += results.get("ollama", [])  # local; empty if not running
     return out
 

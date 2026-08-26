@@ -192,3 +192,97 @@ def test_the_deepseek_offline_fallback_names_the_current_generation():
     user on models from two generations ago."""
     assert "deepseek-v4-pro" in ai._DEEPSEEK_FALLBACK
     assert "deepseek-chat" in ai._DEEPSEEK_FALLBACK
+
+
+# --- version ranking, and the catalogue the user actually sees --------------------------------------
+
+def test_a_two_digit_minor_version_does_not_outrank_a_larger_one():
+    """`_ver` scored the minor as hundredths, so "4.20" read as 4.20 and "4.6" as 4.06 — and Grok
+    4.20 outranked Grok 4.6, which is the newer model. Version strings are decimals: 4.20 is 4.2."""
+    assert ai._ver("grok-4.6") > ai._ver("grok-4.20-reasoning")
+    assert ai._ver("grok-4.5") > ai._ver("grok-4.20-multi-agent")
+    assert ai._ver("grok-4.3") > ai._ver("grok-4.20-reasoning")
+    # and the orderings that were already right stay right
+    assert ai._ver("gpt-5.6") > ai._ver("gpt-5.5") > ai._ver("gpt-5.4")
+    assert ai._ver("gemini-3.7-flash") > ai._ver("gemini-3.1-pro")
+    assert ai._ver("claude-opus-5") > ai._ver("claude-opus-4-8") > ai._ver("claude-opus-4-6")
+    assert ai._ver("kimi-k3") > ai._ver("kimi-k2.7-code")
+
+
+def test_xai_curation_offers_the_current_flagship_first():
+    """With the ranking fixed, the four slots go to the newest four rather than to two variants of
+    an older release."""
+    items = [
+        {"id": f"xai/{m}", "label": m, "provider": "xai"}
+        for m in ("grok-4.6", "grok-4.5", "grok-4.3",
+                  "grok-4.20-reasoning", "grok-4.20-multi-agent")
+    ]
+
+    labels = [p["label"] for p in ai._curate_xai(items)]
+
+    assert labels[0] == "grok-4.6"
+    assert "grok-4.3" in labels, "the 1M-context Grok was pushed out by two older variants"
+
+
+@pytest.mark.anyio
+async def test_the_settings_catalogue_is_not_capped_to_four_per_provider(monkeypatch):
+    """Curation exists to decide what gets switched ON automatically when a key is first added.
+    It was also gating what the user is allowed to turn on at all, so nine current OpenAI models
+    became four and the rest were unreachable — no setting, anywhere, could get them back.
+    """
+    from backend.providers import catalog
+
+    openai_models = [
+        {"id": f"openai/{m}", "label": m, "provider": "openai"}
+        for m in ("gpt-5.6", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5", "gpt-5.5-pro",
+                  "gpt-5.4", "gpt-5.4-pro", "gpt-5.4-mini", "gpt-5.4-nano")
+    ]
+
+    async def fetch(_key):
+        return openai_models
+
+    monkeypatch.setattr(ai, "_KEYED", ("openai",))
+    monkeypatch.setattr(ai, "_DISCOVERY", {"openai": (fetch, ai._curate_openai)})
+    monkeypatch.setattr(ai.secrets, "get_provider_key", lambda _p: "sk-test")
+    monkeypatch.setattr(ai, "_cli_plan_models", list)
+
+    async def no_ollama():
+        return []
+
+    monkeypatch.setattr(ai, "_fetch_ollama", no_ollama)
+    ai.clear_model_cache()
+
+    async def no_customs():
+        return []
+
+    async def no_active():
+        return set()
+
+    async def refreshed(_models):
+        return None
+
+    monkeypatch.setattr(catalog, "list_custom_models", no_customs)
+    monkeypatch.setattr(catalog, "active_ids", no_active)
+    monkeypatch.setattr(catalog, "refresh_active_metadata", refreshed)
+
+    offered = {m["label"] for m in await ai.list_catalog()}
+
+    assert offered == {m["label"] for m in openai_models}, "models the user cannot reach at all"
+
+
+@pytest.mark.anyio
+async def test_auto_activation_still_picks_only_a_few(monkeypatch):
+    """The other half: turning a key on must not switch on everything the provider serves."""
+    openai_models = [
+        {"id": f"openai/{m}", "label": m, "provider": "openai"}
+        for m in ("gpt-5.6", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5", "gpt-5.4-mini", "o4-mini")
+    ]
+
+    async def fetch(_key):
+        return openai_models
+
+    monkeypatch.setattr(ai, "_DISCOVERY", {"openai": (fetch, ai._curate_openai)})
+    monkeypatch.setattr(ai.secrets, "get_provider_key", lambda _p: "sk-test")
+    ai.clear_model_cache()
+
+    assert len(await ai.provider_models("openai")) <= 4
